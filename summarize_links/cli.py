@@ -711,8 +711,7 @@ def cmd_status(config: Config) -> int:
     # Warnings if approaching limits
     if status["daily"]["remaining"] < 50:
         console.print(
-            f"[yellow]⚠ Warning: Only {status['daily']['remaining']} "
-            "daily requests remaining![/]"
+            f"[yellow]⚠ Warning: Only {status['daily']['remaining']} daily requests remaining![/]"
         )
     if status["daily"]["remaining"] == 0:
         console.print("[red]✗ Daily limit reached. Try again tomorrow.[/]")

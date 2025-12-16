@@ -28,8 +28,58 @@ logger = logging.getLogger(__name__)
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/120.0.0.0 Safari/537.36"
+    "Chrome/131.0.0.0 Safari/537.36"
 )
+
+# Full set of browser headers to avoid bot detection
+# These mimic a real Chrome browser request
+BROWSER_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,image/apng,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Sec-Ch-Ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Cache-Control": "max-age=0",
+}
+
+# HTTP error messages with user-friendly explanations
+HTTP_ERROR_MESSAGES = {
+    401: "Authentication required - likely paywalled content",
+    403: "Access forbidden (site may block automated requests)",
+    404: "Page not found (URL may be incorrect or content removed)",
+    429: "Too many requests (rate limited by server)",
+    500: "Server error (site is having issues)",
+    502: "Bad gateway (site is having issues)",
+    503: "Service unavailable (site may be down)",
+}
+
+# Known paywall domains with specific messages
+PAYWALL_DOMAINS = {
+    "wsj.com": "Wall Street Journal (subscription required)",
+    "nytimes.com": "New York Times (subscription required)",
+    "ft.com": "Financial Times (subscription required)",
+    "economist.com": "The Economist (subscription required)",
+    "bloomberg.com": "Bloomberg (subscription required)",
+    "washingtonpost.com": "Washington Post (subscription required)",
+    "theathletic.com": "The Athletic (subscription required)",
+    "thetimes.co.uk": "The Times UK (subscription required)",
+    "telegraph.co.uk": "The Telegraph (subscription required)",
+    "hbr.org": "Harvard Business Review (subscription required)",
+    "medium.com": "Medium (may require membership for some articles)",
+    "seekingalpha.com": "Seeking Alpha (premium content)",
+    "barrons.com": "Barron's (subscription required)",
+}
 
 # Elements to remove from HTML (non-content elements)
 ELEMENTS_TO_REMOVE = [
@@ -77,9 +127,76 @@ NON_CONTENT_PATTERNS = [
 ]
 
 
+def _create_session() -> requests.Session:
+    """
+    Create a requests session with browser-like headers.
+
+    Using a session persists cookies across redirects and
+    makes the request appear more like a real browser.
+
+    Returns:
+        Configured requests Session.
+    """
+    session = requests.Session()
+    session.headers.update(BROWSER_HEADERS)
+    return session
+
+
+def _get_paywall_info(url: str) -> str | None:
+    """
+    Check if URL is from a known paywall site.
+
+    Args:
+        url: The URL to check.
+
+    Returns:
+        Paywall description if known, None otherwise.
+    """
+    parsed = urlparse(url)
+    domain = parsed.netloc.lower().replace("www.", "")
+
+    # Check exact match first
+    if domain in PAYWALL_DOMAINS:
+        return PAYWALL_DOMAINS[domain]
+
+    # Check if domain ends with any known paywall domain
+    for paywall_domain, description in PAYWALL_DOMAINS.items():
+        if domain.endswith(paywall_domain):
+            return description
+
+    return None
+
+
+def _format_http_error(status_code: int, url: str) -> str:
+    """
+    Format an HTTP error with a user-friendly message.
+
+    For 401/403 errors, checks if the URL is from a known paywall
+    site and provides specific information.
+
+    Args:
+        status_code: HTTP status code.
+        url: The URL that failed.
+
+    Returns:
+        Formatted error message.
+    """
+    # For auth errors, check for known paywall sites
+    if status_code in (401, 403):
+        paywall_info = _get_paywall_info(url)
+        if paywall_info:
+            return f"HTTP {status_code}: Paywall - {paywall_info}"
+
+    explanation = HTTP_ERROR_MESSAGES.get(status_code, "Request failed")
+    return f"HTTP {status_code}: {explanation}"
+
+
 def fetch_content(url: str, timeout: int = REQUEST_TIMEOUT) -> tuple[str, str]:
     """
     Fetch content from a URL and return content with its type.
+
+    Uses browser-like headers and a session to avoid bot detection.
+    Automatically follows redirects and persists cookies.
 
     Args:
         url: URL to fetch.
@@ -93,17 +210,15 @@ def fetch_content(url: str, timeout: int = REQUEST_TIMEOUT) -> tuple[str, str]:
     """
     logger.debug(f"Fetching URL: {url}")
 
-    headers = {
-        "User-Agent": USER_AGENT,
-        "Accept": (
-            "text/html,application/xhtml+xml,application/xml;q=0.9,"
-            "text/markdown,text/plain;q=0.8,*/*;q=0.7"
-        ),
-        "Accept-Language": "en-US,en;q=0.5",
-    }
+    # Parse URL to set Referer header (some sites check this)
+    parsed = urlparse(url)
+    referer = f"{parsed.scheme}://{parsed.netloc}/"
 
     try:
-        response = requests.get(url, headers=headers, timeout=timeout)
+        session = _create_session()
+        session.headers["Referer"] = referer
+
+        response = session.get(url, timeout=timeout, allow_redirects=True)
         response.raise_for_status()
 
         # Determine content type
@@ -126,7 +241,7 @@ def fetch_content(url: str, timeout: int = REQUEST_TIMEOUT) -> tuple[str, str]:
     except requests.exceptions.ConnectionError as e:
         raise ContentFetchError(f"Connection error for {url}: {e}") from e
     except requests.exceptions.HTTPError as e:
-        raise ContentFetchError(f"HTTP error {e.response.status_code} for {url}") from e
+        raise ContentFetchError(_format_http_error(e.response.status_code, url)) from e
     except requests.exceptions.RequestException as e:
         raise ContentFetchError(f"Request failed for {url}: {e}") from e
 

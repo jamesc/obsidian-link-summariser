@@ -602,3 +602,45 @@ daily_limit: 10000
 ```
 
 **Tests:** All 293 existing tests pass
+---
+
+## 2025-12-16: Improved HTTP headers and error messages for content fetching
+
+**Goal:** Improve success rate for fetching URLs by using more browser-like headers, and provide clearer error messages for failures.
+
+**Changes in `summarize_links/extract.py`:**
+
+### Browser-like Headers
+- Updated Chrome version from 120 to 131 in User-Agent
+- Added full `BROWSER_HEADERS` dictionary with modern browser fingerprint:
+  - `Sec-Fetch-*` headers (Dest, Mode, Site, User)
+  - `Sec-Ch-Ua` client hints for Chrome 131
+  - `Accept-Encoding: gzip, deflate, br`
+  - `Cache-Control` and `Upgrade-Insecure-Requests`
+- Created `_create_session()` helper using `requests.Session()` for cookie persistence
+- Added dynamic `Referer` header based on target domain
+
+### Descriptive HTTP Error Messages
+- Added `HTTP_ERROR_MESSAGES` dictionary with user-friendly explanations:
+  - 401: "Authentication required - likely paywalled content"
+  - 403: "Access forbidden (site may block automated requests)"
+  - 404: "Page not found (URL may be incorrect or content removed)"
+  - 429: "Too many requests (rate limited by server)"
+  - 5xx: Server error messages
+
+### Paywall Site Detection
+- Added `PAYWALL_DOMAINS` dictionary with 13 known paywall sites:
+  - WSJ, NYT, FT, Economist, Bloomberg, Washington Post
+  - The Athletic, The Times UK, Telegraph, HBR
+  - Medium, Seeking Alpha, Barron's
+- Created `_get_paywall_info()` to detect known paywall domains
+- Updated `_format_http_error()` to show specific paywall messages for 401/403 errors
+
+**Example Error Messages:**
+| URL | Old Message | New Message |
+|-----|-------------|-------------|
+| wsj.com | `HTTP error 401 for URL` | `HTTP 401: Paywall - Wall Street Journal (subscription required)` |
+| medium.com | `HTTP error 403 for URL` | `HTTP 403: Paywall - Medium (may require membership for some articles)` |
+| simonwillison.net (404) | `HTTP error 404 for URL` | `HTTP 404: Page not found (URL may be incorrect or content removed)` |
+
+**Tests:** All 293 existing tests pass
