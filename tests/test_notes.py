@@ -8,8 +8,11 @@ from pathlib import Path
 import pytest
 
 from summarize_links.exceptions import NoteReadError
+from summarize_links.models import PageMetadata, SummaryResult
 from summarize_links.notes import (
+    _escape_yaml_string,
     add_summary_link_to_daily_note,
+    build_frontmatter,
     extract_hashtags_from_line,
     extract_urls,
     extract_urls_with_context,
@@ -20,6 +23,7 @@ from summarize_links.notes import (
     summary_exists,
     write_stub_note,
     write_summary_note,
+    write_summary_note_with_metadata,
 )
 
 
@@ -680,3 +684,278 @@ class TestExtractUrlsWithContext:
         assert "transformers" in results[0].tags
         assert results[1].url == "https://openai.com/blog/gpt-4"
         assert "gpt" in results[1].tags
+
+
+class TestEscapeYamlString:
+    """Tests for YAML string escaping."""
+
+    def test_simple_string(self) -> None:
+        """Simple strings should not be quoted."""
+        assert _escape_yaml_string("Hello World") == "Hello World"
+
+    def test_string_with_colon(self) -> None:
+        """Strings with colons should be quoted."""
+        result = _escape_yaml_string("Title: Subtitle")
+        assert result == '"Title: Subtitle"'
+
+    def test_string_with_hash(self) -> None:
+        """Strings with hash should be quoted."""
+        result = _escape_yaml_string("C# Programming")
+        assert result == '"C# Programming"'
+
+    def test_string_with_quotes(self) -> None:
+        """Internal quotes should be escaped."""
+        result = _escape_yaml_string('He said "hello"')
+        assert result == '"He said \\"hello\\""'
+
+    def test_string_starting_with_dash(self) -> None:
+        """Strings starting with dash should be quoted."""
+        result = _escape_yaml_string("- bullet point")
+        assert result == '"- bullet point"'
+
+
+class TestBuildFrontmatter:
+    """Tests for frontmatter building."""
+
+    def test_minimal_frontmatter(self) -> None:
+        """Should build frontmatter with just URL."""
+        date = datetime(2025, 12, 16)
+        result = build_frontmatter(url="https://example.com", date=date)
+
+        assert "---" in result
+        assert "source: https://example.com" in result
+        assert "date: 2025-12-16" in result
+        assert "status: success" in result
+
+    def test_with_page_metadata(self) -> None:
+        """Should include page metadata fields."""
+        date = datetime(2025, 12, 16)
+        metadata = PageMetadata(
+            title="Test Article",
+            author="John Smith",
+            domain="example.com",
+            content="Content",
+            published_date="2025-12-10",
+            article_tags=["python", "testing"],
+        )
+        result = build_frontmatter(
+            url="https://example.com",
+            page_metadata=metadata,
+            date=date,
+        )
+
+        assert "title: Test Article" in result
+        assert "author: John Smith" in result
+        assert "domain: example.com" in result
+        assert "published: 2025-12-10" in result
+
+    def test_with_summary_result(self) -> None:
+        """Should include summary result fields."""
+        date = datetime(2025, 12, 16)
+        summary = SummaryResult(
+            content="Summary text",
+            suggested_tags=["ai", "ml"],
+            content_type="tutorial",
+        )
+        result = build_frontmatter(
+            url="https://example.com",
+            summary_result=summary,
+            date=date,
+        )
+
+        assert "type: tutorial" in result
+        assert "- ai" in result
+        assert "- ml" in result
+
+    def test_with_user_tags(self) -> None:
+        """Should include user tags first in priority."""
+        date = datetime(2025, 12, 16)
+        result = build_frontmatter(
+            url="https://example.com",
+            user_tags=["important", "reading"],
+            date=date,
+        )
+
+        assert "tags:" in result
+        assert "- important" in result
+        assert "- reading" in result
+
+    def test_tag_merging(self) -> None:
+        """Should merge tags from all sources."""
+        date = datetime(2025, 12, 16)
+        metadata = PageMetadata(
+            title="Title",
+            domain="example.com",
+            content="Content",
+            article_tags=["article-tag"],
+        )
+        summary = SummaryResult(
+            content="Summary",
+            suggested_tags=["ai-tag"],
+            content_type="article",
+        )
+        result = build_frontmatter(
+            url="https://example.com",
+            page_metadata=metadata,
+            summary_result=summary,
+            user_tags=["user-tag"],
+            date=date,
+        )
+
+        assert "- user-tag" in result
+        assert "- article-tag" in result
+        assert "- ai-tag" in result
+
+    def test_with_source_note(self) -> None:
+        """Should include backlink to source note."""
+        date = datetime(2025, 12, 16)
+        result = build_frontmatter(
+            url="https://example.com",
+            source_note="2025-12-16.md",
+            date=date,
+        )
+
+        assert 'from: "[[2025-12-16]]"' in result
+
+    def test_with_default_tags(self) -> None:
+        """Should include default tags first."""
+        date = datetime(2025, 12, 16)
+        result = build_frontmatter(
+            url="https://example.com",
+            user_tags=["user"],
+            default_tags=["summarized"],
+            date=date,
+        )
+
+        # Default tags should come before user tags
+        lines = result.split("\n")
+        tag_lines = [line for line in lines if line.strip().startswith("- ")]
+        assert tag_lines[0].strip() == "- summarized"
+        assert tag_lines[1].strip() == "- user"
+
+    def test_escapes_special_characters_in_title(self) -> None:
+        """Should escape special characters in title."""
+        date = datetime(2025, 12, 16)
+        metadata = PageMetadata(
+            title='Title with "quotes" and: colons',
+            domain="example.com",
+            content="Content",
+        )
+        result = build_frontmatter(
+            url="https://example.com",
+            page_metadata=metadata,
+            date=date,
+        )
+
+        assert 'title: "Title with \\"quotes\\" and: colons"' in result
+
+
+class TestWriteSummaryNoteWithMetadata:
+    """Tests for writing summary notes with rich frontmatter."""
+
+    def test_writes_note_with_metadata(self, tmp_path: Path) -> None:
+        """Should write note with all metadata fields."""
+        date = datetime(2025, 12, 16)
+        metadata = PageMetadata(
+            title="Test Article",
+            author="John Smith",
+            domain="example.com",
+            content="Content",
+            article_tags=["python"],
+        )
+        summary = SummaryResult(
+            content="## Summary\n\nThis is the summary.",
+            suggested_tags=["testing"],
+            content_type="article",
+        )
+
+        filepath = write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com/article",
+            summary_result=summary,
+            page_metadata=metadata,
+            user_tags=["reading"],
+            date=date,
+            source_note="2025-12-16.md",
+        )
+
+        assert filepath.exists()
+        content = filepath.read_text()
+
+        # Check frontmatter
+        assert "source: https://example.com/article" in content
+        assert "title: Test Article" in content
+        assert "author: John Smith" in content
+        assert "type: article" in content
+        assert "date: 2025-12-16" in content
+        assert "status: success" in content
+        assert 'from: "[[2025-12-16]]"' in content
+        assert "- reading" in content
+        assert "- python" in content
+        assert "- testing" in content
+        assert "domain: example.com" in content
+
+        # Check summary content
+        assert "## Summary" in content
+        assert "This is the summary." in content
+
+    def test_skips_existing_file(self, tmp_path: Path) -> None:
+        """Should skip if file exists and overwrite=False."""
+        date = datetime(2025, 12, 16)
+        summary = SummaryResult(content="Summary 1")
+
+        # Write first time
+        write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary,
+            date=date,
+        )
+
+        # Write second time with different content
+        summary2 = SummaryResult(content="Summary 2")
+        write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary2,
+            date=date,
+            overwrite=False,
+        )
+
+        # Should still have first content
+        filepath = tmp_path / "Summaries" / "2025-12-16-example-com.md"
+        content = filepath.read_text()
+        assert "Summary 1" in content
+        assert "Summary 2" not in content
+
+    def test_overwrites_existing_file(self, tmp_path: Path) -> None:
+        """Should overwrite if overwrite=True."""
+        date = datetime(2025, 12, 16)
+        summary = SummaryResult(content="Summary 1")
+
+        # Write first time
+        write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary,
+            date=date,
+        )
+
+        # Overwrite
+        summary2 = SummaryResult(content="Summary 2")
+        write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary2,
+            date=date,
+            overwrite=True,
+        )
+
+        filepath = tmp_path / "Summaries" / "2025-12-16-example-com.md"
+        content = filepath.read_text()
+        assert "Summary 2" in content

@@ -6,6 +6,7 @@ This module handles:
 - Extracting URLs from Markdown content (both links and bare URLs)
 - Writing formatted summary notes with frontmatter
 - Generating URL-safe slugs for filenames
+- Building rich frontmatter with metadata and tags
 """
 
 import logging
@@ -16,7 +17,7 @@ from urllib.parse import urlparse
 
 from summarize_links.config import MAX_SLUG_LENGTH
 from summarize_links.exceptions import NoteReadError, NoteWriteError, URLExtractionError
-from summarize_links.models import UrlWithContext
+from summarize_links.models import PageMetadata, SummaryResult, UrlWithContext, merge_tags
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -345,6 +346,146 @@ def summary_exists(
     return True
 
 
+def _escape_yaml_string(value: str) -> str:
+    """
+    Escape a string value for YAML frontmatter.
+
+    Quotes strings that contain special YAML characters.
+
+    Args:
+        value: String value to escape.
+
+    Returns:
+        Properly escaped/quoted string for YAML.
+    """
+    # Characters that require quoting
+    special_chars = [
+        ":",
+        "#",
+        "[",
+        "]",
+        "{",
+        "}",
+        ",",
+        "&",
+        "*",
+        "!",
+        "|",
+        ">",
+        "'",
+        '"',
+        "%",
+        "@",
+        "`",
+    ]
+
+    # Check if quoting is needed
+    needs_quoting = (
+        any(char in value for char in special_chars)
+        or value.startswith("-")
+        or value.startswith("?")
+        or "\n" in value
+    )
+
+    if needs_quoting:
+        # Use double quotes and escape internal double quotes
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+
+    return value
+
+
+def build_frontmatter(
+    url: str,
+    page_metadata: PageMetadata | None = None,
+    summary_result: SummaryResult | None = None,
+    user_tags: list[str] | None = None,
+    date: datetime | None = None,
+    source_note: str | None = None,
+    status: str = "success",
+    default_tags: list[str] | None = None,
+    max_tags: int = 10,
+) -> str:
+    """
+    Build YAML frontmatter for a summary note.
+
+    Combines metadata from multiple sources into rich frontmatter.
+
+    Args:
+        url: Source URL being summarized.
+        page_metadata: Metadata extracted from the web page.
+        summary_result: Result from Gemini summarization.
+        user_tags: Tags from the user's daily note.
+        date: Date for the summary (defaults to today).
+        source_note: Name of the source daily note.
+        status: Status of the summary ("success" or "error").
+        default_tags: Tags to always include.
+        max_tags: Maximum number of tags.
+
+    Returns:
+        YAML frontmatter string (including --- delimiters).
+    """
+    if date is None:
+        date = datetime.now()
+
+    lines = ["---"]
+
+    # Source URL (always included)
+    lines.append(f"source: {url}")
+
+    # Title
+    if page_metadata and page_metadata.title:
+        lines.append(f"title: {_escape_yaml_string(page_metadata.title)}")
+
+    # Author
+    if page_metadata and page_metadata.author:
+        lines.append(f"author: {_escape_yaml_string(page_metadata.author)}")
+
+    # Content type
+    if summary_result and summary_result.content_type:
+        lines.append(f"type: {summary_result.content_type}")
+
+    # Date
+    date_str = date.strftime("%Y-%m-%d")
+    lines.append(f"date: {date_str}")
+
+    # Status
+    lines.append(f"status: {status}")
+
+    # Source daily note (backlink)
+    if source_note:
+        note_name = source_note.replace(".md", "")
+        lines.append(f'from: "[[{note_name}]]"')
+
+    # Tags - merge from all sources
+    article_tags = page_metadata.article_tags if page_metadata else []
+    ai_tags = summary_result.suggested_tags if summary_result else []
+    merged_tags = merge_tags(
+        user_tags=user_tags or [],
+        article_tags=article_tags,
+        ai_tags=ai_tags,
+        default_tags=default_tags,
+        max_tags=max_tags,
+    )
+
+    if merged_tags:
+        lines.append("tags:")
+        for tag in merged_tags:
+            lines.append(f"  - {tag}")
+
+    # Optional metadata fields
+    if page_metadata:
+        if page_metadata.published_date:
+            lines.append(f"published: {page_metadata.published_date}")
+
+        if page_metadata.domain:
+            lines.append(f"domain: {page_metadata.domain}")
+
+    lines.append("---")
+
+    return "\n".join(lines)
+
+
 def write_summary_note(
     vault_path: Path,
     out_folder: str,
@@ -418,6 +559,86 @@ def write_summary_note(
     try:
         filepath.write_text(full_content, encoding="utf-8")
         logger.info(f"Wrote summary to: {filepath.name}")
+        return filepath
+    except OSError as e:
+        raise NoteWriteError(f"Failed to write summary to {filepath}: {e}") from e
+
+
+def write_summary_note_with_metadata(
+    vault_path: Path,
+    out_folder: str,
+    url: str,
+    summary_result: SummaryResult,
+    page_metadata: PageMetadata | None = None,
+    user_tags: list[str] | None = None,
+    date: datetime | None = None,
+    source_note: str | None = None,
+    overwrite: bool = False,
+    default_tags: list[str] | None = None,
+    max_tags: int = 10,
+) -> Path:
+    """
+    Write a summary note with rich frontmatter.
+
+    This is the enhanced version that uses PageMetadata and SummaryResult
+    to build comprehensive frontmatter with title, author, tags, etc.
+
+    Args:
+        vault_path: Path to the Obsidian vault root.
+        out_folder: Folder name for summaries.
+        url: Source URL being summarized.
+        summary_result: Result from Gemini summarization.
+        page_metadata: Metadata extracted from the web page.
+        user_tags: Tags from the user's daily note.
+        date: Date for the summary (defaults to today).
+        source_note: Name of the source daily note.
+        overwrite: If True, overwrite existing file.
+        default_tags: Tags to always include.
+        max_tags: Maximum number of tags.
+
+    Returns:
+        Path to the written file.
+
+    Raises:
+        NoteWriteError: If writing the note fails.
+    """
+    if date is None:
+        date = datetime.now()
+
+    filepath = get_summary_filepath(vault_path, out_folder, url, date)
+
+    # Check if file exists
+    if filepath.exists() and not overwrite:
+        logger.info(f"Summary already exists, skipping: {filepath.name}")
+        return filepath
+
+    # Ensure output folder exists
+    output_dir = vault_path / out_folder
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise NoteWriteError(f"Failed to create output folder {output_dir}: {e}") from e
+
+    # Build rich frontmatter
+    frontmatter = build_frontmatter(
+        url=url,
+        page_metadata=page_metadata,
+        summary_result=summary_result,
+        user_tags=user_tags,
+        date=date,
+        source_note=source_note,
+        status="success",
+        default_tags=default_tags,
+        max_tags=max_tags,
+    )
+
+    # Combine frontmatter and content
+    full_content = f"{frontmatter}\n\n{summary_result.content}"
+
+    # Write file
+    try:
+        filepath.write_text(full_content, encoding="utf-8")
+        logger.info(f"Wrote summary with metadata to: {filepath.name}")
         return filepath
     except OSError as e:
         raise NoteWriteError(f"Failed to write summary to {filepath}: {e}") from e

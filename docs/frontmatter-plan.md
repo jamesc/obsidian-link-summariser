@@ -82,7 +82,7 @@ class SummaryResult:
 
 ### Phase 1: Data Models (`models.py`)
 - [ ] Create `UrlWithContext` dataclass
-- [ ] Create `PageMetadata` dataclass  
+- [ ] Create `PageMetadata` dataclass
 - [ ] Create `SummaryResult` dataclass
 
 ### Phase 2: URL + Tag Extraction (`notes.py`)
