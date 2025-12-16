@@ -231,9 +231,37 @@ def extract_readable_content(html: str) -> tuple[str, str | None]:
     Raises:
         ContentExtractionError: If extraction fails.
     """
+    # Try lxml parser first (faster), fall back to html5lib for malformed HTML
+    for parser in ["lxml", "html5lib"]:
+        try:
+            content, title = _extract_with_parser(html, parser)
+            if content:
+                return content, title
+        except ContentExtractionError:
+            if parser == "html5lib":
+                raise
+            logger.debug(f"Parser '{parser}' failed, trying fallback")
+            continue
+
+    raise ContentExtractionError("No readable content found in page")
+
+
+def _extract_with_parser(html: str, parser: str) -> tuple[str | None, str | None]:
+    """
+    Extract content using a specific parser.
+
+    Args:
+        html: Raw HTML string.
+        parser: BeautifulSoup parser to use ('lxml' or 'html5lib').
+
+    Returns:
+        Tuple of (extracted_text, page_title). Text may be None if not found.
+
+    Raises:
+        ContentExtractionError: If extraction fails critically.
+    """
     try:
-        # Parse HTML with lxml for speed
-        soup = BeautifulSoup(html, "lxml")
+        soup = BeautifulSoup(html, parser)
 
         # Extract title before removing elements
         title = None
@@ -246,6 +274,21 @@ def extract_readable_content(html: str) -> tuple[str, str | None]:
             elif " - " in title:
                 title = title.split(" - ")[0]
 
+        # Try to extract article content FIRST, before any removal
+        # This prevents losing content nested in unusual structures (e.g., article inside nav/header)
+        content = _extract_article_content(soup)
+
+        if content:
+            # Found article content - clean and return it
+            content = _clean_text(content)
+            logger.info(
+                f"Extracted {len(content)} chars from article (parser={parser})"
+            )
+            return content, title
+
+        # No article found - do aggressive cleanup and try largest text block
+        logger.debug(f"No article found with {parser}, performing aggressive cleanup")
+
         # Remove non-content elements
         for tag_name in ELEMENTS_TO_REMOVE:
             for element in soup.find_all(tag_name):
@@ -253,29 +296,30 @@ def extract_readable_content(html: str) -> tuple[str, str | None]:
 
         # Remove elements with non-content class/id patterns
         # Use list() to take a snapshot - decompose() modifies the tree during iteration
+        # Critical elements that should never be removed even if they match patterns
+        protected_tags = {"html", "body", "article", "main"}
         for element in list(soup.find_all(True)):
             # Skip elements already removed (orphaned when parent was decomposed)
             if element.parent is None:
                 continue
+            # Never remove critical structural elements
+            if element.name in protected_tags:
+                continue
             if _is_non_content_element(element):
                 element.decompose()
 
-        # Try to extract article content
-        content = _extract_article_content(soup)
+        # Fall back to largest text block
+        content = _find_largest_text_block(soup)
 
-        # Fallback to largest text block
-        if not content:
-            logger.debug("No article found, falling back to largest text block")
-            content = _find_largest_text_block(soup)
+        if content:
+            content = _clean_text(content)
+            logger.info(
+                f"Extracted {len(content)} chars from text block (parser={parser})"
+            )
+            return content, title
 
-        if not content:
-            raise ContentExtractionError("No readable content found in page")
-
-        # Clean up whitespace
-        content = _clean_text(content)
-
-        logger.info(f"Extracted {len(content)} characters of content")
-        return content, title
+        # No content found with this parser
+        return None, title
 
     except Exception as e:
         if isinstance(e, ContentExtractionError):

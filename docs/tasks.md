@@ -342,3 +342,50 @@ Previously, running `summarize-links from-note --date 2025-12-12` would create f
 - Duplicate detection now correctly checks for files with the matching date
 
 **Tests:** All 259 existing tests pass
+
+---
+
+## 2025-12-16: Fix content extraction errors for multiple sites
+
+**Goal:** Fix "No readable content found in page" errors occurring on various websites including rivercottage.net, blogspot.com, infoworld.com, and others.
+
+**Root Causes Identified:**
+
+1. **Body element being removed** - Sites with CSS framework classes like `understrap-no-sidebar` were matching the `\bsidebar\b` pattern, causing the entire `<body>` element to be removed.
+
+2. **Content inside nav/header elements** - Some sites (like infoworld.com) wrap their `<article>` content inside `<header>` or `<nav>` elements. Removing these parent elements first destroyed the content.
+
+3. **Malformed HTML** - Blogspot/Blogger pages have HTML that the `lxml` parser can't handle correctly, resulting in 0 characters of body text.
+
+**Changes in `summarize_links/extract.py`:**
+
+### Fix 1: Protected Critical Elements
+- Added `protected_tags = {"html", "body", "article", "main"}` set
+- These elements are never removed even if they match non-content patterns
+- Prevents false positives from CSS framework class names
+
+### Fix 2: Extract Article Content Before Cleanup
+- Moved `_extract_article_content()` call to happen BEFORE removing nav/header/footer elements
+- If article content is found, return it immediately without aggressive cleanup
+- Only perform cleanup when falling back to largest text block extraction
+
+### Fix 3: Parser Fallback
+- Refactored `extract_readable_content()` to try multiple parsers
+- New `_extract_with_parser()` helper function handles extraction with a specific parser
+- Tries `lxml` first (faster), falls back to `html5lib` if no content found
+- Added `html5lib` as a project dependency
+
+**Results:**
+| URL | Before | After |
+|-----|--------|-------|
+| rivercottage.net/recipes/* | ❌ Error | ✅ Works |
+| infoworld.com | ❌ Error | ✅ Works |
+| klaraslife.com | ❌ Error | ✅ Works |
+| dev.to | ✅ Works | ✅ Works |
+| redmonk.com | ✅ Works | ✅ Works |
+| blogspot.com | ❌ Error | ✅ Works |
+| danfu.org | ❌ Error | ❌ JS-rendered* |
+
+*danfu.org uses client-side JavaScript to fetch and render Markdown content. This requires a headless browser to extract and is not fixable with the current approach.
+
+**Tests:** All 259 tests pass
