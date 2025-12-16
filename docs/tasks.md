@@ -305,3 +305,40 @@ Total: 3 notes with 10 URLs
   - `TestCmdList::test_list_with_daily_notes_folder` - Subfolder test
 
 Total tests: 257
+
+---
+
+## 2025-12-16: Use daily note date for summary filenames
+
+**Goal:** When generating summaries from a daily note, use the date from the daily note in the summary filename instead of the current date.
+
+**Problem:**
+Previously, running `summarize-links from-note --date 2025-12-12` would create files named `2025-12-16-slug.md` (today's date) instead of `2025-12-12-slug.md` (the daily note's date).
+
+**Changes:**
+
+### `summarize_links/cli.py`
+- Added `source_date` parameter to `_process_url()`:
+  - Passes date to `summary_exists()` for correct duplicate detection
+  - Passes date to `write_summary_note()` for correct filename
+  - Passes date to `write_stub_note()` for error stubs
+
+- Added `source_date` parameter to `_process_url_with_metadata()`:
+  - Passes date to `summary_exists()` for correct duplicate detection
+  - Passes date to `write_summary_note_with_metadata()` for correct filename
+  - Passes date to `write_stub_note()` for error stubs
+
+- Added `source_date` parameter to `_process_urls_with_metadata()`:
+  - Accepts the date and passes it through to `_process_url_with_metadata()`
+
+- Updated `cmd_from_note()`:
+  - Converts the parsed date to a `datetime` object
+  - Passes `source_date` to `_process_urls_with_metadata()`
+
+**Behavior:**
+- `from-note --date 2025-12-12` creates files like `2025-12-12-slug.md`
+- `from-note` (no date) uses today's date for both note lookup and filename
+- `urls` command still uses today's date (no daily note context)
+- Duplicate detection now correctly checks for files with the matching date
+
+**Tests:** All 259 existing tests pass

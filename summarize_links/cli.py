@@ -168,6 +168,7 @@ def _process_url(
     progress: Progress | None = None,
     task_id: TaskID | None = None,
     daily_note_filename: str | None = None,
+    source_date: datetime | None = None,
 ) -> tuple[bool, str]:
     """
     Process a single URL: fetch, extract, summarize, write.
@@ -179,6 +180,7 @@ def _process_url(
         progress: Optional progress instance for updates.
         task_id: Optional task ID for progress updates.
         daily_note_filename: Optional filename of source daily note for back-linking.
+        source_date: Optional date from the source daily note (for filename).
 
     Returns:
         Tuple of (success, message).
@@ -189,7 +191,7 @@ def _process_url(
     slug = slug_from_url(url)
 
     # Check if summary already exists (skip check if force is enabled)
-    if not config.force and summary_exists(config.vault_path, config.out_folder, url):
+    if not config.force and summary_exists(config.vault_path, config.out_folder, url, source_date):
         return True, f"Skipped (exists): {slug}"
 
     if config.dry_run:
@@ -216,6 +218,7 @@ def _process_url(
             out_folder=config.out_folder,
             url=url,
             content=summary,
+            date=source_date,
             overwrite=config.force,
         )
 
@@ -239,6 +242,7 @@ def _process_url(
                 out_folder=config.out_folder,
                 url=url,
                 reason=f"Failed to fetch: {e}",
+                date=source_date,
             )
         return False, f"Fetch error: {url}"
 
@@ -250,6 +254,7 @@ def _process_url(
                 out_folder=config.out_folder,
                 url=url,
                 reason=f"Failed to extract content: {e}",
+                date=source_date,
             )
         return False, f"Extraction error: {url}"
 
@@ -261,6 +266,7 @@ def _process_url(
                 out_folder=config.out_folder,
                 url=url,
                 reason="Rate limited - try again later",
+                date=source_date,
             )
         return False, f"Rate limited: {url}"
 
@@ -272,6 +278,7 @@ def _process_url(
                 out_folder=config.out_folder,
                 url=url,
                 reason=f"API error: {e}",
+                date=source_date,
             )
         return False, f"API error: {url}"
 
@@ -283,6 +290,7 @@ def _process_url_with_metadata(
     progress: Progress | None = None,
     task_id: TaskID | None = None,
     daily_note_filename: str | None = None,
+    source_date: datetime | None = None,
 ) -> tuple[bool, str, bool]:
     """
     Process a single URL with full metadata extraction and enriched frontmatter.
@@ -297,6 +305,7 @@ def _process_url_with_metadata(
         progress: Optional progress instance for updates.
         task_id: Optional task ID for progress updates.
         daily_note_filename: Optional filename of source daily note for back-linking.
+        source_date: Optional date from the source daily note (for filename).
 
     Returns:
         Tuple of (success, message, should_delete_source).
@@ -312,7 +321,7 @@ def _process_url_with_metadata(
     # Check if summary already exists (skip check if force is enabled)
     # summary_exists returns False for mocked/error stubs, so they get reprocessed
     existing_summary_complete = summary_exists(
-        config.vault_path, config.out_folder, url
+        config.vault_path, config.out_folder, url, source_date
     )
     if not config.force and existing_summary_complete:
         return True, f"Skipped (exists): {slug}", False
@@ -352,6 +361,7 @@ def _process_url_with_metadata(
             summary_result=summary_result,
             page_metadata=page_metadata,
             user_tags=url_context.tags,
+            date=source_date,
             source_note=daily_note_filename,
             default_tags=config.default_tags,
             overwrite=needs_overwrite,
@@ -381,6 +391,7 @@ def _process_url_with_metadata(
                 out_folder=config.out_folder,
                 url=url,
                 reason=f"Failed to fetch: {e}",
+                date=source_date,
             )
         return False, f"Fetch error: {url}", False
 
@@ -392,6 +403,7 @@ def _process_url_with_metadata(
                 out_folder=config.out_folder,
                 url=url,
                 reason=f"Failed to extract content: {e}",
+                date=source_date,
             )
         return False, f"Extraction error: {url}", False
 
@@ -403,6 +415,7 @@ def _process_url_with_metadata(
                 out_folder=config.out_folder,
                 url=url,
                 reason="Rate limited - try again later",
+                date=source_date,
             )
         return False, f"Rate limited: {url}", False
 
@@ -414,6 +427,7 @@ def _process_url_with_metadata(
                 out_folder=config.out_folder,
                 url=url,
                 reason=f"API error: {e}",
+                date=source_date,
             )
         return False, f"API error: {url}", False
 
@@ -472,7 +486,11 @@ def cmd_from_note(config: Config, date_str: str | None = None) -> int:
         console.print(f"[green]Found {len(url_contexts)} URLs to process[/]")
 
     # Process URLs with rich metadata pipeline
-    return _process_urls_with_metadata(url_contexts, config, daily_note_filename=note_filename)
+    # Convert date to datetime for the processing functions
+    source_datetime = datetime.combine(date, datetime.min.time())
+    return _process_urls_with_metadata(
+        url_contexts, config, daily_note_filename=note_filename, source_date=source_datetime
+    )
 
 
 def cmd_list(config: Config) -> int:
@@ -599,6 +617,7 @@ def _process_urls_with_metadata(
     url_contexts: list[UrlWithContext],
     config: Config,
     daily_note_filename: str | None = None,
+    source_date: datetime | None = None,
 ) -> int:
     """
     Process a list of URLs with full metadata extraction.
@@ -607,6 +626,7 @@ def _process_urls_with_metadata(
         url_contexts: URLs with context (user tags, surrounding text).
         config: Application configuration.
         daily_note_filename: Optional filename of source daily note for back-linking.
+        source_date: Optional date from the source daily note (for filename).
 
     Returns:
         Exit code.
@@ -637,7 +657,7 @@ def _process_urls_with_metadata(
 
         for url_context in url_contexts:
             success, message, should_delete = _process_url_with_metadata(
-                url_context, config, client, progress, task, daily_note_filename
+                url_context, config, client, progress, task, daily_note_filename, source_date
             )
             results.append((success, message))
 
