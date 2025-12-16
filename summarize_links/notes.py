@@ -230,7 +230,9 @@ def summary_exists(
     date: datetime | None = None,
 ) -> bool:
     """
-    Check if a summary note already exists for a URL.
+    Check if a successful summary note already exists for a URL.
+
+    Returns False for error/stub notes (status: error) so they can be retried.
 
     Args:
         vault_path: Path to the Obsidian vault root.
@@ -239,10 +241,29 @@ def summary_exists(
         date: Date for the summary.
 
     Returns:
-        True if summary file exists, False otherwise.
+        True if a successful summary file exists, False otherwise.
     """
     filepath = get_summary_filepath(vault_path, out_folder, url, date)
-    return filepath.exists()
+
+    if not filepath.exists():
+        return False
+
+    # Check if it's an error stub that should be retried
+    try:
+        content = filepath.read_text(encoding="utf-8")
+        # Check for error status in frontmatter
+        if content.startswith("---"):
+            # Find end of frontmatter
+            end_idx = content.find("---", 3)
+            if end_idx != -1:
+                frontmatter = content[3:end_idx]
+                if "status: error" in frontmatter:
+                    logger.debug(f"Found error stub, will retry: {filepath.name}")
+                    return False
+    except OSError:
+        pass  # If we can't read it, assume it exists
+
+    return True
 
 
 def write_summary_note(
@@ -253,6 +274,7 @@ def write_summary_note(
     date: datetime | None = None,
     source_note: str | None = None,
     overwrite: bool = False,
+    status: str = "success",
 ) -> Path:
     """
     Write a summary note to the vault.
@@ -268,6 +290,7 @@ def write_summary_note(
         date: Date for the summary (defaults to today).
         source_note: Name of the source daily note (for backlink).
         overwrite: If True, overwrite existing file; if False, skip.
+        status: Status of the summary ("success" or "error").
 
     Returns:
         Path to the written file.
@@ -298,6 +321,7 @@ def write_summary_note(
         "---",
         f"source: {url}",
         f"date: {date_str}",
+        f"status: {status}",
     ]
 
     if source_note:
@@ -332,6 +356,7 @@ def write_stub_note(
     Write a stub note for a URL that couldn't be processed.
 
     Used when rate limiting or errors prevent full summarization.
+    These notes are marked with status: error so they can be retried.
 
     Args:
         vault_path: Path to the Obsidian vault root.
@@ -365,4 +390,5 @@ def write_stub_note(
         date=date,
         source_note=source_note,
         overwrite=True,  # Always overwrite stubs
+        status="error",  # Mark as error so it can be retried
     )

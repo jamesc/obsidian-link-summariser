@@ -52,22 +52,25 @@ ELEMENTS_TO_REMOVE = [
 ]
 
 # Class/ID patterns that typically contain non-content
+# Use word boundaries or more specific patterns to avoid false positives
 NON_CONTENT_PATTERNS = [
-    r"nav",
-    r"menu",
-    r"sidebar",
-    r"footer",
-    r"header",
-    r"comment",
-    r"ad(vert)?",
-    r"social",
-    r"share",
-    r"related",
-    r"recommend",
-    r"popup",
-    r"modal",
-    r"cookie",
-    r"banner",
+    r"\bnav\b",
+    r"\bmenu\b",
+    r"\bsidebar\b",
+    r"\bfooter\b",
+    r"\bheader\b",
+    r"\bcomment",
+    r"\badvert",
+    r"\bad-",
+    r"\bads\b",
+    r"\bsocial\b",
+    r"\bshare\b",
+    r"\brelated\b",
+    r"\brecommend",
+    r"\bpopup\b",
+    r"\bmodal\b",
+    r"\bcookie",
+    r"\bbanner\b",
 ]
 
 
@@ -246,7 +249,11 @@ def extract_readable_content(html: str) -> tuple[str, str | None]:
                 element.decompose()
 
         # Remove elements with non-content class/id patterns
-        for element in soup.find_all(True):
+        # Use list() to take a snapshot - decompose() modifies the tree during iteration
+        for element in list(soup.find_all(True)):
+            # Skip elements already removed (orphaned when parent was decomposed)
+            if element.parent is None:
+                continue
             if _is_non_content_element(element):
                 element.decompose()
 
