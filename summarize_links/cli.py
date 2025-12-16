@@ -319,6 +319,9 @@ def _process_url_with_metadata(
             title=page_metadata.title,
         )
 
+        # Determine status based on mock mode
+        status = "mocked" if config.mock_mode else "success"
+
         # Write the summary note with rich frontmatter
         summary_path = write_summary_note_with_metadata(
             vault_path=config.vault_path,
@@ -330,6 +333,7 @@ def _process_url_with_metadata(
             source_note=daily_note_filename,
             default_tags=config.default_tags,
             overwrite=config.force,
+            status=status,
         )
 
         # Add link to daily note if we have the source note filename

@@ -328,10 +328,10 @@ def summary_exists(
     if not filepath.exists():
         return False
 
-    # Check if it's an error stub that should be retried
+    # Check if it's an error stub or mocked summary that should be retried
     try:
         content = filepath.read_text(encoding="utf-8")
-        # Check for error status in frontmatter
+        # Check for error/mocked status in frontmatter
         if content.startswith("---"):
             # Find end of frontmatter
             end_idx = content.find("---", 3)
@@ -339,6 +339,9 @@ def summary_exists(
                 frontmatter = content[3:end_idx]
                 if "status: error" in frontmatter:
                     logger.debug(f"Found error stub, will retry: {filepath.name}")
+                    return False
+                if "status: mocked" in frontmatter:
+                    logger.debug(f"Found mocked summary, will retry: {filepath.name}")
                     return False
     except OSError:
         pass  # If we can't read it, assume it exists
@@ -576,6 +579,7 @@ def write_summary_note_with_metadata(
     overwrite: bool = False,
     default_tags: list[str] | None = None,
     max_tags: int = 10,
+    status: str = "success",
 ) -> Path:
     """
     Write a summary note with rich frontmatter.
@@ -595,6 +599,7 @@ def write_summary_note_with_metadata(
         overwrite: If True, overwrite existing file.
         default_tags: Tags to always include.
         max_tags: Maximum number of tags.
+        status: Status to write in frontmatter ('success', 'mocked', 'error').
 
     Returns:
         Path to the written file.
@@ -627,7 +632,7 @@ def write_summary_note_with_metadata(
         user_tags=user_tags,
         date=date,
         source_note=source_note,
-        status="success",
+        status=status,
         default_tags=default_tags,
         max_tags=max_tags,
     )

@@ -237,6 +237,39 @@ class TestSummaryExists:
         result = summary_exists(tmp_path, "Summaries", "https://example.com/test", date)
         assert result is True
 
+    def test_error_stub_can_be_retried(self, tmp_path: Path) -> None:
+        """Should return False for error stubs to allow retry."""
+        summaries = tmp_path / "Summaries"
+        summaries.mkdir()
+        date = datetime(2025, 12, 16)
+        filepath = get_summary_filepath(tmp_path, "Summaries", "https://example.com/error", date)
+        filepath.write_text("---\nstatus: error\n---\nError stub")
+
+        result = summary_exists(tmp_path, "Summaries", "https://example.com/error", date)
+        assert result is False
+
+    def test_mocked_summary_can_be_retried(self, tmp_path: Path) -> None:
+        """Should return False for mocked summaries to allow regeneration."""
+        summaries = tmp_path / "Summaries"
+        summaries.mkdir()
+        date = datetime(2025, 12, 16)
+        filepath = get_summary_filepath(tmp_path, "Summaries", "https://example.com/mock", date)
+        filepath.write_text("---\nstatus: mocked\n---\nMock summary")
+
+        result = summary_exists(tmp_path, "Summaries", "https://example.com/mock", date)
+        assert result is False
+
+    def test_success_summary_not_retried(self, tmp_path: Path) -> None:
+        """Should return True for successful summaries."""
+        summaries = tmp_path / "Summaries"
+        summaries.mkdir()
+        date = datetime(2025, 12, 16)
+        filepath = get_summary_filepath(tmp_path, "Summaries", "https://example.com/success", date)
+        filepath.write_text("---\nstatus: success\n---\nReal summary")
+
+        result = summary_exists(tmp_path, "Summaries", "https://example.com/success", date)
+        assert result is True
+
 
 class TestWriteSummaryNote:
     """Tests for writing summary notes."""
