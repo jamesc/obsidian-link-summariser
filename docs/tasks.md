@@ -4,6 +4,65 @@ This document tracks completed development tasks for the Obsidian Link Summarize
 
 ---
 
+## 2025-12-16: URL tracking parameter cleanup
+
+**Goal:** Remove tracking parameters (UTM tags, analytics IDs) from URLs while preserving meaningful query strings.
+
+**Changes:**
+- Added `clean_url()` function in `summarize_links/notes.py`
+- Defined `TRACKING_PARAMS` set: utm_*, ref, fbclid, gclid, m, st, etc.
+- Defined `MEANINGFUL_PARAMS` dict for domain-specific params to preserve (YouTube v/t/list, GitHub tab/comments)
+- Defined `NOISE_FRAGMENTS` set: #atom-everything, #rss
+- Integrated URL cleaning into `extract_urls()` and `extract_urls_with_context()`
+
+**Behavior:**
+- Strips all tracking parameters from URLs automatically
+- Preserves meaningful params (e.g., `?v=xxx` on youtube.com, `?tab=` on github.com)
+- Removes noise URL fragments from RSS feeds
+- Cleaned 10 existing summary files with tracking URLs
+
+**Tests:** Added `TestCleanUrl` class with 11 tests covering various URL patterns
+
+---
+
+## 2025-12-16: Markdown file URL support
+
+**Goal:** Support direct `.md` file URLs (e.g., GitHub raw markdown, personal sites with .md pages).
+
+**Changes:**
+- Added `fetch_content()` function in `summarize_links/extract.py` that returns (content, content_type)
+- Added `_extract_markdown_metadata()` to parse title/author from markdown frontmatter or H1
+- Added `_clean_markdown()` to remove image tags from markdown content
+- Updated `extract_readable_content()` to handle markdown content directly
+
+**Behavior:**
+- Detects .md URLs and text/markdown content-type
+- Extracts title from YAML frontmatter or first H1 heading
+- Passes cleaned markdown directly to Gemini (no HTML parsing needed)
+
+---
+
+## 2025-12-16: Improved content extraction with parser fallback
+
+**Goal:** Handle malformed HTML (especially Blogspot) that causes lxml parser to fail.
+
+**Changes:**
+- Added html5lib as fallback parser in `extract.py`
+- Created `_extract_with_parser()` helper for parser-specific extraction
+- Try lxml first (fast), fall back to html5lib if no content extracted
+- Added `protected_tags` set to never remove critical elements (body, html, article, main)
+- Extract article/main content BEFORE removing nav/header/footer elements
+
+**Behavior:**
+- lxml handles well-formed HTML quickly
+- html5lib handles malformed Blogspot/legacy pages
+- Protected tags prevent accidental removal of body element
+- Pre-extraction of article content preserves content nested in nav/header
+
+**Tests:** All 270 tests passing
+
+---
+
 ## 2025-12-16: Mark mock summaries for later regeneration
 
 **Goal:** When generating summaries in mock mode, mark them with `status: mocked` so they can be automatically regenerated when running again without mock mode.

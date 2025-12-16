@@ -13,6 +13,7 @@ from summarize_links.notes import (
     _escape_yaml_string,
     add_summary_link_to_daily_note,
     build_frontmatter,
+    clean_url,
     extract_hashtags_from_line,
     extract_urls,
     extract_urls_with_context,
@@ -142,6 +143,66 @@ class TestExtractUrls:
         """Should return empty list for content without URLs."""
         urls = extract_urls("No URLs here, just text.")
         assert urls == []
+
+
+class TestCleanUrl:
+    """Tests for URL cleaning (stripping tracking params)."""
+
+    def test_strip_utm_params(self) -> None:
+        """Should strip UTM tracking parameters."""
+        url = "https://example.com/article?utm_source=newsletter&utm_medium=email"
+        assert clean_url(url) == "https://example.com/article"
+
+    def test_strip_multiple_tracking_params(self) -> None:
+        """Should strip multiple tracking parameters."""
+        url = "https://example.com/page?utm_source=tldr&ref=twitter&m=1"
+        assert clean_url(url) == "https://example.com/page"
+
+    def test_preserve_meaningful_params(self) -> None:
+        """Should preserve non-tracking query parameters."""
+        url = "https://example.com/search?q=test&page=2"
+        assert clean_url(url) == "https://example.com/search?q=test&page=2"
+
+    def test_preserve_youtube_video_id(self) -> None:
+        """Should preserve YouTube video ID parameter."""
+        url = "https://www.youtube.com/watch?v=abc123&utm_source=share"
+        assert clean_url(url) == "https://www.youtube.com/watch?v=abc123"
+
+    def test_preserve_github_tab_param(self) -> None:
+        """Should preserve GitHub tab parameter."""
+        url = "https://github.com/user/repo?tab=readme-ov-file"
+        assert clean_url(url) == "https://github.com/user/repo?tab=readme-ov-file"
+
+    def test_preserve_github_issue_comment_fragment(self) -> None:
+        """Should preserve GitHub issue comment fragments."""
+        url = "https://github.com/org/repo/issues/123#issuecomment-456"
+        assert clean_url(url) == "https://github.com/org/repo/issues/123#issuecomment-456"
+
+    def test_strip_rss_fragment(self) -> None:
+        """Should strip RSS feed noise fragments."""
+        url = "https://example.com/post/#atom-everything"
+        assert clean_url(url) == "https://example.com/post/"
+
+    def test_strip_blogspot_mobile_param(self) -> None:
+        """Should strip Blogspot mobile parameter."""
+        url = "https://blog.blogspot.com/2025/01/post.html?m=1"
+        assert clean_url(url) == "https://blog.blogspot.com/2025/01/post.html"
+
+    def test_preserve_meaningful_fragment(self) -> None:
+        """Should preserve meaningful fragments with numbers."""
+        url = "https://docs.example.com/guide#section-3"
+        assert clean_url(url) == "https://docs.example.com/guide#section-3"
+
+    def test_handle_invalid_url_gracefully(self) -> None:
+        """Should return original URL if parsing fails."""
+        url = "not-a-valid-url"
+        assert clean_url(url) == "not-a-valid-url"
+
+    def test_extract_urls_cleans_tracking(self) -> None:
+        """Integration: extract_urls should clean tracking params."""
+        content = "Check https://example.com/page?utm_source=test"
+        urls = extract_urls(content)
+        assert urls[0] == "https://example.com/page"
 
 
 class TestGenerateSlug:

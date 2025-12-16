@@ -77,6 +77,57 @@ NON_CONTENT_PATTERNS = [
 ]
 
 
+def fetch_content(url: str, timeout: int = REQUEST_TIMEOUT) -> tuple[str, str]:
+    """
+    Fetch content from a URL and return content with its type.
+
+    Args:
+        url: URL to fetch.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        Tuple of (content, content_type) where content_type is 'html', 'markdown', or 'text'.
+
+    Raises:
+        ContentFetchError: If the request fails.
+    """
+    logger.debug(f"Fetching URL: {url}")
+
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,text/markdown,text/plain;q=0.8,*/*;q=0.7",
+        "Accept-Language": "en-US,en;q=0.5",
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=timeout)
+        response.raise_for_status()
+
+        # Determine content type
+        content_type_header = response.headers.get("Content-Type", "").lower()
+
+        # Check for markdown (by content-type or URL extension)
+        if "markdown" in content_type_header or url.lower().endswith(".md"):
+            logger.info(f"Fetched {len(response.text)} chars of markdown from {url}")
+            return response.text, "markdown"
+
+        # Check for HTML or text
+        if "html" in content_type_header or "text" in content_type_header:
+            logger.info(f"Fetched {len(response.text)} characters from {url}")
+            return response.text, "html"
+
+        raise ContentFetchError(f"URL returned unsupported content type: {content_type_header}")
+
+    except requests.exceptions.Timeout:
+        raise ContentFetchError(f"Request timed out after {timeout}s: {url}") from None
+    except requests.exceptions.ConnectionError as e:
+        raise ContentFetchError(f"Connection error for {url}: {e}") from e
+    except requests.exceptions.HTTPError as e:
+        raise ContentFetchError(f"HTTP error {e.response.status_code} for {url}") from e
+    except requests.exceptions.RequestException as e:
+        raise ContentFetchError(f"Request failed for {url}: {e}") from e
+
+
 def fetch_html(url: str, timeout: int = REQUEST_TIMEOUT) -> str:
     """
     Fetch HTML content from a URL.
@@ -91,34 +142,8 @@ def fetch_html(url: str, timeout: int = REQUEST_TIMEOUT) -> str:
     Raises:
         ContentFetchError: If the request fails.
     """
-    logger.debug(f"Fetching URL: {url}")
-
-    headers = {
-        "User-Agent": USER_AGENT,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-    }
-
-    try:
-        response = requests.get(url, headers=headers, timeout=timeout)
-        response.raise_for_status()
-
-        # Check content type is HTML
-        content_type = response.headers.get("Content-Type", "")
-        if "html" not in content_type.lower() and "text" not in content_type.lower():
-            raise ContentFetchError(f"URL returned non-HTML content type: {content_type}")
-
-        logger.info(f"Fetched {len(response.text)} characters from {url}")
-        return response.text
-
-    except requests.exceptions.Timeout:
-        raise ContentFetchError(f"Request timed out after {timeout}s: {url}") from None
-    except requests.exceptions.ConnectionError as e:
-        raise ContentFetchError(f"Connection error for {url}: {e}") from e
-    except requests.exceptions.HTTPError as e:
-        raise ContentFetchError(f"HTTP error {e.response.status_code} for {url}") from e
-    except requests.exceptions.RequestException as e:
-        raise ContentFetchError(f"Request failed for {url}: {e}") from e
+    content, _ = fetch_content(url, timeout)
+    return content
 
 
 def _is_non_content_element(element: Tag) -> bool:
@@ -671,6 +696,7 @@ def fetch_and_extract_metadata(url: str) -> PageMetadata:
 
     This is the enhanced entry point that returns structured metadata.
     Content is automatically truncated to MAX_CONTENT_LENGTH.
+    Supports both HTML pages and raw Markdown files.
 
     Args:
         url: URL to fetch and extract from.
@@ -682,10 +708,102 @@ def fetch_and_extract_metadata(url: str) -> PageMetadata:
         ContentFetchError: If fetching fails.
         ContentExtractionError: If extraction fails.
     """
-    html = fetch_html(url)
-    metadata = extract_page_metadata(html, url)
+    content, content_type = fetch_content(url)
+
+    if content_type == "markdown":
+        # For markdown files, extract metadata from the content itself
+        metadata = _extract_markdown_metadata(content, url)
+    else:
+        # For HTML, use the full extraction pipeline
+        metadata = extract_page_metadata(content, url)
 
     # Truncate content
     metadata.content = truncate_content(metadata.content)
 
     return metadata
+
+
+def _extract_markdown_metadata(content: str, url: str) -> PageMetadata:
+    """
+    Extract metadata from a raw Markdown file.
+
+    Attempts to extract title from first H1 heading.
+    Returns the markdown content as-is (already readable).
+
+    Args:
+        content: Raw markdown content.
+        url: Source URL for domain extraction.
+
+    Returns:
+        PageMetadata object.
+    """
+    import re
+
+    # Extract domain from URL
+    parsed_url = urlparse(url)
+    domain = parsed_url.netloc.replace("www.", "")
+
+    # Try to extract title from first H1 heading
+    title = "Untitled"
+    h1_match = re.search(r'^#\s+(.+)$', content, re.MULTILINE)
+    if h1_match:
+        title = h1_match.group(1).strip()
+
+    # Try to extract author from italic line near the top (common pattern)
+    # Look for short italic lines that look like author attribution
+    author = None
+    # Find all italic lines in first 2000 chars
+    italic_matches = re.findall(r'^_([^_]+)_$', content[:2000], re.MULTILINE)
+    for italic_text in italic_matches:
+        # Skip long lines (likely descriptions)
+        if len(italic_text) > 100:
+            continue
+        # If it contains a comma and looks like "Name, Date"
+        if ',' in italic_text:
+            parts = italic_text.split(',')
+            # First part should be short (name) and second part looks like a date
+            if len(parts[0].strip()) < 50:
+                author = parts[0].strip()
+                break
+
+    # Clean up the content (remove image tags, etc.)
+    cleaned_content = _clean_markdown(content)
+
+    logger.info(f"Extracted metadata from markdown: title='{title}', author={author}")
+
+    return PageMetadata(
+        title=title,
+        domain=domain,
+        content=cleaned_content,
+        author=author,
+        description=None,
+        published_date=None,
+        site_name=None,
+        article_tags=[],
+    )
+
+
+def _clean_markdown(content: str) -> str:
+    """
+    Clean markdown content for summarization.
+
+    Removes image tags and other non-text elements.
+
+    Args:
+        content: Raw markdown content.
+
+    Returns:
+        Cleaned markdown text.
+    """
+    import re
+
+    # Remove HTML image tags
+    content = re.sub(r'<img[^>]*>', '', content)
+
+    # Remove markdown image syntax
+    content = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', content)
+
+    # Clean up multiple blank lines
+    content = re.sub(r'\n{3,}', '\n\n', content)
+
+    return content.strip()

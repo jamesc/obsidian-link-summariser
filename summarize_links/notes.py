@@ -13,7 +13,7 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from summarize_links.config import MAX_SLUG_LENGTH
 from summarize_links.exceptions import NoteReadError, NoteWriteError, URLExtractionError
@@ -51,6 +51,126 @@ SLUG_REPLACEMENTS = {
     "#": "",
     "%": "",
 }
+
+# ----- URL Cleaning -----
+# Query parameters to strip (tracking, analytics, etc.)
+TRACKING_PARAMS = {
+    # UTM tracking (Google Analytics)
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_content",
+    "utm_term",
+    # Social/referrer tracking
+    "ref",
+    "ref_src",
+    "ref_url",
+    "source",
+    "fbclid",  # Facebook
+    "gclid",  # Google Ads
+    "msclkid",  # Microsoft Ads
+    "twclid",  # Twitter
+    "igshid",  # Instagram
+    # Mobile/app tracking
+    "m",  # Blogspot mobile
+    # Session/paywall tokens
+    "st",
+    "token",
+    # Misc
+    "share",
+    "s",  # Some sharing params
+}
+
+# Fragments to strip (RSS noise, etc.)
+NOISE_FRAGMENTS = {
+    "atom-everything",
+    "rss",
+}
+
+# Domains where certain params are meaningful and should be kept
+MEANINGFUL_PARAMS = {
+    "youtube.com": {"v", "t", "list", "index"},
+    "youtu.be": {"t"},
+    "github.com": {"tab", "q"},
+    "twitter.com": {"s"},  # Tweet ID context
+    "x.com": {"s"},
+}
+
+
+def clean_url(url: str) -> str:
+    """
+    Clean tracking parameters and noise from a URL.
+
+    Removes:
+    - UTM and other tracking parameters
+    - Mobile/app parameters
+    - Session tokens
+    - RSS feed fragment noise
+
+    Preserves:
+    - Essential parameters (YouTube video ID, GitHub tab, etc.)
+    - Meaningful fragments (GitHub issue comments, etc.)
+
+    Args:
+        url: URL to clean.
+
+    Returns:
+        Cleaned URL with tracking removed.
+    """
+    try:
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower().replace("www.", "")
+
+        # Get meaningful params for this domain
+        keep_params = MEANINGFUL_PARAMS.get(domain, set())
+
+        # Parse and filter query parameters
+        if parsed.query:
+            params = parse_qs(parsed.query, keep_blank_values=True)
+            filtered_params = {}
+
+            for key, values in params.items():
+                key_lower = key.lower()
+                # Keep if it's meaningful for this domain OR not a tracking param
+                if key_lower in keep_params or key_lower not in TRACKING_PARAMS:
+                    filtered_params[key] = values
+
+            # Rebuild query string
+            new_query = urlencode(filtered_params, doseq=True) if filtered_params else ""
+        else:
+            new_query = ""
+
+        # Filter fragment
+        new_fragment = parsed.fragment
+        if new_fragment:
+            fragment_lower = new_fragment.lower()
+            # Strip noise fragments, but keep meaningful ones (like GitHub comments)
+            if fragment_lower in NOISE_FRAGMENTS:
+                new_fragment = ""
+            # Keep fragments that look like anchors/comments (contain numbers or specific patterns)
+            elif not any(c.isdigit() for c in new_fragment) and "comment" not in fragment_lower:
+                # Generic fragment without numbers - might be noise
+                # Keep it for now (could be a section anchor)
+                pass
+
+        # Rebuild URL
+        cleaned = urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            new_query,
+            new_fragment,
+        ))
+
+        if cleaned != url:
+            logger.debug(f"Cleaned URL: {url} -> {cleaned}")
+
+        return cleaned
+
+    except Exception as e:
+        logger.warning(f"Failed to clean URL {url}: {e}")
+        return url  # Return original on error
 
 
 def find_daily_notes_with_urls(
@@ -156,12 +276,13 @@ def extract_urls(content: str) -> list[str]:
     - Bare URLs: https://example.com
 
     Deduplicates URLs while preserving order of first occurrence.
+    Cleans tracking parameters from URLs.
 
     Args:
         content: Markdown content to parse.
 
     Returns:
-        List of unique URLs in order of first appearance.
+        List of unique cleaned URLs in order of first appearance.
 
     Raises:
         URLExtractionError: If URL extraction fails unexpectedly.
@@ -175,9 +296,16 @@ def extract_urls(content: str) -> list[str]:
             # Group 2 is URL from Markdown link, Group 3 is bare URL
             url = match.group(2) or match.group(3)
 
-            if url and url not in seen:
-                # Clean up URL (remove trailing punctuation that might have been captured)
-                url = url.rstrip(".,;:")
+            if not url:
+                continue
+
+            # Clean up URL (remove trailing punctuation that might have been captured)
+            url = url.rstrip(".,;:")
+
+            # Clean tracking parameters
+            url = clean_url(url)
+
+            if url not in seen:
                 urls.append(url)
                 seen.add(url)
                 logger.debug(f"Extracted URL: {url}")
@@ -212,11 +340,12 @@ def extract_urls_with_context(content: str) -> list[UrlWithContext]:
     Extract URLs from Markdown content with surrounding context.
 
     For each URL found, captures:
-    - The URL itself
+    - The URL itself (cleaned of tracking params)
     - Any hashtags on the same line (user's categorization)
     - The full line text for reference
 
     Deduplicates URLs while preserving order of first occurrence.
+    Cleans tracking parameters from URLs.
 
     Args:
         content: Markdown content to parse.
@@ -238,11 +367,18 @@ def extract_urls_with_context(content: str) -> list[UrlWithContext]:
                 # Group 2 is URL from Markdown link, Group 3 is bare URL
                 url = match.group(2) or match.group(3)
 
-                if not url or url in seen:
+                if not url:
                     continue
 
                 # Clean up URL (remove trailing punctuation)
                 url = url.rstrip(".,;:")
+
+                # Clean tracking parameters
+                url = clean_url(url)
+
+                if url in seen:
+                    continue
+
                 seen.add(url)
 
                 # Extract hashtags from the same line
