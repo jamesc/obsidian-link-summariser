@@ -1,6 +1,8 @@
 
 ## Build Guidelines
 
+- **Never commit secrets**: Always use environment variables and .env files, and only commit an .env.example
+
 - **Comment code**: Add clear, meaningful comments explaining the "why" not just the "what"
   - Module-level docstrings for each file
   - Function/method docstrings with parameters and return values
