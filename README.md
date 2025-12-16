@@ -1,6 +1,6 @@
 # Obsidian Link Summarizer
 
-[![Tests](https://github.com/yourusername/obsidian-link-summariser/actions/workflows/test.yml/badge.svg)](https://github.com/yourusername/obsidian-link-summariser/actions/workflows/test.yml)
+[![Tests](https://github.com/jamesc/obsidian-link-summariser/actions/workflows/test.yml/badge.svg)](https://github.com/jamesc/obsidian-link-summariser/actions/workflows/test.yml)
 
 A lightweight Python CLI tool that reads URLs from Obsidian daily notes, fetches web pages, generates AI summaries using Google's Gemini API, and creates formatted Markdown summary notes in your Obsidian vault.
 
@@ -9,6 +9,8 @@ A lightweight Python CLI tool that reads URLs from Obsidian daily notes, fetches
 - 📝 Extract URLs from Obsidian daily notes (Markdown links and bare URLs)
 - 🤖 Generate AI summaries using Google Gemini Flash (free tier friendly)
 - 📁 Create well-formatted summary notes with frontmatter
+- 🔄 Idempotent - safe to run multiple times (skips existing summaries)
+- ⚠️ Graceful degradation - creates stub notes for failures, continues processing
 - ⌨️ Integrate with Obsidian via Shell Commands plugin
 - 🧪 Mock mode for development/testing without API calls
 
@@ -18,13 +20,13 @@ A lightweight Python CLI tool that reads URLs from Obsidian daily notes, fetches
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) package manager
-- Google AI Studio API key ([get one here](https://aistudio.google.com/apikey))
+- Google AI Studio API key ([get one free](https://aistudio.google.com/apikey))
 
 ### Setup
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/obsidian-link-summariser.git
+git clone https://github.com/jamesc/obsidian-link-summariser.git
 cd obsidian-link-summariser
 
 # Install dependencies with uv
@@ -40,27 +42,94 @@ cp .env.example .env
 ### Basic Commands
 
 ```bash
-# Summarize URLs from a daily note
-summarize-links from-note --vault ~/Notes --note "2025-12-16.md"
+# Summarize URLs from today's daily note
+summarize-links from-note --vault ~/Notes
+
+# Summarize URLs from a specific date's daily note
+summarize-links from-note --vault ~/Notes --date 2025-12-16
 
 # Summarize explicit URLs
-summarize-links urls --vault ~/Notes --url "https://example.com/article"
+summarize-links urls https://example.com/article https://another.com/post --vault ~/Notes
+
+# Limit number of links to process
+summarize-links from-note --vault ~/Notes --max-links 5
 
 # Dry run (see what would happen without making changes)
-summarize-links from-note --vault ~/Notes --note "2025-12-16.md" --dry-run
+summarize-links from-note --vault ~/Notes --dry-run
 
 # Mock mode (for testing, no API calls)
-summarize-links from-note --vault ~/Notes --note "2025-12-16.md" --mock
+summarize-links from-note --vault ~/Notes --mock
+
+# Verbose output for debugging
+summarize-links from-note --vault ~/Notes --verbose
+```
+
+### Command Reference
+
+```
+summarize-links [-h] [-v] [--vault PATH] [--model MODEL] [--mock] [--dry-run] [--max-links N]
+                {from-note,urls} ...
+
+Global Options:
+  -v, --verbose     Enable verbose output
+  --vault PATH      Path to Obsidian vault (overrides config)
+  --model MODEL     Gemini model to use (overrides config)
+  --mock            Use mock Gemini client (no API calls)
+  --dry-run         Show what would be done without making changes
+  --max-links N     Maximum number of links to process
+
+Commands:
+  from-note         Summarize links from a daily note
+    --date DATE     Date of the daily note (YYYY-MM-DD, defaults to today)
+
+  urls              Summarize specific URLs
+    URLS...         One or more URLs to summarize
+```
+
+### Output Format
+
+Summary notes are created in the configured output folder (default: `Summaries/`) with:
+
+- **Filename**: `YYYY-MM-DD-slug.md` (date + URL-derived slug)
+- **Frontmatter**: source URL, date, and backlink to source daily note
+- **Content**: AI-generated Markdown summary
+
+Example output (`2025-12-16-api-pricing.md`):
+
+```markdown
+---
+source: https://ai.google.dev/pricing
+date: 2025-12-16
+from: "[[2025-12-16]]"
+---
+
+## Overview
+
+Google AI provides generous free tier pricing for Gemini models...
+
+## Key Points
+
+- Gemini Flash: 1500 requests/day free
+- ...
 ```
 
 ### Obsidian Integration
 
 1. **Install Shell Commands plugin** in Obsidian → Enable it
 2. **Create a new shell command**:
-   - Working directory: `$SC_WORKSPACE_DIR`
-   - Command: `summarize-links from-note --vault "$SC_WORKSPACE_DIR" --note "$SC_CURRENT_FILE_NAME"`
+   - Command: `summarize-links from-note --vault "{{vault_path}}"`
+   - Or with current date: `summarize-links from-note --vault "{{vault_path}}" --date "{{date:YYYY-MM-DD}}"`
 3. **Assign a hotkey** (e.g., `Ctrl+Alt+S`)
-4. **Usage**: Open a daily note → Press your hotkey → Summaries appear in `Summaries/` folder
+4. **Usage**: Press your hotkey → Summaries appear in `Summaries/` folder
+
+### Error Handling
+
+When a URL fails to process (fetch error, rate limit, etc.), the tool creates a **stub note** with:
+- The original URL
+- The reason for failure
+- A message to retry later
+
+This ensures you don't lose track of links that couldn't be summarized. Running the command again will skip successfully processed URLs and retry failed ones.
 
 ## Configuration
 

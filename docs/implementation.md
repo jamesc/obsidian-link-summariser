@@ -126,19 +126,19 @@
 
 ---
 
-## Phase 8: CLI Entry Point (`cli.py`)
+## Phase 8: CLI Entry Point (`cli.py`) ✅
 **Goal**: Argparse-based command interface
 
-1. Global options and `from-note`/`urls` commands
-2. Rich output with progress indicators
-3. Add `test_cli.py` for argument parsing tests
+1. Global options and `from-note`/`urls` commands ✅
+2. Rich output with progress indicators ✅
+3. Add `test_cli.py` for argument parsing tests ✅
 
 ---
 
 ## Phase 9: Documentation & Polish
 **Goal**: Make it user-ready
 
-1. Complete `README.md` with Obsidian setup guide
+1. Complete `README.md` with Obsidian setup guide ✅
 2. Add inline code documentation
 
 ---
