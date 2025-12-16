@@ -4,6 +4,24 @@ This document tracks completed development tasks for the Obsidian Link Summarize
 
 ---
 
+## 2025-12-16: Mark mock summaries for later regeneration
+
+**Goal:** When generating summaries in mock mode, mark them with `status: mocked` so they can be automatically regenerated when running again without mock mode.
+
+**Changes:**
+- Added `status` parameter to `write_summary_note_with_metadata()` in `summarize_links/notes.py`
+- Updated `_process_url_with_metadata()` in `summarize_links/cli.py` to pass `status="mocked"` when in mock mode
+- Updated `summary_exists()` in `summarize_links/notes.py` to return `False` for mocked summaries (like error stubs)
+
+**Behavior:**
+- `--mock` mode creates summaries with `status: mocked` in frontmatter
+- Running again without `--mock` detects mocked summaries and regenerates them with the real API
+- No need for `--force` flag to replace mocked content
+
+**Tests:** Added 3 tests for mocked/error/success status handling in `TestSummaryExists`
+
+---
+
 ## 2025-12-16: Rich frontmatter with author, tags, and metadata
 
 **Goal:** Generate Obsidian summary notes with comprehensive YAML frontmatter including author, tags from multiple sources, content type, and article metadata.
