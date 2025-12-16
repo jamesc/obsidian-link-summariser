@@ -25,16 +25,18 @@ from summarize_links.exceptions import (
     RateLimitError,
     SummarizerError,
 )
-from summarize_links.extract import fetch_and_extract, truncate_content
+from summarize_links.extract import fetch_and_extract, fetch_and_extract_metadata, truncate_content
 from summarize_links.gemini_client import SummarizerProtocol, create_client
+from summarize_links.models import UrlWithContext
 from summarize_links.notes import (
     add_summary_link_to_daily_note,
-    extract_urls,
+    extract_urls_with_context,
     read_daily_note,
     slug_from_url,
     summary_exists,
     write_stub_note,
     write_summary_note,
+    write_summary_note_with_metadata,
 )
 
 # Module logger
@@ -262,6 +264,131 @@ def _process_url(
         return False, f"API error: {url}"
 
 
+def _process_url_with_metadata(
+    url_context: UrlWithContext,
+    config: Config,
+    client: SummarizerProtocol,
+    progress: Progress | None = None,
+    task_id: TaskID | None = None,
+    daily_note_filename: str | None = None,
+) -> tuple[bool, str]:
+    """
+    Process a single URL with full metadata extraction and enriched frontmatter.
+
+    This version uses the new metadata pipeline to generate rich frontmatter
+    including author, tags from multiple sources, and content type.
+
+    Args:
+        url_context: URL with context (user tags, surrounding text).
+        config: Application configuration.
+        client: Gemini client instance implementing SummarizerProtocol.
+        progress: Optional progress instance for updates.
+        task_id: Optional task ID for progress updates.
+        daily_note_filename: Optional filename of source daily note for back-linking.
+
+    Returns:
+        Tuple of (success, message).
+    """
+    # Vault path must be set (validated in load_config)
+    assert config.vault_path is not None
+
+    url = url_context.url
+    slug = slug_from_url(url)
+
+    # Check if summary already exists (skip check if force is enabled)
+    if not config.force and summary_exists(config.vault_path, config.out_folder, url):
+        return True, f"Skipped (exists): {slug}"
+
+    if config.dry_run:
+        return True, f"Would process: {url} -> {slug}.md"
+
+    try:
+        # Fetch and extract content with metadata
+        if progress and task_id is not None:
+            progress.update(task_id, description=f"[cyan]Fetching: {url[:50]}...")
+
+        page_metadata = fetch_and_extract_metadata(url)
+
+        # Generate summary with structured output
+        if progress and task_id is not None:
+            progress.update(task_id, description=f"[cyan]Summarizing: {slug}...")
+
+        summary_result = client.summarize_with_metadata(
+            content=page_metadata.content,
+            url=url,
+            title=page_metadata.title,
+        )
+
+        # Write the summary note with rich frontmatter
+        summary_path = write_summary_note_with_metadata(
+            vault_path=config.vault_path,
+            out_folder=config.out_folder,
+            url=url,
+            summary_result=summary_result,
+            page_metadata=page_metadata,
+            user_tags=url_context.tags,
+            source_note=daily_note_filename,
+            default_tags=config.default_tags,
+            overwrite=config.force,
+        )
+
+        # Add link to daily note if we have the source note filename
+        if daily_note_filename:
+            add_summary_link_to_daily_note(
+                vault_path=config.vault_path,
+                daily_notes_folder=config.daily_notes_folder,
+                note_filename=daily_note_filename,
+                summary_path=summary_path,
+                url=url,
+            )
+
+        return True, f"Created: {slug}.md"
+
+    except ContentFetchError as e:
+        logger.warning("Failed to fetch %s: %s", url, e)
+        if not config.dry_run:
+            write_stub_note(
+                vault_path=config.vault_path,
+                out_folder=config.out_folder,
+                url=url,
+                reason=f"Failed to fetch: {e}",
+            )
+        return False, f"Fetch error: {url}"
+
+    except ContentExtractionError as e:
+        logger.warning("Failed to extract content from %s: %s", url, e)
+        if not config.dry_run:
+            write_stub_note(
+                vault_path=config.vault_path,
+                out_folder=config.out_folder,
+                url=url,
+                reason=f"Failed to extract content: {e}",
+            )
+        return False, f"Extraction error: {url}"
+
+    except RateLimitError as e:
+        logger.error("Rate limited while processing %s: %s", url, e)
+        if not config.dry_run:
+            write_stub_note(
+                vault_path=config.vault_path,
+                out_folder=config.out_folder,
+                url=url,
+                reason="Rate limited - try again later",
+            )
+        return False, f"Rate limited: {url}"
+
+    except GeminiAPIError as e:
+        logger.error("Gemini API error for %s: %s", url, e)
+        if not config.dry_run:
+            write_stub_note(
+                vault_path=config.vault_path,
+                out_folder=config.out_folder,
+                url=url,
+                reason=f"API error: {e}",
+            )
+        return False, f"API error: {url}"
+
+
 def cmd_from_note(config: Config, date_str: str | None = None) -> int:
     """
     Process URLs from a daily note.
@@ -302,21 +429,21 @@ def cmd_from_note(config: Config, date_str: str | None = None) -> int:
         console.print(f"[red]Error reading daily note: {e}[/]")
         return EXIT_ERROR
 
-    # Extract URLs
-    urls = extract_urls(note_content)
-    if not urls:
+    # Extract URLs with context (user tags from daily note)
+    url_contexts = extract_urls_with_context(note_content)
+    if not url_contexts:
         console.print("[yellow]No URLs found in daily note.[/]")
         return EXIT_SUCCESS
 
     # Apply max_links limit
-    if config.max_links and len(urls) > config.max_links:
-        console.print(f"[yellow]Found {len(urls)} URLs, limiting to {config.max_links}[/]")
-        urls = urls[: config.max_links]
+    if config.max_links and len(url_contexts) > config.max_links:
+        console.print(f"[yellow]Found {len(url_contexts)} URLs, limiting to {config.max_links}[/]")
+        url_contexts = url_contexts[: config.max_links]
     else:
-        console.print(f"[green]Found {len(urls)} URLs to process[/]")
+        console.print(f"[green]Found {len(url_contexts)} URLs to process[/]")
 
-    # Process URLs with daily note context for back-linking
-    return _process_urls(urls, config, daily_note_filename=note_filename)
+    # Process URLs with rich metadata pipeline
+    return _process_urls_with_metadata(url_contexts, config, daily_note_filename=note_filename)
 
 
 def cmd_urls(config: Config, urls: list[str]) -> int:
@@ -337,7 +464,10 @@ def cmd_urls(config: Config, urls: list[str]) -> int:
         console.print(f"[yellow]Limiting to {config.max_links} URLs (from {len(urls)})[/]")
         urls = urls[: config.max_links]
 
-    return _process_urls(urls, config)
+    # Convert to UrlWithContext (no user tags for direct URL input)
+    url_contexts = [UrlWithContext(url=url) for url in urls]
+
+    return _process_urls_with_metadata(url_contexts, config)
 
 
 def _process_urls(urls: list[str], config: Config, daily_note_filename: str | None = None) -> int:
@@ -378,6 +508,62 @@ def _process_urls(urls: list[str], config: Config, daily_note_filename: str | No
         for url in urls:
             success, message = _process_url(
                 url, config, client, progress, task, daily_note_filename
+            )
+            results.append((success, message))
+            progress.advance(task)
+
+    # Print results table
+    _print_results(results)
+
+    # Return appropriate exit code
+    failures = sum(1 for success, _ in results if not success)
+    if failures == len(results):
+        return EXIT_ERROR
+    return EXIT_SUCCESS
+
+
+def _process_urls_with_metadata(
+    url_contexts: list[UrlWithContext],
+    config: Config,
+    daily_note_filename: str | None = None,
+) -> int:
+    """
+    Process a list of URLs with full metadata extraction.
+
+    Args:
+        url_contexts: URLs with context (user tags, surrounding text).
+        config: Application configuration.
+        daily_note_filename: Optional filename of source daily note for back-linking.
+
+    Returns:
+        Exit code.
+    """
+    # Create the Gemini client
+    client = create_client(
+        api_key=config.gemini_api_key,
+        model=config.model,
+        mock_mode=config.mock_mode,
+    )
+
+    if config.mock_mode:
+        console.print("[yellow]Running in mock mode (no API calls)[/]")
+    if config.dry_run:
+        console.print("[yellow]Running in dry-run mode (no changes)[/]")
+
+    # Process with progress bar
+    results: list[tuple[bool, str]] = []
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True,
+    ) as progress:
+        task = progress.add_task("[cyan]Processing...", total=len(url_contexts))
+
+        for url_context in url_contexts:
+            success, message = _process_url_with_metadata(
+                url_context, config, client, progress, task, daily_note_filename
             )
             results.append((success, message))
             progress.advance(task)

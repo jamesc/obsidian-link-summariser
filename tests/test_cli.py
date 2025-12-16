@@ -205,7 +205,7 @@ class TestCmdFromNote:
         assert result == EXIT_ERROR
 
     @patch("summarize_links.cli.read_daily_note")
-    @patch("summarize_links.cli.extract_urls")
+    @patch("summarize_links.cli.extract_urls_with_context")
     def test_no_urls_found(
         self,
         mock_extract: MagicMock,
@@ -223,8 +223,8 @@ class TestCmdFromNote:
         result = cmd_from_note(config, "2025-12-16")
         assert result == EXIT_SUCCESS
 
-    @patch("summarize_links.cli._process_urls")
-    @patch("summarize_links.cli.extract_urls")
+    @patch("summarize_links.cli._process_urls_with_metadata")
+    @patch("summarize_links.cli.extract_urls_with_context")
     @patch("summarize_links.cli.read_daily_note")
     def test_max_links_applied(
         self,
@@ -234,13 +234,15 @@ class TestCmdFromNote:
         mock_vault: Path,
     ) -> None:
         """Should limit URLs to max_links."""
+        from summarize_links.models import UrlWithContext
+
         mock_read.return_value = "Note with URLs"
         mock_extract.return_value = [
-            "https://1.com",
-            "https://2.com",
-            "https://3.com",
-            "https://4.com",
-            "https://5.com",
+            UrlWithContext(url="https://1.com"),
+            UrlWithContext(url="https://2.com"),
+            UrlWithContext(url="https://3.com"),
+            UrlWithContext(url="https://4.com"),
+            UrlWithContext(url="https://5.com"),
         ]
         mock_process.return_value = EXIT_SUCCESS
 
@@ -260,7 +262,7 @@ class TestCmdFromNote:
 class TestCmdUrls:
     """Tests for urls command handler."""
 
-    @patch("summarize_links.cli._process_urls")
+    @patch("summarize_links.cli._process_urls_with_metadata")
     def test_processes_provided_urls(
         self,
         mock_process: MagicMock,
@@ -278,10 +280,11 @@ class TestCmdUrls:
 
         mock_process.assert_called_once()
         call_args = mock_process.call_args[0]
-        assert call_args[0] == urls
+        # Now receives UrlWithContext objects, check URLs match
+        assert [ctx.url for ctx in call_args[0]] == urls
         assert result == EXIT_SUCCESS
 
-    @patch("summarize_links.cli._process_urls")
+    @patch("summarize_links.cli._process_urls_with_metadata")
     def test_max_links_applied(
         self,
         mock_process: MagicMock,
@@ -299,6 +302,7 @@ class TestCmdUrls:
         cmd_urls(config, urls)
 
         call_args = mock_process.call_args[0]
+        # Now receives UrlWithContext objects
         assert len(call_args[0]) == 2
 
 
@@ -578,11 +582,11 @@ class TestPrintResults:
 class TestCliIntegration:
     """Integration tests for CLI functionality."""
 
-    @patch("summarize_links.cli.write_summary_note")
+    @patch("summarize_links.cli.write_summary_note_with_metadata")
     @patch("summarize_links.cli.create_client")
-    @patch("summarize_links.cli.fetch_and_extract")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
-    @patch("summarize_links.cli.extract_urls")
+    @patch("summarize_links.cli.extract_urls_with_context")
     @patch("summarize_links.cli.read_daily_note")
     @patch("summarize_links.cli.load_config")
     def test_full_from_note_flow(
@@ -597,6 +601,8 @@ class TestCliIntegration:
         mock_vault: Path,
     ) -> None:
         """Should complete full from-note workflow."""
+        from summarize_links.models import PageMetadata, SummaryResult, UrlWithContext
+
         # Setup mocks
         mock_config = Config(
             vault_path=mock_vault,
@@ -605,12 +611,16 @@ class TestCliIntegration:
         )
         mock_load_config.return_value = mock_config
         mock_read.return_value = "Note with URLs"
-        mock_extract.return_value = ["https://example.com"]
+        mock_extract.return_value = [UrlWithContext(url="https://example.com")]
         mock_exists.return_value = False
-        mock_fetch.return_value = ("Article content", "Article Title")
+        mock_fetch.return_value = PageMetadata(
+            title="Article Title",
+            domain="example.com",
+            content="Article content",
+        )
 
         mock_client = MagicMock()
-        mock_client.summarize.return_value = "## Summary"
+        mock_client.summarize_with_metadata.return_value = SummaryResult(content="## Summary")
         mock_create_client.return_value = mock_client
 
         # Run CLI
@@ -622,9 +632,9 @@ class TestCliIntegration:
         mock_fetch.assert_called_once()
         mock_write.assert_called_once()
 
-    @patch("summarize_links.cli.write_summary_note")
+    @patch("summarize_links.cli.write_summary_note_with_metadata")
     @patch("summarize_links.cli.create_client")
-    @patch("summarize_links.cli.fetch_and_extract")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     @patch("summarize_links.cli.load_config")
     def test_full_urls_flow(
@@ -637,6 +647,8 @@ class TestCliIntegration:
         mock_vault: Path,
     ) -> None:
         """Should complete full urls workflow."""
+        from summarize_links.models import PageMetadata, SummaryResult
+
         # Setup mocks
         mock_config = Config(
             vault_path=mock_vault,
@@ -645,10 +657,14 @@ class TestCliIntegration:
         )
         mock_load_config.return_value = mock_config
         mock_exists.return_value = False
-        mock_fetch.return_value = ("Article content", "Article Title")
+        mock_fetch.return_value = PageMetadata(
+            title="Article Title",
+            domain="example.com",
+            content="Article content",
+        )
 
         mock_client = MagicMock()
-        mock_client.summarize.return_value = "## Summary"
+        mock_client.summarize_with_metadata.return_value = SummaryResult(content="## Summary")
         mock_create_client.return_value = mock_client
 
         # Run CLI

@@ -58,6 +58,8 @@ class Config:
         dry_run: If True, show what would happen without making changes
         verbose: If True, enable debug logging
         force: If True, overwrite existing summaries
+        default_tags: Tags to add to all summary notes
+        max_tags: Maximum number of tags to include in frontmatter
     """
 
     gemini_api_key: str = ""
@@ -70,6 +72,8 @@ class Config:
     dry_run: bool = False
     verbose: bool = False
     force: bool = False
+    default_tags: list[str] | None = None
+    max_tags: int = 10
 
     def validate(self) -> None:
         """
@@ -219,6 +223,18 @@ def load_config(
     # Daily notes folder (YAML only, no CLI/env override)
     if "daily_notes_folder" in yaml_config:
         config.daily_notes_folder = yaml_config["daily_notes_folder"]
+
+    # Default tags (YAML only)
+    if "default_tags" in yaml_config:
+        tags = yaml_config["default_tags"]
+        if isinstance(tags, list):
+            config.default_tags = [str(t) for t in tags]
+        elif isinstance(tags, str):
+            config.default_tags = [tags]
+
+    # Max tags (YAML only)
+    if "max_tags" in yaml_config:
+        config.max_tags = int(yaml_config["max_tags"])
 
     logger.debug(f"Loaded config: model={config.model}, out_folder={config.out_folder}")
 
