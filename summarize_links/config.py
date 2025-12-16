@@ -38,6 +38,11 @@ MAX_CONTENT_LENGTH = 50000  # Maximum characters to send to Gemini
 MAX_SLUG_LENGTH = 50  # Maximum length for filename slugs
 REQUEST_TIMEOUT = 10  # HTTP request timeout in seconds
 
+# Gemini API rate limits (free tier)
+GEMINI_RPM_LIMIT = 10  # Requests per minute
+GEMINI_TPM_LIMIT = 250000  # Tokens per minute (peak)
+GEMINI_DAILY_LIMIT = 500  # Requests per day
+
 
 @dataclass
 class Config:

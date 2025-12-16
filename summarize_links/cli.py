@@ -40,6 +40,7 @@ from summarize_links.notes import (
     write_summary_note,
     write_summary_note_with_metadata,
 )
+from summarize_links.rate_limiter import get_rate_limiter
 
 # Module logger
 logger = logging.getLogger(__name__)
@@ -162,6 +163,13 @@ Examples:
         "list",
         help="List daily notes with URLs",
         description="List dates of all daily notes that contain URLs.",
+    )
+
+    # status command
+    subparsers.add_parser(
+        "status",
+        help="Show rate limit status",
+        description="Show current Gemini API rate limit usage and remaining quota.",
     )
 
     return parser
@@ -654,6 +662,62 @@ def cmd_list(config: Config) -> int:
     return EXIT_SUCCESS
 
 
+def cmd_status(config: Config) -> int:
+    """
+    Show current rate limit status.
+
+    Args:
+        config: Application configuration.
+
+    Returns:
+        Exit code.
+    """
+    # Initialize rate limiter with vault path for persistent state
+    rate_limiter = get_rate_limiter(config.vault_path)
+    status = rate_limiter.get_status()
+
+    console.print("[bold]Gemini API Rate Limit Status[/]\n")
+
+    # Display rate limit information in a table
+    table = Table(title="Current Usage")
+    table.add_column("Limit Type", style="cyan")
+    table.add_column("Used", style="yellow", justify="right")
+    table.add_column("Limit", style="white", justify="right")
+    table.add_column("Remaining", style="green", justify="right")
+
+    table.add_row(
+        "Requests/Minute (RPM)",
+        str(status["rpm"]["current"]),
+        str(status["rpm"]["limit"]),
+        str(status["rpm"]["remaining"]),
+    )
+    table.add_row(
+        "Tokens/Minute (TPM)",
+        f"{status['tpm']['current']:,}",
+        f"{status['tpm']['limit']:,}",
+        f"{status['tpm']['remaining']:,}",
+    )
+    table.add_row(
+        "Requests/Day",
+        str(status["daily"]["current"]),
+        str(status["daily"]["limit"]),
+        str(status["daily"]["remaining"]),
+    )
+
+    console.print(table)
+    console.print()
+
+    # Warnings if approaching limits
+    if status["daily"]["remaining"] < 50:
+        console.print(
+            f"[yellow]⚠ Warning: Only {status['daily']['remaining']} daily requests remaining![/]"
+        )
+    if status["daily"]["remaining"] == 0:
+        console.print("[red]✗ Daily limit reached. Try again tomorrow.[/]")
+
+    return EXIT_SUCCESS
+
+
 def cmd_urls(config: Config, urls: list[str]) -> int:
     """
     Process specified URLs.
@@ -690,11 +754,12 @@ def _process_urls(urls: list[str], config: Config, daily_note_filename: str | No
     Returns:
         Exit code.
     """
-    # Create the Gemini client
+    # Create the Gemini client (with vault path for rate limit state)
     client = create_client(
         api_key=config.gemini_api_key,
         model=config.model,
         mock_mode=config.mock_mode,
+        state_path=config.vault_path,
     )
 
     if config.mock_mode:
@@ -748,11 +813,12 @@ def _process_urls_with_metadata(
     Returns:
         Exit code.
     """
-    # Create the Gemini client
+    # Create the Gemini client (with vault path for rate limit state)
     client = create_client(
         api_key=config.gemini_api_key,
         model=config.model,
         mock_mode=config.mock_mode,
+        state_path=config.vault_path,
     )
 
     if config.mock_mode:
@@ -890,6 +956,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_urls(config, args.urls)
         elif args.command == "list":
             return cmd_list(config)
+        elif args.command == "status":
+            return cmd_status(config)
         else:
             console.print(f"[red]Unknown command: {args.command}[/]")
             return EXIT_ERROR

@@ -474,3 +474,78 @@ Previously, running `summarize-links from-note --date 2025-12-12` would create f
 *danfu.org uses client-side JavaScript to fetch and render Markdown content. This requires a headless browser to extract and is not fixable with the current approach.
 
 **Tests:** All 259 tests pass
+
+---
+
+## 2025-12-16: Gemini API Rate Limiting
+
+**Goal:** Implement rate limiting to stay within Gemini API free tier quotas:
+- 10 requests per minute (RPM)
+- 250,000 tokens per minute (TPM)
+- 500 requests per day
+
+**Changes:**
+
+### New Module: `summarize_links/rate_limiter.py`
+- Created `RateLimiter` class with sliding window rate limiting for RPM/TPM
+- `RateLimitState` dataclass for persistent daily counter storage
+- Token estimation using ~4 chars per token plus overhead
+- Automatic waiting when approaching limits (`wait_if_needed()`)
+- Persistent daily request counter stored in `.summarizer-rate-limit.json`
+- Daily counter automatically resets when date changes
+- Thread-safe implementation with locking
+
+### Config Constants: `summarize_links/config.py`
+- Added `GEMINI_RPM_LIMIT = 10` (requests per minute)
+- Added `GEMINI_TPM_LIMIT = 250000` (tokens per minute)
+- Added `GEMINI_DAILY_LIMIT = 500` (requests per day)
+
+### Client Integration: `summarize_links/gemini_client.py`
+- `GeminiClient` now accepts optional `rate_limiter` and `state_path` parameters
+- Before each API call, estimates tokens and waits if needed
+- After each successful call, records the request for rate tracking
+- Tries to use actual token count from API response when available
+- Falls back to estimate if response metadata unavailable
+
+### New CLI Command: `summarize-links status`
+- Shows current rate limit usage in a Rich table
+- Displays RPM, TPM, and daily usage with remaining quota
+- Warns when daily limit is low (<50 remaining)
+- Errors when daily limit is exhausted
+
+### CLI Integration: `summarize_links/cli.py`
+- Updated `create_client()` calls to pass `state_path=config.vault_path`
+- Rate limit state persisted in vault directory
+- Added `cmd_status()` handler and dispatch
+
+**Behavior:**
+- Automatically waits when RPM or TPM limits approached
+- Raises `RateLimitError` if daily limit exceeded (cannot wait for day change)
+- Logs rate limit status and wait times at INFO level
+- State persists across runs to track daily usage accurately
+
+**Usage:**
+```bash
+# Check current rate limit status
+summarize-links --vault /path/to/vault status
+
+# Output:
+# Gemini API Rate Limit Status
+#
+#        Current Usage
+# ┏━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┓
+# ┃ Limit Type            ┃ Used ┃ Limit   ┃ Remaining ┃
+# ┡━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━┩
+# │ Requests/Minute (RPM) │    2 │      10 │         8 │
+# │ Tokens/Minute (TPM)   │ 5000 │ 250,000 │   245,000 │
+# │ Requests/Day          │   15 │     500 │       485 │
+# └───────────────────────┴──────┴─────────┴───────────┘
+```
+
+**Tests:** Added 20 tests in `tests/test_rate_limiter.py`:
+- `TestRateLimitState`: serialization/deserialization (3 tests)
+- `TestRateLimiter`: limit checking, recording, status (10 tests)
+- `TestPersistentState`: file I/O, day reset, error handling (4 tests)
+- `TestGlobalRateLimiter`: singleton behavior (2 tests)
+
+Total tests: 293

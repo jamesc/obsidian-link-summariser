@@ -14,6 +14,7 @@ A lightweight Python CLI tool that reads URLs from Obsidian daily notes, fetches
 - 🔄 Idempotent - safe to run multiple times (skips existing summaries)
 - ⚠️ Graceful degradation - creates stub notes for failures, continues processing
 - 🧹 Auto-cleanup - removes processed URLs from daily notes
+- ⏱️ Built-in rate limiting to stay within Gemini API quotas
 - ⌨️ Integrate with Obsidian via Shell Commands plugin
 - 🧪 Mock mode for development/testing without API calls
 
@@ -74,12 +75,15 @@ summarize-links from-note --vault ~/Notes --mock
 
 # Verbose output for debugging
 summarize-links from-note --vault ~/Notes --verbose
+
+# Check rate limit status
+summarize-links status --vault ~/Notes
 ```
 
 ### Command Reference
 
 ```
-summarize-links [-h] [-v] [--vault PATH] [--model MODEL] [--mock] [--dry-run] 
+summarize-links [-h] [-v] [--vault PATH] [--model MODEL] [--mock] [--dry-run]
                 [--max-links N] [--force] {from-note,urls,list} ...
 
 Global Options:
@@ -100,6 +104,8 @@ Commands:
     URLS...         One or more URLs to summarize
 
   list              List all daily notes that have URLs
+
+  status            Show current Gemini API rate limit usage
 ```
 
 ### Output Format
@@ -171,6 +177,37 @@ When developing or testing, use `--mock` to:
 - Skip real API calls
 - Create summaries with `status: mocked` marker
 - Running again without `--mock` will regenerate mocked summaries with real content
+
+### Rate Limiting
+
+The tool automatically manages Gemini API rate limits to keep you within free tier quotas:
+
+| Limit | Quota | Behavior |
+|-------|-------|----------|
+| RPM (Requests/Minute) | 10 | Automatically waits if limit approached |
+| TPM (Tokens/Minute) | 250,000 | Automatically waits if limit approached |
+| Daily Requests | 500 | Raises error when exceeded |
+
+**Check current usage:**
+```bash
+summarize-links status --vault ~/Notes
+```
+
+**Output:**
+```
+Gemini API Rate Limit Status
+
+       Current Usage
+┏━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┓
+┃ Limit Type            ┃ Used ┃ Limit   ┃ Remaining ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━┩
+│ Requests/Minute (RPM) │    2 │      10 │         8 │
+│ Tokens/Minute (TPM)   │ 5000 │ 250,000 │   245,000 │
+│ Requests/Day          │   15 │     500 │       485 │
+└───────────────────────┴──────┴─────────┴───────────┘
+```
+
+Daily usage is tracked persistently in `.summarizer-rate-limit.json` in your vault and resets automatically each day.
 
 ## Configuration
 

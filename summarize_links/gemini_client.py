@@ -4,12 +4,14 @@ Gemini API client for content summarization.
 This module provides a client for the Google Gemini API to generate
 summaries of web page content in Obsidian-friendly Markdown format.
 Supports structured output with suggested tags and content classification.
+Includes rate limiting to stay within Gemini API quotas.
 """
 
 import json
 import logging
 import re
 import time
+from pathlib import Path
 from typing import Any, Protocol
 
 import google.generativeai as genai
@@ -18,6 +20,7 @@ from google.api_core import exceptions as google_exceptions
 from summarize_links.config import DEFAULT_MODEL
 from summarize_links.exceptions import GeminiAPIError, RateLimitError
 from summarize_links.models import CONTENT_TYPES, SummaryResult
+from summarize_links.rate_limiter import RateLimiter, get_rate_limiter
 
 # Module logger
 logger = logging.getLogger(__name__)
@@ -205,19 +208,29 @@ class GeminiClient:
 
     Handles API authentication, request formatting, and response parsing
     with automatic retry logic for rate limits and transient errors.
+    Includes rate limiting to stay within Gemini API quotas.
     """
 
-    def __init__(self, api_key: str, model: str = DEFAULT_MODEL) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str = DEFAULT_MODEL,
+        rate_limiter: RateLimiter | None = None,
+        state_path: Path | None = None,
+    ) -> None:
         """
         Initialize the Gemini client.
 
         Args:
             api_key: Google AI Studio API key.
             model: Gemini model name to use.
+            rate_limiter: Optional rate limiter instance. If None, uses global limiter.
+            state_path: Optional path for persisting rate limit state.
         """
         self._api_key = api_key
         self._model_name = model
         self._model: Any = None
+        self._rate_limiter = rate_limiter or get_rate_limiter(state_path)
         logger.debug("Initialized GeminiClient with model: %s", model)
 
     def _get_model(self) -> Any:
@@ -249,11 +262,18 @@ class GeminiClient:
             Markdown-formatted summary.
 
         Raises:
-            RateLimitError: When rate limited after all retries exhausted.
+            RateLimitError: When rate limited after all retries exhausted,
+                           or daily limit exceeded.
             GeminiAPIError: When API returns an error.
         """
         prompt = _build_prompt(content, url, title)
         model = self._get_model()
+
+        # Estimate tokens for rate limiting
+        estimated_tokens = self._rate_limiter.estimate_tokens(content + prompt)
+
+        # Wait if we're near rate limits (blocks until safe to proceed)
+        self._rate_limiter.wait_if_needed(estimated_tokens)
 
         retry_delay = INITIAL_RETRY_DELAY
         last_exception: Exception | None = None
@@ -273,14 +293,31 @@ class GeminiClient:
                     raise GeminiAPIError("Response blocked or empty")
 
                 summary: str = response.text
+
+                # Record successful request for rate limiting
+                # Try to get actual token count from response metadata
+                tokens_used = estimated_tokens
+                try:
+                    if hasattr(response, "usage_metadata") and response.usage_metadata:
+                        usage = response.usage_metadata
+                        if hasattr(usage, "total_token_count") and isinstance(
+                            usage.total_token_count, int
+                        ):
+                            tokens_used = usage.total_token_count
+                except (AttributeError, TypeError):
+                    # Fall back to estimate if metadata unavailable
+                    pass
+                self._rate_limiter.record_request(tokens_used)
+
                 logger.info("Successfully generated summary (%d chars)", len(summary))
                 return summary
 
             except google_exceptions.ResourceExhausted as e:
-                # Rate limit - retry with backoff
+                # Rate limit from API - use longer backoff and retry
                 last_exception = e
+                # Also wait via our rate limiter to ensure we don't hit limits again
                 logger.warning(
-                    "Rate limited (attempt %d/%d), retrying in %.1fs",
+                    "API rate limited (attempt %d/%d), backing off %.1fs",
                     attempt + 1,
                     MAX_RETRIES,
                     retry_delay,
@@ -477,6 +514,7 @@ def create_client(
     api_key: str | None,
     model: str = DEFAULT_MODEL,
     mock_mode: bool = False,
+    state_path: Path | None = None,
 ) -> GeminiClient | MockGeminiClient:
     """
     Factory function to create appropriate client based on mode.
@@ -485,6 +523,7 @@ def create_client(
         api_key: API key for real client, can be None in mock mode.
         model: Model name to use.
         mock_mode: If True, return MockGeminiClient.
+        state_path: Optional path for persisting rate limit state.
 
     Returns:
         Configured client instance.
@@ -500,4 +539,4 @@ def create_client(
         raise GeminiAPIError("API key required for non-mock mode")
 
     logger.info("Creating GeminiClient with model: %s", model)
-    return GeminiClient(api_key=api_key, model=model)
+    return GeminiClient(api_key=api_key, model=model, state_path=state_path)
