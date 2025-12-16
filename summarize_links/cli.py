@@ -268,7 +268,7 @@ def _process_url(
                 reason="Rate limited - try again later",
                 date=source_date,
             )
-        return False, f"Rate limited: {url}"
+        return False, f"[Rate limited] {url}"
 
     except GeminiAPIError as e:
         logger.error("Gemini API error for %s: %s", url, e)
@@ -417,7 +417,7 @@ def _process_url_with_metadata(
                 reason="Rate limited - try again later",
                 date=source_date,
             )
-        return False, f"Rate limited: {url}", False
+        return False, f"[Rate limited] {url}", False
 
     except GeminiAPIError as e:
         logger.error("Gemini API error for %s: %s", url, e)
