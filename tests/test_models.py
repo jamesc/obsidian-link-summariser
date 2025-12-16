@@ -1,7 +1,5 @@
 """Tests for data models and tag utilities."""
 
-import pytest
-
 from summarize_links.models import (
     CONTENT_TYPES,
     PageMetadata,

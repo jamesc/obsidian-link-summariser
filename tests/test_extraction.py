@@ -7,7 +7,14 @@ from summarize_links.exceptions import ContentExtractionError
 from summarize_links.extract import (
     _clean_text,
     _extract_article_content,
+    _extract_article_tags,
+    _extract_author,
+    _extract_description,
+    _extract_published_date,
+    _extract_site_name,
+    _extract_title,
     _find_largest_text_block,
+    extract_page_metadata,
     extract_readable_content,
     truncate_content,
 )
@@ -219,3 +226,353 @@ class TestFindLargestTextBlock:
         soup = BeautifulSoup(html, "lxml")
         content = _find_largest_text_block(soup)
         assert "Actual content" in content
+
+
+class TestExtractTitle:
+    """Tests for title extraction."""
+
+    def test_extract_og_title(self) -> None:
+        """Should prefer Open Graph title."""
+        html = """
+        <html>
+            <head>
+                <title>Page Title | Site Name</title>
+                <meta property="og:title" content="Better OG Title">
+            </head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        title = _extract_title(soup)
+        assert title == "Better OG Title"
+
+    def test_extract_twitter_title(self) -> None:
+        """Should use Twitter title if no OG title."""
+        html = """
+        <html>
+            <head>
+                <title>Page Title</title>
+                <meta name="twitter:title" content="Twitter Title">
+            </head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        title = _extract_title(soup)
+        assert title == "Twitter Title"
+
+    def test_fallback_to_title_tag(self) -> None:
+        """Should fall back to title tag."""
+        html = """
+        <html>
+            <head><title>Simple Title</title></head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        title = _extract_title(soup)
+        assert title == "Simple Title"
+
+    def test_clean_title_with_pipe(self) -> None:
+        """Should remove site name after pipe."""
+        html = """
+        <html>
+            <head><title>Article Title | Site Name</title></head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        title = _extract_title(soup)
+        assert title == "Article Title"
+
+    def test_clean_title_with_dash(self) -> None:
+        """Should remove site name after dash."""
+        html = """
+        <html>
+            <head><title>Article Title - Site Name</title></head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        title = _extract_title(soup)
+        assert title == "Article Title"
+
+    def test_untitled_fallback(self) -> None:
+        """Should return Untitled if no title found."""
+        html = "<html><head></head><body><p>Content</p></body></html>"
+        soup = BeautifulSoup(html, "lxml")
+        title = _extract_title(soup)
+        assert title == "Untitled"
+
+
+class TestExtractAuthor:
+    """Tests for author extraction."""
+
+    def test_extract_author_meta(self) -> None:
+        """Should extract from author meta tag."""
+        html = """
+        <html>
+            <head><meta name="author" content="John Smith"></head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        author = _extract_author(soup)
+        assert author == "John Smith"
+
+    def test_extract_article_author(self) -> None:
+        """Should extract from article:author meta tag."""
+        html = """
+        <html>
+            <head><meta property="article:author" content="Jane Doe"></head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        author = _extract_author(soup)
+        assert author == "Jane Doe"
+
+    def test_extract_author_from_json_ld(self) -> None:
+        """Should extract from JSON-LD schema."""
+        html = """
+        <html>
+            <head>
+                <script type="application/ld+json">
+                {"@type": "Article", "author": {"name": "Schema Author"}}
+                </script>
+            </head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        author = _extract_author(soup)
+        assert author == "Schema Author"
+
+    def test_extract_author_from_json_ld_string(self) -> None:
+        """Should handle JSON-LD author as string."""
+        html = """
+        <html>
+            <head>
+                <script type="application/ld+json">
+                {"@type": "Article", "author": "Simple Author"}
+                </script>
+            </head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        author = _extract_author(soup)
+        assert author == "Simple Author"
+
+    def test_no_author_returns_none(self) -> None:
+        """Should return None if no author found."""
+        html = "<html><head></head><body><p>Content</p></body></html>"
+        soup = BeautifulSoup(html, "lxml")
+        author = _extract_author(soup)
+        assert author is None
+
+
+class TestExtractDescription:
+    """Tests for description extraction."""
+
+    def test_extract_og_description(self) -> None:
+        """Should prefer OG description."""
+        html = """
+        <html>
+            <head>
+                <meta name="description" content="Regular description">
+                <meta property="og:description" content="OG description">
+            </head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        desc = _extract_description(soup)
+        assert desc == "OG description"
+
+    def test_fallback_to_meta_description(self) -> None:
+        """Should fall back to regular description."""
+        html = """
+        <html>
+            <head><meta name="description" content="Meta description"></head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        desc = _extract_description(soup)
+        assert desc == "Meta description"
+
+
+class TestExtractPublishedDate:
+    """Tests for publication date extraction."""
+
+    def test_extract_article_published_time(self) -> None:
+        """Should extract from article:published_time."""
+        html = """
+        <html>
+            <head>
+                <meta property="article:published_time" content="2025-12-15T10:30:00Z">
+            </head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        date = _extract_published_date(soup)
+        assert date == "2025-12-15"
+
+    def test_extract_date_without_time(self) -> None:
+        """Should handle date without time component."""
+        html = """
+        <html>
+            <head><meta name="date" content="2025-12-15"></head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        date = _extract_published_date(soup)
+        assert date == "2025-12-15"
+
+
+class TestExtractSiteName:
+    """Tests for site name extraction."""
+
+    def test_extract_site_name(self) -> None:
+        """Should extract from og:site_name."""
+        html = """
+        <html>
+            <head><meta property="og:site_name" content="Example Blog"></head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        site_name = _extract_site_name(soup)
+        assert site_name == "Example Blog"
+
+
+class TestExtractArticleTags:
+    """Tests for article tag extraction."""
+
+    def test_extract_from_keywords(self) -> None:
+        """Should extract from keywords meta tag."""
+        html = """
+        <html>
+            <head><meta name="keywords" content="python, testing, automation"></head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        tags = _extract_article_tags(soup, "")
+        assert "python" in tags
+        assert "testing" in tags
+        assert "automation" in tags
+
+    def test_extract_from_article_tag(self) -> None:
+        """Should extract from article:tag meta tags."""
+        html = """
+        <html>
+            <head>
+                <meta property="article:tag" content="AI">
+                <meta property="article:tag" content="Machine Learning">
+            </head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        tags = _extract_article_tags(soup, "")
+        assert "AI" in tags
+        assert "Machine Learning" in tags
+
+    def test_extract_hashtags_from_content(self) -> None:
+        """Should extract hashtags from content."""
+        html = "<html><head></head><body><p>Content</p></body></html>"
+        soup = BeautifulSoup(html, "lxml")
+        content = "This article discusses #AI and #machine-learning concepts."
+        tags = _extract_article_tags(soup, content)
+        assert "AI" in tags
+        assert "machine-learning" in tags
+
+    def test_deduplicates_tags(self) -> None:
+        """Should deduplicate tags (case insensitive)."""
+        html = """
+        <html>
+            <head><meta name="keywords" content="Python, python, PYTHON"></head>
+            <body><p>Content</p></body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        tags = _extract_article_tags(soup, "")
+        # Should only have one variation of "python"
+        python_tags = [t for t in tags if t.lower() == "python"]
+        assert len(python_tags) == 1
+
+
+class TestExtractPageMetadata:
+    """Tests for full page metadata extraction."""
+
+    def test_extracts_all_metadata(self) -> None:
+        """Should extract all available metadata."""
+        html = """
+        <html>
+            <head>
+                <title>Test Article | Example Site</title>
+                <meta property="og:title" content="Test Article">
+                <meta name="author" content="John Smith">
+                <meta property="og:description" content="A test article">
+                <meta property="article:published_time" content="2025-12-15T10:00:00Z">
+                <meta property="og:site_name" content="Example Site">
+                <meta name="keywords" content="testing, python">
+            </head>
+            <body>
+                <article>
+                    <p>This is the main content of the article. It contains enough
+                    text to pass the minimum threshold for content extraction. The
+                    article discusses various topics related to testing and Python
+                    programming. We need to make sure this paragraph is long enough
+                    to be considered valid content by the extraction algorithm.</p>
+                </article>
+            </body>
+        </html>
+        """
+        metadata = extract_page_metadata(html, "https://example.com/article")
+
+        assert metadata.title == "Test Article"
+        assert metadata.author == "John Smith"
+        assert metadata.description == "A test article"
+        assert metadata.published_date == "2025-12-15"
+        assert metadata.site_name == "Example Site"
+        assert metadata.domain == "example.com"
+        assert "testing" in metadata.article_tags
+        assert "main content" in metadata.content.lower()
+
+    def test_extracts_domain_from_url(self) -> None:
+        """Should extract domain from URL."""
+        html = """
+        <html>
+            <body>
+                <article><p>Content that is long enough to pass the threshold.
+                This needs to be at least 200 characters for the extraction to work
+                properly. Adding more text to ensure we meet the requirement.</p></article>
+            </body>
+        </html>
+        """
+        metadata = extract_page_metadata(html, "https://www.example.com/path")
+        assert metadata.domain == "example.com"
+
+    def test_handles_missing_metadata(self) -> None:
+        """Should handle pages with minimal metadata."""
+        html = """
+        <html>
+            <body>
+                <article><p>Just some content without any metadata at all.
+                This paragraph needs to be long enough to be extracted properly
+                by the content extraction algorithm. Adding more filler text.</p></article>
+            </body>
+        </html>
+        """
+        metadata = extract_page_metadata(html, "https://example.com")
+
+        assert metadata.title == "Untitled"
+        assert metadata.author is None
+        assert metadata.description is None
+        assert metadata.domain == "example.com"
+        assert len(metadata.content) > 0
