@@ -583,9 +583,7 @@ def cmd_from_note_all(config: Config) -> int:
         if config.max_links:
             remaining_budget = config.max_links - processed_count
             if len(url_contexts) > remaining_budget:
-                console.print(
-                    f"[yellow]Limiting to {remaining_budget} URLs (max_links budget)[/]"
-                )
+                console.print(f"[yellow]Limiting to {remaining_budget} URLs (max_links budget)[/]")
                 url_contexts = url_contexts[:remaining_budget]
 
         # Process this note's URLs
@@ -647,9 +645,7 @@ def cmd_list(config: Config) -> int:
 
     console.print(table)
     console.print()
-    console.print(
-        f"[bold]Total:[/] {len(notes_with_urls)} notes with {total_urls} URLs"
-    )
+    console.print(f"[bold]Total:[/] {len(notes_with_urls)} notes with {total_urls} URLs")
 
     return EXIT_SUCCESS
 

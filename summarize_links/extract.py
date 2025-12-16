@@ -310,9 +310,7 @@ def _extract_with_parser(html: str, parser: str) -> tuple[str | None, str | None
         if content:
             # Found article content - clean and return it
             content = _clean_text(content)
-            logger.info(
-                f"Extracted {len(content)} chars from article (parser={parser})"
-            )
+            logger.info(f"Extracted {len(content)} chars from article (parser={parser})")
             return content, title
 
         # No article found - do aggressive cleanup and try largest text block
@@ -342,9 +340,7 @@ def _extract_with_parser(html: str, parser: str) -> tuple[str | None, str | None
 
         if content:
             content = _clean_text(content)
-            logger.info(
-                f"Extracted {len(content)} chars from text block (parser={parser})"
-            )
+            logger.info(f"Extracted {len(content)} chars from text block (parser={parser})")
             return content, title
 
         # No content found with this parser
@@ -749,7 +745,7 @@ def _extract_markdown_metadata(content: str, url: str) -> PageMetadata:
 
     # Try to extract title from first H1 heading
     title = "Untitled"
-    h1_match = re.search(r'^#\s+(.+)$', content, re.MULTILINE)
+    h1_match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
     if h1_match:
         title = h1_match.group(1).strip()
 
@@ -757,14 +753,14 @@ def _extract_markdown_metadata(content: str, url: str) -> PageMetadata:
     # Look for short italic lines that look like author attribution
     author = None
     # Find all italic lines in first 2000 chars
-    italic_matches = re.findall(r'^_([^_]+)_$', content[:2000], re.MULTILINE)
+    italic_matches = re.findall(r"^_([^_]+)_$", content[:2000], re.MULTILINE)
     for italic_text in italic_matches:
         # Skip long lines (likely descriptions)
         if len(italic_text) > 100:
             continue
         # If it contains a comma and looks like "Name, Date"
-        if ',' in italic_text:
-            parts = italic_text.split(',')
+        if "," in italic_text:
+            parts = italic_text.split(",")
             # First part should be short (name) and second part looks like a date
             if len(parts[0].strip()) < 50:
                 author = parts[0].strip()
@@ -802,12 +798,12 @@ def _clean_markdown(content: str) -> str:
     import re
 
     # Remove HTML image tags
-    content = re.sub(r'<img[^>]*>', '', content)
+    content = re.sub(r"<img[^>]*>", "", content)
 
     # Remove markdown image syntax
-    content = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', content)
+    content = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", content)
 
     # Clean up multiple blank lines
-    content = re.sub(r'\n{3,}', '\n\n', content)
+    content = re.sub(r"\n{3,}", "\n\n", content)
 
     return content.strip()

@@ -154,14 +154,16 @@ def clean_url(url: str) -> str:
                 pass
 
         # Rebuild URL
-        cleaned = urlunparse((
-            parsed.scheme,
-            parsed.netloc,
-            parsed.path,
-            parsed.params,
-            new_query,
-            new_fragment,
-        ))
+        cleaned = urlunparse(
+            (
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                parsed.params,
+                new_query,
+                new_fragment,
+            )
+        )
 
         if cleaned != url:
             logger.debug(f"Cleaned URL: {url} -> {cleaned}")
