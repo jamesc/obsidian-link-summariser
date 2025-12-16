@@ -28,6 +28,7 @@ from summarize_links.exceptions import (
 from summarize_links.extract import fetch_and_extract, fetch_and_extract_metadata, truncate_content
 from summarize_links.gemini_client import SummarizerProtocol, create_client
 from summarize_links.models import UrlWithContext
+from summarize_links.rate_limiter import get_rate_limiter
 from summarize_links.notes import (
     add_summary_link_to_daily_note,
     extract_urls_with_context,
@@ -162,6 +163,13 @@ Examples:
         "list",
         help="List daily notes with URLs",
         description="List dates of all daily notes that contain URLs.",
+    )
+
+    # status command
+    subparsers.add_parser(
+        "status",
+        help="Show rate limit status",
+        description="Show current Gemini API rate limit usage and remaining quota.",
     )
 
     return parser
@@ -650,6 +658,63 @@ def cmd_list(config: Config) -> int:
     return EXIT_SUCCESS
 
 
+def cmd_status(config: Config) -> int:
+    """
+    Show current rate limit status.
+
+    Args:
+        config: Application configuration.
+
+    Returns:
+        Exit code.
+    """
+    # Initialize rate limiter with vault path for persistent state
+    rate_limiter = get_rate_limiter(config.vault_path)
+    status = rate_limiter.get_status()
+
+    console.print("[bold]Gemini API Rate Limit Status[/]\n")
+
+    # Display rate limit information in a table
+    table = Table(title="Current Usage")
+    table.add_column("Limit Type", style="cyan")
+    table.add_column("Used", style="yellow", justify="right")
+    table.add_column("Limit", style="white", justify="right")
+    table.add_column("Remaining", style="green", justify="right")
+
+    table.add_row(
+        "Requests/Minute (RPM)",
+        str(status["rpm"]["current"]),
+        str(status["rpm"]["limit"]),
+        str(status["rpm"]["remaining"]),
+    )
+    table.add_row(
+        "Tokens/Minute (TPM)",
+        f"{status['tpm']['current']:,}",
+        f"{status['tpm']['limit']:,}",
+        f"{status['tpm']['remaining']:,}",
+    )
+    table.add_row(
+        "Requests/Day",
+        str(status["daily"]["current"]),
+        str(status["daily"]["limit"]),
+        str(status["daily"]["remaining"]),
+    )
+
+    console.print(table)
+    console.print()
+
+    # Warnings if approaching limits
+    if status["daily"]["remaining"] < 50:
+        console.print(
+            f"[yellow]⚠ Warning: Only {status['daily']['remaining']} "
+            "daily requests remaining![/]"
+        )
+    if status["daily"]["remaining"] == 0:
+        console.print("[red]✗ Daily limit reached. Try again tomorrow.[/]")
+
+    return EXIT_SUCCESS
+
+
 def cmd_urls(config: Config, urls: list[str]) -> int:
     """
     Process specified URLs.
@@ -886,6 +951,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_urls(config, args.urls)
         elif args.command == "list":
             return cmd_list(config)
+        elif args.command == "status":
+            return cmd_status(config)
         else:
             console.print(f"[red]Unknown command: {args.command}[/]")
             return EXIT_ERROR
