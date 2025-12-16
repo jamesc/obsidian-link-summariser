@@ -215,3 +215,32 @@ summarize-links --force from-note --date 2025-12-15
 - `test_preserves_trailing_newline` - Maintains file formatting
 - `test_removes_all_lines_with_same_url` - Handles duplicate URLs
 - `test_handles_url_with_query_params` - Works with complex URLs
+
+Added 5 tests in `tests/test_cli.py` for `TestUrlLineDeletion`:
+- `test_mock_mode_does_not_delete_url_lines` - Mock mode preserves URLs
+- `test_real_mode_deletes_url_lines` - Real mode deletes URLs
+- `test_dry_run_does_not_delete_url_lines` - Dry run preserves URLs
+- `test_skipped_urls_not_deleted` - Existing summaries don't trigger deletion
+- `test_failed_urls_not_deleted` - Errors don't trigger deletion
+
+---
+
+## 2025-12-16: Fix reprocessing mocked summaries not overwriting
+
+**Goal:** Fix bug where rerunning without `--mock` after a mock run would delete URLs but not update the mocked summaries.
+
+**Problem:**
+1. `summary_exists()` correctly returns `False` for mocked summaries (so they get reprocessed)
+2. The URL gets fetched, content extracted, Gemini called
+3. `write_summary_note_with_metadata()` was called with `overwrite=config.force` (which is `False`)
+4. But the file exists on disk, so `write_summary_note_with_metadata()` silently skips writing
+5. The function still returns success, so `should_delete=True` and URLs get deleted
+6. Result: URLs deleted but mocked summaries never updated
+
+**Fix:**
+- Added `needs_overwrite` flag in `_process_url_with_metadata()` that is `True` when:
+  - `config.force` is set, OR
+  - `summary_exists()` returns `False` (meaning the existing file is mocked/error and needs replacement)
+- Pass `needs_overwrite` to `write_summary_note_with_metadata()` instead of `config.force`
+
+**Tests:** Added `test_reprocessing_mocked_summary_overwrites` in `tests/test_cli.py` (247 tests total)

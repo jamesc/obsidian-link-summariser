@@ -299,8 +299,15 @@ def _process_url_with_metadata(
     slug = slug_from_url(url)
 
     # Check if summary already exists (skip check if force is enabled)
-    if not config.force and summary_exists(config.vault_path, config.out_folder, url):
+    # summary_exists returns False for mocked/error stubs, so they get reprocessed
+    existing_summary_complete = summary_exists(
+        config.vault_path, config.out_folder, url
+    )
+    if not config.force and existing_summary_complete:
         return True, f"Skipped (exists): {slug}", False
+
+    # If we're reprocessing (summary exists but incomplete), we need to overwrite
+    needs_overwrite = config.force or not existing_summary_complete
 
     if config.dry_run:
         return True, f"Would process: {url} -> {slug}.md", False
@@ -326,6 +333,7 @@ def _process_url_with_metadata(
         status = "mocked" if config.mock_mode else "success"
 
         # Write the summary note with rich frontmatter
+        # Use needs_overwrite to ensure mocked/error stubs get replaced
         summary_path = write_summary_note_with_metadata(
             vault_path=config.vault_path,
             out_folder=config.out_folder,
@@ -335,7 +343,7 @@ def _process_url_with_metadata(
             user_tags=url_context.tags,
             source_note=daily_note_filename,
             default_tags=config.default_tags,
-            overwrite=config.force,
+            overwrite=needs_overwrite,
             status=status,
         )
 

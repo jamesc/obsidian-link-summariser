@@ -951,3 +951,61 @@ class TestUrlLineDeletion:
         # Should have error exit but URL should NOT be deleted
         assert result == EXIT_ERROR
         mock_remove_url.assert_not_called()
+
+    @patch("summarize_links.cli.remove_url_line_from_note")
+    @patch("summarize_links.cli.add_summary_link_to_daily_note")
+    @patch("summarize_links.cli.write_summary_note_with_metadata")
+    @patch("summarize_links.cli.create_client")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
+    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.cli.extract_urls_with_context")
+    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.cli.load_config")
+    def test_reprocessing_mocked_summary_overwrites(
+        self,
+        mock_load_config: MagicMock,
+        mock_read: MagicMock,
+        mock_extract: MagicMock,
+        mock_exists: MagicMock,
+        mock_fetch: MagicMock,
+        mock_create_client: MagicMock,
+        mock_write: MagicMock,
+        mock_add_link: MagicMock,
+        mock_remove_url: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Reprocessing a mocked summary should overwrite it (not skip it)."""
+        from summarize_links.models import PageMetadata, SummaryResult, UrlWithContext
+
+        # Setup mocks - summary_exists returns False for mocked summaries
+        mock_config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+            mock_mode=False,  # Real mode this time
+        )
+        mock_load_config.return_value = mock_config
+        mock_read.return_value = "Note with URLs"
+        mock_extract.return_value = [UrlWithContext(url="https://example.com")]
+        mock_exists.return_value = False  # Mocked summary returns False!
+        mock_fetch.return_value = PageMetadata(
+            title="Article Title",
+            domain="example.com",
+            content="Article content",
+        )
+
+        mock_client = MagicMock()
+        mock_client.summarize_with_metadata.return_value = SummaryResult(content="## Summary")
+        mock_create_client.return_value = mock_client
+        mock_write.return_value = mock_vault / "summaries" / "example.md"
+
+        # Run CLI
+        result = main(["from-note", "--date", "2025-12-16"])
+
+        assert result == EXIT_SUCCESS
+        # write_summary_note_with_metadata should be called with overwrite=True
+        # because summary_exists returned False (meaning it needs reprocessing)
+        mock_write.assert_called_once()
+        call_kwargs = mock_write.call_args[1]
+        assert call_kwargs["overwrite"] is True, "Should overwrite mocked summary"
+        # URL should be deleted since we're in real mode
+        mock_remove_url.assert_called_once()
