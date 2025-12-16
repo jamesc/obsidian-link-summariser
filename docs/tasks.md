@@ -4,6 +4,32 @@ This document tracks completed development tasks for the Obsidian Link Summarize
 
 ---
 
+## 2025-12-16: Add --all flag to from-note command
+
+**Goal:** Process all daily notes with URLs in a single command.
+
+**Changes:**
+- Added `--all` flag to `from-note` subcommand in `cli.py`
+- Created `cmd_from_note_all()` function to iterate through all daily notes
+- Processes notes in chronological order (oldest first)
+- Respects `--max-links` limit across all notes combined
+
+**Usage:**
+```bash
+# Process all daily notes with URLs
+summarize-links from-note --all
+
+# Limit total links processed across all notes
+summarize-links from-note --all --max-links 50
+
+# Dry run to see what would be processed
+summarize-links from-note --all --dry-run
+```
+
+**Tests:** Added `TestCmdFromNoteAll` class with 3 tests
+
+---
+
 ## 2025-12-16: URL tracking parameter cleanup
 
 **Goal:** Remove tracking parameters (UTM tags, analytics IDs) from URLs while preserving meaningful query strings.

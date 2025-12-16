@@ -138,6 +138,12 @@ Examples:
         type=str,
         help="Date of the daily note (YYYY-MM-DD format, defaults to today)",
     )
+    from_note.add_argument(
+        "--all",
+        action="store_true",
+        dest="process_all",
+        help="Process all daily notes that contain URLs",
+    )
 
     # urls command
     urls_cmd = subparsers.add_parser(
@@ -493,6 +499,117 @@ def cmd_from_note(config: Config, date_str: str | None = None) -> int:
     )
 
 
+def cmd_from_note_all(config: Config) -> int:
+    """
+    Process URLs from all daily notes that contain URLs.
+
+    Iterates through all daily notes with URLs (oldest first) and processes
+    each one in sequence, respecting the max_links limit across all notes.
+
+    Args:
+        config: Application configuration.
+
+    Returns:
+        Exit code.
+    """
+    # Vault path must be set (validated in load_config)
+    assert config.vault_path is not None
+
+    console.print("[bold]Finding all daily notes with URLs...[/]")
+
+    # Find all daily notes with URLs (returns newest first, we want oldest first)
+    notes_with_urls = find_daily_notes_with_urls(
+        vault_path=config.vault_path,
+        daily_notes_folder=config.daily_notes_folder,
+    )
+
+    if not notes_with_urls:
+        console.print("[yellow]No daily notes with URLs found.[/]")
+        return EXIT_SUCCESS
+
+    # Reverse to process oldest first (chronological order)
+    notes_with_urls = list(reversed(notes_with_urls))
+
+    total_urls = sum(count for _, count in notes_with_urls)
+    console.print(
+        f"[green]Found {len(notes_with_urls)} daily notes with {total_urls} total URLs[/]"
+    )
+
+    # Track overall progress
+    processed_count = 0
+    overall_failures = 0
+    notes_processed = 0
+
+    for date_str, url_count in notes_with_urls:
+        # Check if we've hit the max_links limit
+        if config.max_links and processed_count >= config.max_links:
+            remaining_notes = len(notes_with_urls) - notes_processed
+            console.print(
+                f"[yellow]Reached max_links limit ({config.max_links}). "
+                f"Skipping remaining {remaining_notes} notes.[/]"
+            )
+            break
+
+        console.print(f"\n[bold cyan]Processing: {date_str} ({url_count} URLs)[/]")
+
+        try:
+            date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            console.print(f"[red]Invalid date format: {date_str}, skipping[/]")
+            continue
+
+        # Read the daily note
+        note_filename = f"{date_str}.md"
+        try:
+            note_content = read_daily_note(
+                vault_path=config.vault_path,
+                note_path=note_filename,
+                daily_notes_folder=config.daily_notes_folder,
+            )
+        except NoteReadError as e:
+            console.print(f"[red]Error reading daily note {date_str}: {e}[/]")
+            overall_failures += url_count
+            notes_processed += 1
+            continue
+
+        # Extract URLs with context
+        url_contexts = extract_urls_with_context(note_content)
+        if not url_contexts:
+            console.print(f"[yellow]No URLs found in {date_str} (may have been processed)[/]")
+            notes_processed += 1
+            continue
+
+        # Apply remaining max_links budget for this note
+        if config.max_links:
+            remaining_budget = config.max_links - processed_count
+            if len(url_contexts) > remaining_budget:
+                console.print(
+                    f"[yellow]Limiting to {remaining_budget} URLs (max_links budget)[/]"
+                )
+                url_contexts = url_contexts[:remaining_budget]
+
+        # Process this note's URLs
+        source_datetime = datetime.combine(date, datetime.min.time())
+        exit_code = _process_urls_with_metadata(
+            url_contexts, config, daily_note_filename=note_filename, source_date=source_datetime
+        )
+
+        processed_count += len(url_contexts)
+        notes_processed += 1
+
+        if exit_code == EXIT_ERROR:
+            overall_failures += len(url_contexts)
+
+    # Final summary
+    console.print("\n" + "=" * 50)
+    console.print(f"[bold]Completed processing {notes_processed} daily notes[/]")
+    console.print(f"[bold]Total URLs processed: {processed_count}[/]")
+
+    if overall_failures > 0:
+        return EXIT_ERROR
+    return EXIT_SUCCESS
+
+
 def cmd_list(config: Config) -> int:
     """
     List all daily notes that contain URLs.
@@ -766,6 +883,8 @@ def main(argv: list[str] | None = None) -> int:
 
         # Dispatch to command handler
         if args.command == "from-note":
+            if getattr(args, "process_all", False):
+                return cmd_from_note_all(config)
             return cmd_from_note(config, getattr(args, "date", None))
         elif args.command == "urls":
             return cmd_urls(config, args.urls)

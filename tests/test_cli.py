@@ -17,6 +17,7 @@ from summarize_links.cli import (
     _print_results,
     _process_url,
     cmd_from_note,
+    cmd_from_note_all,
     cmd_list,
     cmd_urls,
     create_parser,
@@ -80,6 +81,16 @@ class TestCreateParser:
         # With date option
         args = parser.parse_args(["from-note", "--date", "2025-12-16"])
         assert args.command == "from-note"
+        assert args.date == "2025-12-16"
+
+        # With --all option
+        args = parser.parse_args(["from-note", "--all"])
+        assert args.command == "from-note"
+        assert args.process_all is True
+
+        # --all and --date are mutually exclusive in practice (--all takes precedence)
+        args = parser.parse_args(["from-note", "--all", "--date", "2025-12-16"])
+        assert args.process_all is True
         assert args.date == "2025-12-16"
 
     def test_urls_command(self) -> None:
@@ -264,6 +275,106 @@ class TestCmdFromNote:
         # Check that only 3 URLs were passed to process
         call_args = mock_process.call_args[0]
         assert len(call_args[0]) == 3
+
+
+class TestCmdFromNoteAll:
+    """Tests for from-note --all command handler."""
+
+    @patch("summarize_links.cli.find_daily_notes_with_urls")
+    def test_no_notes_with_urls(
+        self,
+        mock_find: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Should return success when no notes with URLs found."""
+        mock_find.return_value = []
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_from_note_all(config)
+        assert result == EXIT_SUCCESS
+
+    @patch("summarize_links.cli._process_urls_with_metadata")
+    @patch("summarize_links.cli.extract_urls_with_context")
+    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.cli.find_daily_notes_with_urls")
+    def test_processes_multiple_notes(
+        self,
+        mock_find: MagicMock,
+        mock_read: MagicMock,
+        mock_extract: MagicMock,
+        mock_process: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Should process all notes in chronological order."""
+        from summarize_links.models import UrlWithContext
+
+        # Returns newest first, function should process oldest first
+        mock_find.return_value = [
+            ("2025-12-16", 2),
+            ("2025-12-15", 1),
+        ]
+        mock_read.return_value = "Note content"
+        mock_extract.return_value = [UrlWithContext(url="https://example.com")]
+        mock_process.return_value = EXIT_SUCCESS
+
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_from_note_all(config)
+
+        assert result == EXIT_SUCCESS
+        assert mock_process.call_count == 2
+        # First call should be for oldest date (2025-12-15)
+        first_call = mock_process.call_args_list[0]
+        assert first_call[1]["daily_note_filename"] == "2025-12-15.md"
+
+    @patch("summarize_links.cli._process_urls_with_metadata")
+    @patch("summarize_links.cli.extract_urls_with_context")
+    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.cli.find_daily_notes_with_urls")
+    def test_max_links_across_notes(
+        self,
+        mock_find: MagicMock,
+        mock_read: MagicMock,
+        mock_extract: MagicMock,
+        mock_process: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Should respect max_links limit across all notes."""
+        from summarize_links.models import UrlWithContext
+
+        mock_find.return_value = [
+            ("2025-12-16", 5),
+            ("2025-12-15", 5),
+        ]
+        mock_read.return_value = "Note content"
+        mock_extract.return_value = [
+            UrlWithContext(url="https://1.com"),
+            UrlWithContext(url="https://2.com"),
+            UrlWithContext(url="https://3.com"),
+        ]
+        mock_process.return_value = EXIT_SUCCESS
+
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+            max_links=4,  # Limit to 4 total
+        )
+
+        cmd_from_note_all(config)
+
+        # First note: 3 URLs processed (all of them)
+        # Second note: only 1 URL processed (to reach limit of 4)
+        assert mock_process.call_count == 2
+        first_call_urls = mock_process.call_args_list[0][0][0]
+        second_call_urls = mock_process.call_args_list[1][0][0]
+        assert len(first_call_urls) == 3
+        assert len(second_call_urls) == 1
 
 
 class TestCmdUrls:
