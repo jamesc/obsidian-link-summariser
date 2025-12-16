@@ -218,6 +218,9 @@ Daily usage is tracked persistently in `.summarizer-rate-limit.json` in your vau
 | `GEMINI_API_KEY` | Yes | - | Google AI Studio API key |
 | `GEMINI_MODEL` | No | `gemini-2.0-flash-exp` | Gemini model to use |
 | `DEFAULT_VAULT_PATH` | No | - | Default Obsidian vault path |
+| `GEMINI_RPM_LIMIT` | No | `10` | Requests per minute limit |
+| `GEMINI_TPM_LIMIT` | No | `250000` | Tokens per minute limit |
+| `GEMINI_DAILY_LIMIT` | No | `500` | Requests per day limit |
 
 ### Vault Config File (Optional)
 
@@ -227,8 +230,15 @@ Create `.summarizer-config.yaml` in your vault root:
 out_folder: "Summaries"
 max_links: 10
 daily_notes_folder: "Journal"
-model: "gemini-2.0-flash-exp"
+model: "gemini-2.5-flash"
+
+# Rate limits (override defaults for paid tiers)
+rpm_limit: 60         # Requests per minute
+tpm_limit: 1000000    # Tokens per minute (1M)
+daily_limit: 10000    # Requests per day
 ```
+
+**Note:** Rate limit settings can be customized for paid Gemini API tiers. Free tier defaults are conservative to avoid hitting quotas.
 
 ## Development
 

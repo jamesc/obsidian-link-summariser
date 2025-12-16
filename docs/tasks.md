@@ -549,3 +549,56 @@ summarize-links --vault /path/to/vault status
 - `TestGlobalRateLimiter`: singleton behavior (2 tests)
 
 Total tests: 293
+
+---
+
+## 2025-12-16: Configurable Rate Limits
+
+**Goal:** Make rate limits configurable via environment variables and YAML config, allowing users to adjust for paid API tiers.
+
+**Changes:**
+
+### Config Updates: `summarize_links/config.py`
+- Added `rpm_limit`, `tpm_limit`, `daily_limit` fields to `Config` dataclass
+- Fields default to constants: `GEMINI_RPM_LIMIT`, `GEMINI_TPM_LIMIT`, `GEMINI_DAILY_LIMIT`
+- Load from environment variables: `GEMINI_RPM_LIMIT`, `GEMINI_TPM_LIMIT`, `GEMINI_DAILY_LIMIT`
+- Load from YAML config: `rpm_limit`, `tpm_limit`, `daily_limit`
+- YAML takes precedence over environment variables
+
+### Rate Limiter Updates: `summarize_links/rate_limiter.py`
+- Updated `get_rate_limiter()` to accept optional `rpm_limit`, `tpm_limit`, `daily_limit` parameters
+- Parameters passed through to `RateLimiter` constructor when provided
+- Added debug logging showing configured limits on initialization
+
+### Client Updates: `summarize_links/gemini_client.py`
+- Updated `GeminiClient.__init__()` to accept `rpm_limit`, `tpm_limit`, `daily_limit` parameters
+- Updated `create_client()` factory to accept and pass through limit parameters
+- Limits passed to `get_rate_limiter()` call
+
+### CLI Updates: `summarize_links/cli.py`
+- Updated `cmd_status()` to pass config limits when getting rate limiter
+- Updated both `create_client()` calls to pass config limits
+
+### Documentation: `README.md`
+- Added `GEMINI_RPM_LIMIT`, `GEMINI_TPM_LIMIT`, `GEMINI_DAILY_LIMIT` to environment variables table
+- Added rate limit config example in YAML section
+- Added note about customizing for paid tiers
+
+**Usage:**
+
+Via environment variables:
+```bash
+export GEMINI_RPM_LIMIT=60
+export GEMINI_TPM_LIMIT=1000000
+export GEMINI_DAILY_LIMIT=10000
+summarize-links from-note
+```
+
+Via YAML config (`.summarizer-config.yaml`):
+```yaml
+rpm_limit: 60
+tpm_limit: 1000000
+daily_limit: 10000
+```
+
+**Tests:** All 293 existing tests pass

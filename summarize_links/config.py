@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # ----- Constants -----
 # These define default values and filenames used throughout the application
 
-DEFAULT_MODEL = "gemini-2.0-flash-exp"
+DEFAULT_MODEL = "gemini-2.5-flash"
 DEFAULT_OUT_FOLDER = "Summaries"
 DEFAULT_MAX_LINKS = 10
 DEFAULT_DAILY_NOTES_FOLDER = ""  # Root of vault by default
@@ -65,6 +65,9 @@ class Config:
         force: If True, overwrite existing summaries
         default_tags: Tags to add to all summary notes
         max_tags: Maximum number of tags to include in frontmatter
+        rpm_limit: Gemini API requests per minute limit
+        tpm_limit: Gemini API tokens per minute limit
+        daily_limit: Gemini API requests per day limit
     """
 
     gemini_api_key: str = ""
@@ -79,6 +82,9 @@ class Config:
     force: bool = False
     default_tags: list[str] | None = None
     max_tags: int = 10
+    rpm_limit: int = GEMINI_RPM_LIMIT
+    tpm_limit: int = GEMINI_TPM_LIMIT
+    daily_limit: int = GEMINI_DAILY_LIMIT
 
     def validate(self) -> None:
         """
@@ -240,6 +246,22 @@ def load_config(
     # Max tags (YAML only)
     if "max_tags" in yaml_config:
         config.max_tags = int(yaml_config["max_tags"])
+
+    # Rate limits (YAML and env vars)
+    if os.getenv("GEMINI_RPM_LIMIT"):
+        config.rpm_limit = int(os.getenv("GEMINI_RPM_LIMIT", str(GEMINI_RPM_LIMIT)))
+    elif "rpm_limit" in yaml_config:
+        config.rpm_limit = int(yaml_config["rpm_limit"])
+
+    if os.getenv("GEMINI_TPM_LIMIT"):
+        config.tpm_limit = int(os.getenv("GEMINI_TPM_LIMIT", str(GEMINI_TPM_LIMIT)))
+    elif "tpm_limit" in yaml_config:
+        config.tpm_limit = int(yaml_config["tpm_limit"])
+
+    if os.getenv("GEMINI_DAILY_LIMIT"):
+        config.daily_limit = int(os.getenv("GEMINI_DAILY_LIMIT", str(GEMINI_DAILY_LIMIT)))
+    elif "daily_limit" in yaml_config:
+        config.daily_limit = int(yaml_config["daily_limit"])
 
     logger.debug(f"Loaded config: model={config.model}, out_folder={config.out_folder}")
 

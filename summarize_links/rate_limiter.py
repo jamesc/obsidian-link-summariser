@@ -336,13 +336,21 @@ class RateLimiter:
 _rate_limiter: RateLimiter | None = None
 
 
-def get_rate_limiter(state_path: Path | None = None) -> RateLimiter:
+def get_rate_limiter(
+    state_path: Path | None = None,
+    rpm_limit: int | None = None,
+    tpm_limit: int | None = None,
+    daily_limit: int | None = None,
+) -> RateLimiter:
     """
     Get the global rate limiter instance.
 
     Args:
         state_path: Optional path for persisting daily state.
                    Only used on first call to initialize the limiter.
+        rpm_limit: Requests per minute limit (uses default if None).
+        tpm_limit: Tokens per minute limit (uses default if None).
+        daily_limit: Requests per day limit (uses default if None).
 
     Returns:
         Configured RateLimiter instance.
@@ -350,8 +358,21 @@ def get_rate_limiter(state_path: Path | None = None) -> RateLimiter:
     global _rate_limiter
 
     if _rate_limiter is None:
-        _rate_limiter = RateLimiter(state_path=state_path)
-        logger.debug("Initialized global rate limiter")
+        kwargs: dict[str, Any] = {"state_path": state_path}
+        if rpm_limit is not None:
+            kwargs["rpm_limit"] = rpm_limit
+        if tpm_limit is not None:
+            kwargs["tpm_limit"] = tpm_limit
+        if daily_limit is not None:
+            kwargs["daily_limit"] = daily_limit
+
+        _rate_limiter = RateLimiter(**kwargs)
+        logger.debug(
+            "Initialized global rate limiter: RPM=%d, TPM=%d, Daily=%d",
+            _rate_limiter.rpm_limit,
+            _rate_limiter.tpm_limit,
+            _rate_limiter.daily_limit,
+        )
 
     return _rate_limiter
 

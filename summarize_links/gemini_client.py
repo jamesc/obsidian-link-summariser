@@ -217,6 +217,9 @@ class GeminiClient:
         model: str = DEFAULT_MODEL,
         rate_limiter: RateLimiter | None = None,
         state_path: Path | None = None,
+        rpm_limit: int | None = None,
+        tpm_limit: int | None = None,
+        daily_limit: int | None = None,
     ) -> None:
         """
         Initialize the Gemini client.
@@ -226,11 +229,19 @@ class GeminiClient:
             model: Gemini model name to use.
             rate_limiter: Optional rate limiter instance. If None, uses global limiter.
             state_path: Optional path for persisting rate limit state.
+            rpm_limit: Requests per minute limit (uses default if None).
+            tpm_limit: Tokens per minute limit (uses default if None).
+            daily_limit: Requests per day limit (uses default if None).
         """
         self._api_key = api_key
         self._model_name = model
         self._model: Any = None
-        self._rate_limiter = rate_limiter or get_rate_limiter(state_path)
+        self._rate_limiter = rate_limiter or get_rate_limiter(
+            state_path=state_path,
+            rpm_limit=rpm_limit,
+            tpm_limit=tpm_limit,
+            daily_limit=daily_limit,
+        )
         logger.debug("Initialized GeminiClient with model: %s", model)
 
     def _get_model(self) -> Any:
@@ -515,6 +526,9 @@ def create_client(
     model: str = DEFAULT_MODEL,
     mock_mode: bool = False,
     state_path: Path | None = None,
+    rpm_limit: int | None = None,
+    tpm_limit: int | None = None,
+    daily_limit: int | None = None,
 ) -> GeminiClient | MockGeminiClient:
     """
     Factory function to create appropriate client based on mode.
@@ -524,6 +538,9 @@ def create_client(
         model: Model name to use.
         mock_mode: If True, return MockGeminiClient.
         state_path: Optional path for persisting rate limit state.
+        rpm_limit: Requests per minute limit (uses default if None).
+        tpm_limit: Tokens per minute limit (uses default if None).
+        daily_limit: Requests per day limit (uses default if None).
 
     Returns:
         Configured client instance.
@@ -539,4 +556,11 @@ def create_client(
         raise GeminiAPIError("API key required for non-mock mode")
 
     logger.info("Creating GeminiClient with model: %s", model)
-    return GeminiClient(api_key=api_key, model=model, state_path=state_path)
+    return GeminiClient(
+        api_key=api_key,
+        model=model,
+        state_path=state_path,
+        rpm_limit=rpm_limit,
+        tpm_limit=tpm_limit,
+        daily_limit=daily_limit,
+    )

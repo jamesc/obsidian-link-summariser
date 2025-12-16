@@ -28,7 +28,6 @@ from summarize_links.exceptions import (
 from summarize_links.extract import fetch_and_extract, fetch_and_extract_metadata, truncate_content
 from summarize_links.gemini_client import SummarizerProtocol, create_client
 from summarize_links.models import UrlWithContext
-from summarize_links.rate_limiter import get_rate_limiter
 from summarize_links.notes import (
     add_summary_link_to_daily_note,
     extract_urls_with_context,
@@ -41,6 +40,7 @@ from summarize_links.notes import (
     write_summary_note,
     write_summary_note_with_metadata,
 )
+from summarize_links.rate_limiter import get_rate_limiter
 
 # Module logger
 logger = logging.getLogger(__name__)
@@ -668,8 +668,13 @@ def cmd_status(config: Config) -> int:
     Returns:
         Exit code.
     """
-    # Initialize rate limiter with vault path for persistent state
-    rate_limiter = get_rate_limiter(config.vault_path)
+    # Initialize rate limiter with vault path and configured limits
+    rate_limiter = get_rate_limiter(
+        state_path=config.vault_path,
+        rpm_limit=config.rpm_limit,
+        tpm_limit=config.tpm_limit,
+        daily_limit=config.daily_limit,
+    )
     status = rate_limiter.get_status()
 
     console.print("[bold]Gemini API Rate Limit Status[/]\n")
@@ -756,6 +761,10 @@ def _process_urls(urls: list[str], config: Config, daily_note_filename: str | No
         api_key=config.gemini_api_key,
         model=config.model,
         mock_mode=config.mock_mode,
+        state_path=config.vault_path,
+        rpm_limit=config.rpm_limit,
+        tpm_limit=config.tpm_limit,
+        daily_limit=config.daily_limit,
     )
 
     if config.mock_mode:
@@ -814,6 +823,10 @@ def _process_urls_with_metadata(
         api_key=config.gemini_api_key,
         model=config.model,
         mock_mode=config.mock_mode,
+        state_path=config.vault_path,
+        rpm_limit=config.rpm_limit,
+        tpm_limit=config.tpm_limit,
+        daily_limit=config.daily_limit,
     )
 
     if config.mock_mode:
