@@ -480,9 +480,9 @@ Previously, running `summarize-links from-note --date 2025-12-12` would create f
 ## 2025-12-16: Gemini API Rate Limiting
 
 **Goal:** Implement rate limiting to stay within Gemini API free tier quotas:
-- 10 requests per minute (RPM)
+- 5 requests per minute (RPM)
 - 250,000 tokens per minute (TPM)
-- 500 requests per day
+- 20 requests per day
 
 **Changes:**
 
@@ -496,9 +496,9 @@ Previously, running `summarize-links from-note --date 2025-12-12` would create f
 - Thread-safe implementation with locking
 
 ### Config Constants: `summarize_links/config.py`
-- Added `GEMINI_RPM_LIMIT = 10` (requests per minute)
+- Added `GEMINI_RPM_LIMIT = 5` (requests per minute)
 - Added `GEMINI_TPM_LIMIT = 250000` (tokens per minute)
-- Added `GEMINI_DAILY_LIMIT = 500` (requests per day)
+- Added `GEMINI_DAILY_LIMIT = 20` (requests per day)
 
 ### Client Integration: `summarize_links/gemini_client.py`
 - `GeminiClient` now accepts optional `rate_limiter` and `state_path` parameters
@@ -536,9 +536,9 @@ summarize-links --vault /path/to/vault status
 # ┏━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┓
 # ┃ Limit Type            ┃ Used ┃ Limit   ┃ Remaining ┃
 # ┡━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━┩
-# │ Requests/Minute (RPM) │    2 │      10 │         8 │
+# │ Requests/Minute (RPM) │    2 │       5 │         3 │
 # │ Tokens/Minute (TPM)   │ 5000 │ 250,000 │   245,000 │
-# │ Requests/Day          │   15 │     500 │       485 │
+# │ Requests/Day          │   15 │      20 │         5 │
 # └───────────────────────┴──────┴─────────┴───────────┘
 ```
 

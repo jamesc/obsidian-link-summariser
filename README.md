@@ -184,9 +184,9 @@ The tool automatically manages Gemini API rate limits to keep you within free ti
 
 | Limit | Quota | Behavior |
 |-------|-------|----------|
-| RPM (Requests/Minute) | 10 | Automatically waits if limit approached |
+| RPM (Requests/Minute) | 5 | Automatically waits if limit approached |
 | TPM (Tokens/Minute) | 250,000 | Automatically waits if limit approached |
-| Daily Requests | 500 | Raises error when exceeded |
+| Daily Requests | 20 | Raises error when exceeded |
 
 **Check current usage:**
 ```bash
@@ -201,9 +201,9 @@ Gemini API Rate Limit Status
 ┏━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┓
 ┃ Limit Type            ┃ Used ┃ Limit   ┃ Remaining ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━┩
-│ Requests/Minute (RPM) │    2 │      10 │         8 │
+│ Requests/Minute (RPM) │    2 │       5 │         3 │
 │ Tokens/Minute (TPM)   │ 5000 │ 250,000 │   245,000 │
-│ Requests/Day          │   15 │     500 │       485 │
+│ Requests/Day          │   15 │      20 │         5 │
 └───────────────────────┴──────┴─────────┴───────────┘
 ```
 
@@ -216,11 +216,11 @@ Daily usage is tracked persistently in `.summarizer-rate-limit.json` in your vau
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `GEMINI_API_KEY` | Yes | - | Google AI Studio API key |
-| `GEMINI_MODEL` | No | `gemini-2.0-flash-exp` | Gemini model to use |
+| `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model to use |
 | `DEFAULT_VAULT_PATH` | No | - | Default Obsidian vault path |
-| `GEMINI_RPM_LIMIT` | No | `10` | Requests per minute limit |
+| `GEMINI_RPM_LIMIT` | No | `5` | Requests per minute limit |
 | `GEMINI_TPM_LIMIT` | No | `250000` | Tokens per minute limit |
-| `GEMINI_DAILY_LIMIT` | No | `500` | Requests per day limit |
+| `GEMINI_DAILY_LIMIT` | No | `20` | Requests per day limit |
 
 ### Vault Config File (Optional)
 
