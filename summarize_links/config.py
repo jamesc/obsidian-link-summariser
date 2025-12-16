@@ -57,6 +57,7 @@ class Config:
         mock_mode: If True, use mock summarizer instead of real API
         dry_run: If True, show what would happen without making changes
         verbose: If True, enable debug logging
+        force: If True, overwrite existing summaries
     """
 
     gemini_api_key: str = ""
@@ -68,6 +69,7 @@ class Config:
     mock_mode: bool = False
     dry_run: bool = False
     verbose: bool = False
+    force: bool = False
 
     def validate(self) -> None:
         """
@@ -138,6 +140,7 @@ def load_config(
     mock_mode: bool = False,
     dry_run: bool = False,
     verbose: bool = False,
+    force: bool = False,
 ) -> Config:
     """
     Load configuration from all sources and merge them.
@@ -156,6 +159,7 @@ def load_config(
         mock_mode: Use mock summarizer.
         dry_run: Show what would happen without changes.
         verbose: Enable debug logging.
+        force: Overwrite existing summaries.
 
     Returns:
         Populated Config object.
@@ -171,6 +175,7 @@ def load_config(
         mock_mode=mock_mode,
         dry_run=dry_run,
         verbose=verbose,
+        force=force,
     )
 
     # Load API key from environment (required)

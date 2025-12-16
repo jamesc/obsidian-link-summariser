@@ -323,6 +323,42 @@ class TestProcessUrl:
         assert success is True
         assert "Skipped" in message
 
+    @patch("summarize_links.cli.write_summary_note")
+    @patch("summarize_links.cli.fetch_and_extract")
+    @patch("summarize_links.cli.summary_exists")
+    def test_force_overwrites_existing_summary(
+        self,
+        mock_exists: MagicMock,
+        mock_fetch: MagicMock,
+        mock_write: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Should overwrite existing summaries when force=True."""
+        mock_exists.return_value = True  # Summary exists
+        mock_fetch.return_value = ("Article content", "Article Title")
+
+        mock_client = MagicMock()
+        mock_client.summarize.return_value = "## Summary\n\nNew summary."
+
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+            force=True,
+        )
+
+        success, message = _process_url(
+            "https://example.com",
+            config,
+            mock_client,
+        )
+
+        assert success is True
+        assert "Created" in message
+        # Verify overwrite=True was passed to write_summary_note
+        mock_write.assert_called_once()
+        call_kwargs = mock_write.call_args[1]
+        assert call_kwargs.get("overwrite") is True
+
     def test_dry_run_mode(self, mock_vault: Path) -> None:
         """Should not make changes in dry-run mode."""
         config = Config(

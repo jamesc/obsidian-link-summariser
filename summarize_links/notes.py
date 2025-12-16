@@ -392,3 +392,116 @@ def write_stub_note(
         overwrite=True,  # Always overwrite stubs
         status="error",  # Mark as error so it can be retried
     )
+
+
+def add_summary_link_to_daily_note(
+    vault_path: Path,
+    daily_notes_folder: str,
+    note_filename: str,
+    summary_path: Path,
+    url: str,
+) -> bool:
+    """
+    Add an internal Obsidian link to the summary note in the daily note.
+
+    Preserves surrounding context (notes, tags) from the original line containing the URL.
+    If the link already exists, it won't be added again.
+
+    Args:
+        vault_path: Path to the Obsidian vault root.
+        daily_notes_folder: Subfolder for daily notes (can be empty).
+        note_filename: Filename of the daily note (e.g., "2025-12-15.md").
+        summary_path: Path to the created summary note.
+        url: The original URL that was summarized.
+
+    Returns:
+        True if the link was added, False if it already existed or couldn't be added.
+
+    Raises:
+        NoteWriteError: If writing the updated note fails.
+    """
+    # Construct full path to daily note
+    if daily_notes_folder:
+        daily_note_path = vault_path / daily_notes_folder / note_filename
+    else:
+        daily_note_path = vault_path / note_filename
+
+    if not daily_note_path.exists():
+        logger.warning(f"Daily note not found for linking: {daily_note_path}")
+        return False
+
+    # Get the summary note name (without .md extension) for the Obsidian link
+    summary_name = summary_path.stem
+
+    # Create the Obsidian internal link
+    obsidian_link = f"[[{summary_name}]]"
+
+    try:
+        content = daily_note_path.read_text(encoding="utf-8")
+
+        # Check if link already exists
+        if obsidian_link in content:
+            logger.debug(f"Link already exists in daily note: {obsidian_link}")
+            return False
+
+        # Find the line containing the URL and extract context
+        summary_line = _build_summary_line_with_context(content, url, obsidian_link)
+
+        # Append the link at the end of the note
+        # Add a section header if this is the first summary link
+        if "## Summaries" not in content:
+            updated_content = content.rstrip() + f"\n\n## Summaries\n{summary_line}\n"
+        else:
+            # Find the Summaries section and append to it
+            # Simple approach: append at end of file under existing section
+            updated_content = content.rstrip() + f"\n{summary_line}\n"
+
+        daily_note_path.write_text(updated_content, encoding="utf-8")
+        logger.info(f"Added summary link to daily note: {obsidian_link}")
+        return True
+
+    except OSError as e:
+        raise NoteWriteError(f"Failed to update daily note {daily_note_path}: {e}") from e
+
+
+def _build_summary_line_with_context(content: str, url: str, obsidian_link: str) -> str:
+    """
+    Build a summary line by extracting context from the original URL line.
+
+    Finds the line containing the URL, replaces the URL (or markdown link) with
+    the Obsidian internal link, and preserves surrounding text like notes and tags.
+
+    Args:
+        content: Full content of the daily note.
+        url: The original URL to find.
+        obsidian_link: The Obsidian internal link to use (e.g., "[[summary-name]]").
+
+    Returns:
+        A formatted summary line with context, or a simple bullet point if no context found.
+    """
+    # Find the line containing the URL
+    for line in content.split("\n"):
+        if url not in line:
+            continue
+
+        # Found the line - now replace the URL with the obsidian link
+        # First try to match a markdown link containing this URL: [text](url)
+        markdown_link_pattern = rf"\[[^\]]*\]\({re.escape(url)}\)"
+        if re.search(markdown_link_pattern, line):
+            # Replace the markdown link with the obsidian link
+            new_line = re.sub(markdown_link_pattern, obsidian_link, line)
+        else:
+            # It's a bare URL - replace it directly
+            new_line = line.replace(url, obsidian_link)
+
+        # Clean up the line - ensure it starts with a bullet if it doesn't already
+        new_line = new_line.strip()
+        if not new_line.startswith("-") and not new_line.startswith("*"):
+            new_line = f"- {new_line}"
+
+        logger.debug(f"Built summary line with context: {new_line}")
+        return new_line
+
+    # URL not found in content - return simple link
+    logger.debug(f"URL not found in content, using simple link: {url}")
+    return f"- {obsidian_link}"

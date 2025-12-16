@@ -28,6 +28,7 @@ from summarize_links.exceptions import (
 from summarize_links.extract import fetch_and_extract, truncate_content
 from summarize_links.gemini_client import SummarizerProtocol, create_client
 from summarize_links.notes import (
+    add_summary_link_to_daily_note,
     extract_urls,
     read_daily_note,
     slug_from_url,
@@ -110,6 +111,11 @@ Examples:
         type=int,
         help="Maximum number of links to process",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing summaries",
+    )
 
     # Subcommands
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -147,6 +153,7 @@ def _process_url(
     client: SummarizerProtocol,
     progress: Progress | None = None,
     task_id: TaskID | None = None,
+    daily_note_filename: str | None = None,
 ) -> tuple[bool, str]:
     """
     Process a single URL: fetch, extract, summarize, write.
@@ -157,6 +164,7 @@ def _process_url(
         client: Gemini client instance implementing SummarizerProtocol.
         progress: Optional progress instance for updates.
         task_id: Optional task ID for progress updates.
+        daily_note_filename: Optional filename of source daily note for back-linking.
 
     Returns:
         Tuple of (success, message).
@@ -166,8 +174,8 @@ def _process_url(
 
     slug = slug_from_url(url)
 
-    # Check if summary already exists
-    if summary_exists(config.vault_path, config.out_folder, url):
+    # Check if summary already exists (skip check if force is enabled)
+    if not config.force and summary_exists(config.vault_path, config.out_folder, url):
         return True, f"Skipped (exists): {slug}"
 
     if config.dry_run:
@@ -189,12 +197,23 @@ def _process_url(
         summary = client.summarize(content, url, title)
 
         # Write the summary note
-        write_summary_note(
+        summary_path = write_summary_note(
             vault_path=config.vault_path,
             out_folder=config.out_folder,
             url=url,
             content=summary,
+            overwrite=config.force,
         )
+
+        # Add link to daily note if we have the source note filename
+        if daily_note_filename:
+            add_summary_link_to_daily_note(
+                vault_path=config.vault_path,
+                daily_notes_folder=config.daily_notes_folder,
+                note_filename=daily_note_filename,
+                summary_path=summary_path,
+                url=url,
+            )
 
         return True, f"Created: {slug}.md"
 
@@ -296,8 +315,8 @@ def cmd_from_note(config: Config, date_str: str | None = None) -> int:
     else:
         console.print(f"[green]Found {len(urls)} URLs to process[/]")
 
-    # Process URLs
-    return _process_urls(urls, config)
+    # Process URLs with daily note context for back-linking
+    return _process_urls(urls, config, daily_note_filename=note_filename)
 
 
 def cmd_urls(config: Config, urls: list[str]) -> int:
@@ -321,13 +340,14 @@ def cmd_urls(config: Config, urls: list[str]) -> int:
     return _process_urls(urls, config)
 
 
-def _process_urls(urls: list[str], config: Config) -> int:
+def _process_urls(urls: list[str], config: Config, daily_note_filename: str | None = None) -> int:
     """
     Process a list of URLs.
 
     Args:
         urls: URLs to process.
         config: Application configuration.
+        daily_note_filename: Optional filename of source daily note for back-linking.
 
     Returns:
         Exit code.
@@ -356,7 +376,9 @@ def _process_urls(urls: list[str], config: Config) -> int:
         task = progress.add_task("[cyan]Processing...", total=len(urls))
 
         for url in urls:
-            success, message = _process_url(url, config, client, progress, task)
+            success, message = _process_url(
+                url, config, client, progress, task, daily_note_filename
+            )
             results.append((success, message))
             progress.advance(task)
 
@@ -433,6 +455,7 @@ def main(argv: list[str] | None = None) -> int:
             mock_mode=args.mock,
             dry_run=args.dry_run,
             verbose=args.verbose,
+            force=args.force,
         )
         setup_logging(config.verbose)
 

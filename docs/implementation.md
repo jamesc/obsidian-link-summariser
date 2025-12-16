@@ -23,6 +23,8 @@
 
 - **Type hints everywhere**: Enforce type annotations on all function parameters and return values
 
+- **Document your actions**: On completing a task, write a summary to docs/tasks.md
+
 - **Custom exceptions**: Create specific exception classes for clearer error handling
   - `URLExtractionError`, `GeminiAPIError`, `NoteWriteError`, etc.
   - Catch and handle appropriately at CLI level

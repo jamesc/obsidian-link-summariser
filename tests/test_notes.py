@@ -9,6 +9,7 @@ import pytest
 
 from summarize_links.exceptions import NoteReadError
 from summarize_links.notes import (
+    add_summary_link_to_daily_note,
     extract_urls,
     generate_slug,
     get_summary_filepath,
@@ -336,3 +337,192 @@ class TestWriteStubNote:
         assert "Summary Unavailable" in content
         assert "Rate limit exceeded" in content
         assert "https://example.com/failed" in content
+
+
+class TestAddSummaryLinkToDailyNote:
+    """Tests for adding summary links to daily notes."""
+
+    def test_add_link_creates_summaries_section(self, tmp_path: Path) -> None:
+        """Should create Summaries section and add link."""
+        # Create a daily note with the URL
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text("# 2025-12-16\n\n- https://example.com/article\n")
+
+        # Create a mock summary path
+        summary_path = tmp_path / "Summaries" / "2025-12-16-example-article.md"
+        summary_path.parent.mkdir(parents=True)
+        summary_path.write_text("Summary content")
+
+        result = add_summary_link_to_daily_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            summary_path=summary_path,
+            url="https://example.com/article",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        assert "## Summaries" in content
+        assert "[[2025-12-16-example-article]]" in content
+
+    def test_add_link_to_existing_summaries_section(self, tmp_path: Path) -> None:
+        """Should append link to existing Summaries section."""
+        # Create a daily note with existing Summaries section
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text(
+            "# 2025-12-16\n\nhttps://example.com/new\n\n## Summaries\n- [[existing-summary]]\n"
+        )
+
+        summary_path = tmp_path / "Summaries" / "2025-12-16-new-article.md"
+        summary_path.parent.mkdir(parents=True)
+        summary_path.write_text("Summary content")
+
+        result = add_summary_link_to_daily_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            summary_path=summary_path,
+            url="https://example.com/new",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        assert "[[existing-summary]]" in content
+        assert "[[2025-12-16-new-article]]" in content
+
+    def test_skip_if_link_already_exists(self, tmp_path: Path) -> None:
+        """Should not add duplicate links."""
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text("# 2025-12-16\n\n## Summaries\n- [[2025-12-16-article]]\n")
+
+        summary_path = tmp_path / "Summaries" / "2025-12-16-article.md"
+        summary_path.parent.mkdir(parents=True)
+        summary_path.write_text("Summary content")
+
+        result = add_summary_link_to_daily_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            summary_path=summary_path,
+            url="https://example.com/article",
+        )
+
+        assert result is False
+        # Should only have one occurrence
+        content = note_file.read_text()
+        assert content.count("[[2025-12-16-article]]") == 1
+
+    def test_add_link_in_daily_notes_subfolder(self, tmp_path: Path) -> None:
+        """Should work with daily notes in subfolder."""
+        # Create daily note in Journal subfolder
+        journal = tmp_path / "Journal"
+        journal.mkdir()
+        note_file = journal / "2025-12-16.md"
+        note_file.write_text("# 2025-12-16\n\n- https://example.com/article\n")
+
+        summary_path = tmp_path / "Summaries" / "2025-12-16-article.md"
+        summary_path.parent.mkdir(parents=True)
+        summary_path.write_text("Summary content")
+
+        result = add_summary_link_to_daily_note(
+            vault_path=tmp_path,
+            daily_notes_folder="Journal",
+            note_filename="2025-12-16.md",
+            summary_path=summary_path,
+            url="https://example.com/article",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        assert "[[2025-12-16-article]]" in content
+
+    def test_return_false_if_daily_note_not_found(self, tmp_path: Path) -> None:
+        """Should return False if daily note doesn't exist."""
+        summary_path = tmp_path / "Summaries" / "2025-12-16-article.md"
+
+        result = add_summary_link_to_daily_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="nonexistent.md",
+            summary_path=summary_path,
+            url="https://example.com/article",
+        )
+
+        assert result is False
+
+    def test_preserves_context_from_markdown_link(self, tmp_path: Path) -> None:
+        """Should preserve surrounding text when URL is in a markdown link."""
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text(
+            "# 2025-12-16\n\n- [Great Article](https://example.com/article) - must read #ai #tech\n"
+        )
+
+        summary_path = tmp_path / "Summaries" / "2025-12-16-article.md"
+        summary_path.parent.mkdir(parents=True)
+        summary_path.write_text("Summary content")
+
+        result = add_summary_link_to_daily_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            summary_path=summary_path,
+            url="https://example.com/article",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        # Should have the link with surrounding context
+        assert "[[2025-12-16-article]]" in content
+        assert "must read" in content
+        assert "#ai" in content
+        assert "#tech" in content
+
+    def test_preserves_context_from_bare_url(self, tmp_path: Path) -> None:
+        """Should preserve surrounding text when URL is bare."""
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text(
+            "# 2025-12-16\n\n- https://example.com/article interesting thoughts on AI #reading\n"
+        )
+
+        summary_path = tmp_path / "Summaries" / "2025-12-16-article.md"
+        summary_path.parent.mkdir(parents=True)
+        summary_path.write_text("Summary content")
+
+        result = add_summary_link_to_daily_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            summary_path=summary_path,
+            url="https://example.com/article",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        # Should have the link with surrounding context
+        assert "[[2025-12-16-article]]" in content
+        assert "interesting thoughts on AI" in content
+        assert "#reading" in content
+
+    def test_adds_bullet_if_original_line_has_none(self, tmp_path: Path) -> None:
+        """Should add bullet point if original line doesn't have one."""
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text("# 2025-12-16\n\nhttps://example.com/article some notes\n")
+
+        summary_path = tmp_path / "Summaries" / "2025-12-16-article.md"
+        summary_path.parent.mkdir(parents=True)
+        summary_path.write_text("Summary content")
+
+        result = add_summary_link_to_daily_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            summary_path=summary_path,
+            url="https://example.com/article",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        # Check the Summaries section has a bullet
+        summaries_section = content.split("## Summaries")[1]
+        assert "- [[2025-12-16-article]]" in summaries_section
