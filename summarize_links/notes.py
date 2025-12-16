@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 from summarize_links.config import MAX_SLUG_LENGTH
 from summarize_links.exceptions import NoteReadError, NoteWriteError, URLExtractionError
+from summarize_links.models import UrlWithContext
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -30,6 +31,10 @@ BARE_URL_PATTERN = r"(?<!\()(https?://[^\s\[\]()]+)(?!\))"
 
 # Combined pattern for extraction
 URL_PATTERN = re.compile(rf"{MARKDOWN_LINK_PATTERN}|{BARE_URL_PATTERN}", re.IGNORECASE)
+
+# Pattern to match hashtags (Obsidian-style tags)
+# Matches #tag but not ## headers or # in URLs
+HASHTAG_PATTERN = re.compile(r"(?<!\S)#([a-zA-Z][a-zA-Z0-9_-]*)", re.UNICODE)
 
 # Characters to replace in slugs
 SLUG_REPLACEMENTS = {
@@ -124,6 +129,80 @@ def extract_urls(content: str) -> list[str]:
 
     except Exception as e:
         raise URLExtractionError(f"Failed to extract URLs: {e}") from e
+
+
+def extract_hashtags_from_line(line: str) -> list[str]:
+    """
+    Extract hashtags from a single line of text.
+
+    Finds Obsidian-style tags like #ai, #machine-learning, etc.
+    Does not include the # prefix in the returned tags.
+
+    Args:
+        line: Single line of text to parse.
+
+    Returns:
+        List of tag names (without # prefix).
+    """
+    tags = HASHTAG_PATTERN.findall(line)
+    logger.debug(f"Found {len(tags)} hashtags in line: {tags}")
+    return tags
+
+
+def extract_urls_with_context(content: str) -> list[UrlWithContext]:
+    """
+    Extract URLs from Markdown content with surrounding context.
+
+    For each URL found, captures:
+    - The URL itself
+    - Any hashtags on the same line (user's categorization)
+    - The full line text for reference
+
+    Deduplicates URLs while preserving order of first occurrence.
+
+    Args:
+        content: Markdown content to parse.
+
+    Returns:
+        List of UrlWithContext objects in order of first appearance.
+
+    Raises:
+        URLExtractionError: If URL extraction fails unexpectedly.
+    """
+    try:
+        results: list[UrlWithContext] = []
+        seen: set[str] = set()
+
+        # Process line by line to capture context
+        for line in content.split("\n"):
+            # Find all URLs in this line
+            for match in URL_PATTERN.finditer(line):
+                # Group 2 is URL from Markdown link, Group 3 is bare URL
+                url = match.group(2) or match.group(3)
+
+                if not url or url in seen:
+                    continue
+
+                # Clean up URL (remove trailing punctuation)
+                url = url.rstrip(".,;:")
+                seen.add(url)
+
+                # Extract hashtags from the same line
+                tags = extract_hashtags_from_line(line)
+
+                result = UrlWithContext(
+                    url=url,
+                    tags=tags,
+                    context_text=line.strip(),
+                )
+                results.append(result)
+                logger.debug(f"Extracted URL with context: {url} (tags: {tags})")
+
+        logger.info(f"Extracted {len(results)} unique URLs with context")
+        return results
+
+    except Exception as e:
+        raise URLExtractionError(f"Failed to extract URLs with context: {e}") from e
 
 
 def generate_slug(text: str) -> str:

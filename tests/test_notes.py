@@ -10,7 +10,9 @@ import pytest
 from summarize_links.exceptions import NoteReadError
 from summarize_links.notes import (
     add_summary_link_to_daily_note,
+    extract_hashtags_from_line,
     extract_urls,
+    extract_urls_with_context,
     generate_slug,
     get_summary_filepath,
     read_daily_note,
@@ -526,3 +528,155 @@ class TestAddSummaryLinkToDailyNote:
         # Check the Summaries section has a bullet
         summaries_section = content.split("## Summaries")[1]
         assert "- [[2025-12-16-article]]" in summaries_section
+
+
+class TestExtractHashtagsFromLine:
+    """Tests for hashtag extraction from lines."""
+
+    def test_extract_single_hashtag(self) -> None:
+        """Should extract a single hashtag."""
+        tags = extract_hashtags_from_line("Check this out #ai")
+        assert tags == ["ai"]
+
+    def test_extract_multiple_hashtags(self) -> None:
+        """Should extract multiple hashtags."""
+        tags = extract_hashtags_from_line("Article about #ai #machine-learning #python")
+        assert tags == ["ai", "machine-learning", "python"]
+
+    def test_no_hashtags(self) -> None:
+        """Should return empty list when no hashtags."""
+        tags = extract_hashtags_from_line("No tags here")
+        assert tags == []
+
+    def test_ignore_header_hashes(self) -> None:
+        """Should not extract markdown headers as tags."""
+        tags = extract_hashtags_from_line("## Header")
+        assert tags == []
+
+    def test_ignore_hash_in_url(self) -> None:
+        """Should not extract hashes from URLs (anchors)."""
+        # The hashtag pattern requires whitespace before #
+        tags = extract_hashtags_from_line("https://example.com#section")
+        assert tags == []
+
+    def test_hashtag_with_numbers(self) -> None:
+        """Should extract tags with numbers."""
+        tags = extract_hashtags_from_line("Read about #gpt4 and #llm2024")
+        assert "gpt4" in tags
+        assert "llm2024" in tags
+
+    def test_hashtag_with_hyphens(self) -> None:
+        """Should extract tags with hyphens."""
+        tags = extract_hashtags_from_line("Learning #deep-learning today")
+        assert tags == ["deep-learning"]
+
+    def test_hashtag_with_underscores(self) -> None:
+        """Should extract tags with underscores."""
+        tags = extract_hashtags_from_line("Working on #my_project")
+        assert tags == ["my_project"]
+
+    def test_hashtag_at_start_of_line(self) -> None:
+        """Should extract hashtag at start of line."""
+        tags = extract_hashtags_from_line("#important this is key")
+        assert tags == ["important"]
+
+    def test_hashtag_must_start_with_letter(self) -> None:
+        """Hashtags must start with a letter."""
+        tags = extract_hashtags_from_line("Price is #123")
+        assert tags == []
+
+
+class TestExtractUrlsWithContext:
+    """Tests for URL extraction with context."""
+
+    def test_extract_url_with_hashtags(self) -> None:
+        """Should extract URL along with hashtags from same line."""
+        content = "- [Article](https://example.com/article) #ai #reading"
+        results = extract_urls_with_context(content)
+
+        assert len(results) == 1
+        assert results[0].url == "https://example.com/article"
+        assert "ai" in results[0].tags
+        assert "reading" in results[0].tags
+
+    def test_extract_bare_url_with_hashtags(self) -> None:
+        """Should work with bare URLs too."""
+        content = "- https://example.com/article interesting #tech #must-read"
+        results = extract_urls_with_context(content)
+
+        assert len(results) == 1
+        assert results[0].url == "https://example.com/article"
+        assert "tech" in results[0].tags
+        assert "must-read" in results[0].tags
+
+    def test_extract_context_text(self) -> None:
+        """Should capture the full line as context."""
+        content = "- [Great Article](https://example.com) by John #ai"
+        results = extract_urls_with_context(content)
+
+        assert len(results) == 1
+        assert "Great Article" in results[0].context_text
+        assert "by John" in results[0].context_text
+
+    def test_no_hashtags_returns_empty_list(self) -> None:
+        """Should return empty tags list when no hashtags on line."""
+        content = "- https://example.com/article"
+        results = extract_urls_with_context(content)
+
+        assert len(results) == 1
+        assert results[0].tags == []
+
+    def test_multiple_urls_different_lines(self) -> None:
+        """Should handle multiple URLs on different lines."""
+        content = """
+        - https://first.com #tag1
+        - https://second.com #tag2 #tag3
+        """
+        results = extract_urls_with_context(content)
+
+        assert len(results) == 2
+        assert results[0].url == "https://first.com"
+        assert results[0].tags == ["tag1"]
+        assert results[1].url == "https://second.com"
+        assert "tag2" in results[1].tags
+        assert "tag3" in results[1].tags
+
+    def test_deduplicate_urls(self) -> None:
+        """Should deduplicate URLs, keeping first occurrence."""
+        content = """
+        - https://example.com #first
+        - https://example.com #second
+        """
+        results = extract_urls_with_context(content)
+
+        assert len(results) == 1
+        assert results[0].tags == ["first"]
+
+    def test_url_with_no_context(self) -> None:
+        """Should handle URL-only lines."""
+        content = "https://example.com"
+        results = extract_urls_with_context(content)
+
+        assert len(results) == 1
+        assert results[0].url == "https://example.com"
+        assert results[0].tags == []
+
+    def test_mixed_urls_and_text(self) -> None:
+        """Should extract from realistic daily note content."""
+        content = """# 2025-12-16
+
+## Articles to Read
+- [Attention Is All You Need](https://arxiv.org/abs/1706.03762) #ai #papers #transformers
+- https://openai.com/blog/gpt-4 exciting stuff #gpt #ai
+
+## Tasks
+- Follow up on [[meeting-notes]]
+"""
+        results = extract_urls_with_context(content)
+
+        assert len(results) == 2
+        assert results[0].url == "https://arxiv.org/abs/1706.03762"
+        assert "papers" in results[0].tags
+        assert "transformers" in results[0].tags
+        assert results[1].url == "https://openai.com/blog/gpt-4"
+        assert "gpt" in results[1].tags
