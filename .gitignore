@@ -36,3 +36,6 @@ Thumbs.db
 # uv
 .uv/
 uv.lock
+
+# Rate limit state file
+.summarizer-rate-limit.json
