@@ -1,0 +1,146 @@
+"""
+Pytest configuration and shared fixtures.
+
+This module provides common fixtures used across all test modules,
+including temporary vault directories and sample content.
+"""
+
+from datetime import datetime
+from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture
+def sample_daily_note_content() -> str:
+    """Sample daily note content with various URL formats."""
+    return """# 2025-12-16
+
+## Articles to Read
+- [Gemini API pricing](https://ai.google.dev/pricing)
+- [Obsidian plugins](https://obsidian.md/plugins)
+https://example.com/direct-link
+
+## Tasks
+- Follow up on [[2025-12-15]]
+- Check [[Meeting Notes]]
+
+## Notes
+Found an interesting article at https://blog.example.com/post.html about testing.
+"""
+
+
+@pytest.fixture
+def sample_urls() -> list[str]:
+    """Expected URLs from sample_daily_note_content."""
+    return [
+        "https://ai.google.dev/pricing",
+        "https://obsidian.md/plugins",
+        "https://example.com/direct-link",
+        "https://blog.example.com/post.html",
+    ]
+
+
+@pytest.fixture
+def mock_vault(tmp_path: Path, sample_daily_note_content: str) -> Path:
+    """
+    Create a mock Obsidian vault structure.
+
+    Structure:
+        vault/
+        ├── 2025-12-16.md (daily note with URLs)
+        ├── Journal/
+        │   └── 2025-12-15.md
+        └── Summaries/ (empty, for output)
+    """
+    # Create daily note in root
+    daily_note = tmp_path / "2025-12-16.md"
+    daily_note.write_text(sample_daily_note_content)
+
+    # Create Journal folder with a note
+    journal = tmp_path / "Journal"
+    journal.mkdir()
+    (journal / "2025-12-15.md").write_text("# 2025-12-15\n\nYesterday's note.")
+
+    # Create empty Summaries folder
+    summaries = tmp_path / "Summaries"
+    summaries.mkdir()
+
+    return tmp_path
+
+
+@pytest.fixture
+def mock_vault_with_config(mock_vault: Path) -> Path:
+    """Mock vault with a .summarizer-config.yaml file."""
+    config_content = """
+out_folder: "MySummaries"
+max_links: 5
+daily_notes_folder: "Journal"
+model: "gemini-2.0-flash-exp"
+"""
+    (mock_vault / ".summarizer-config.yaml").write_text(config_content)
+    return mock_vault
+
+
+@pytest.fixture
+def sample_html_content() -> str:
+    """Sample HTML page content for extraction tests."""
+    return """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Article - Example Site</title>
+    <style>body { font-family: sans-serif; }</style>
+    <script>console.log('tracking');</script>
+</head>
+<body>
+    <nav>
+        <a href="/">Home</a>
+        <a href="/about">About</a>
+    </nav>
+    <article>
+        <h1>Test Article Title</h1>
+        <p>This is the main content of the article. It contains important information
+        that should be extracted for summarization.</p>
+        <p>Here is another paragraph with more details about the topic.</p>
+        <ul>
+            <li>Key point one</li>
+            <li>Key point two</li>
+            <li>Key point three</li>
+        </ul>
+    </article>
+    <footer>
+        <p>Copyright 2025 Example Site</p>
+    </footer>
+</body>
+</html>
+"""
+
+
+@pytest.fixture
+def sample_gemini_response() -> str:
+    """Sample Gemini API response for mock testing."""
+    return """---
+source: https://example.com/article
+title: Test Article Title
+date: 2025-12-16
+---
+
+## Overview
+This article discusses important information about the topic at hand.
+
+## Key Points
+- Key point one is significant
+- Key point two provides context
+- Key point three offers practical advice
+
+## Actions
+- Review the key points
+- Apply learnings to current project
+"""
+
+
+@pytest.fixture
+def fixed_date() -> datetime:
+    """Fixed datetime for deterministic tests."""
+    return datetime(2025, 12, 16, 10, 30, 0)
