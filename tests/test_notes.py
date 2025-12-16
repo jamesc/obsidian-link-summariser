@@ -16,6 +16,7 @@ from summarize_links.notes import (
     extract_hashtags_from_line,
     extract_urls,
     extract_urls_with_context,
+    find_daily_notes_with_urls,
     generate_slug,
     get_summary_filepath,
     read_daily_note,
@@ -1143,3 +1144,69 @@ class TestRemoveUrlLineFromNote:
         content = note_file.read_text()
         assert "https://example.com/article" not in content
         assert "Task 2" in content
+
+
+class TestFindDailyNotesWithUrls:
+    """Tests for finding daily notes containing URLs."""
+
+    def test_find_notes_with_urls(self, tmp_path: Path) -> None:
+        """Should find daily notes that contain URLs."""
+        # Create notes with URLs
+        (tmp_path / "2025-12-15.md").write_text("Check out https://example.com")
+        (tmp_path / "2025-12-14.md").write_text("No links here")
+        (tmp_path / "2025-12-13.md").write_text("[Link](https://test.com) and https://other.com")
+
+        result = find_daily_notes_with_urls(tmp_path)
+
+        assert len(result) == 2
+        assert ("2025-12-15", 1) in result
+        assert ("2025-12-13", 2) in result
+
+    def test_sorted_by_date_descending(self, tmp_path: Path) -> None:
+        """Should return results sorted by date, newest first."""
+        (tmp_path / "2025-12-01.md").write_text("https://old.com")
+        (tmp_path / "2025-12-15.md").write_text("https://new.com")
+        (tmp_path / "2025-12-10.md").write_text("https://middle.com")
+
+        result = find_daily_notes_with_urls(tmp_path)
+
+        dates = [date for date, _ in result]
+        assert dates == ["2025-12-15", "2025-12-10", "2025-12-01"]
+
+    def test_ignores_non_daily_note_files(self, tmp_path: Path) -> None:
+        """Should only match files with YYYY-MM-DD.md pattern."""
+        (tmp_path / "2025-12-15.md").write_text("https://example.com")
+        (tmp_path / "notes.md").write_text("https://ignored.com")
+        (tmp_path / "random-file.md").write_text("https://ignored.com")
+        (tmp_path / "12-15-2025.md").write_text("https://wrong-format.com")
+
+        result = find_daily_notes_with_urls(tmp_path)
+
+        assert len(result) == 1
+        assert result[0] == ("2025-12-15", 1)
+
+    def test_handles_daily_notes_subfolder(self, tmp_path: Path) -> None:
+        """Should find notes in a daily notes subfolder."""
+        journal = tmp_path / "Journal"
+        journal.mkdir()
+        (journal / "2025-12-15.md").write_text("https://example.com")
+
+        result = find_daily_notes_with_urls(tmp_path, daily_notes_folder="Journal")
+
+        assert len(result) == 1
+        assert result[0] == ("2025-12-15", 1)
+
+    def test_returns_empty_for_no_urls(self, tmp_path: Path) -> None:
+        """Should return empty list if no notes have URLs."""
+        (tmp_path / "2025-12-15.md").write_text("Just some text")
+        (tmp_path / "2025-12-14.md").write_text("More text without links")
+
+        result = find_daily_notes_with_urls(tmp_path)
+
+        assert result == []
+
+    def test_returns_empty_for_missing_folder(self, tmp_path: Path) -> None:
+        """Should return empty list if folder doesn't exist."""
+        result = find_daily_notes_with_urls(tmp_path, daily_notes_folder="NonExistent")
+
+        assert result == []

@@ -339,6 +339,35 @@ class TestParseGeminiResponse:
 
         assert result.suggested_tags == []
 
+    def test_parse_multiline_json_in_code_block(self) -> None:
+        """Should parse multiline JSON inside markdown code blocks."""
+        response = '''```json
+{
+  "summary": "# Summary Title\\n\\nThis is a multiline summary with markdown.\\n\\n- Point 1\\n- Point 2",
+  "suggested_tags": ["llm", "automation", "software-development"],
+  "content_type": "blog"
+}
+```'''
+        result = _parse_gemini_response(response)
+
+        assert "Summary Title" in result.content
+        assert result.suggested_tags == ["llm", "automation", "software-development"]
+        assert result.content_type == "blog"
+
+    def test_parse_json_with_nested_newlines_in_values(self) -> None:
+        """Should handle JSON where values contain escaped newlines."""
+        response = '''```json
+{
+  "summary": "Line 1\\nLine 2\\n\\n> Quote here\\n\\nMore text",
+  "suggested_tags": ["tag1", "tag2"],
+  "content_type": "article"
+}
+```'''
+        result = _parse_gemini_response(response)
+
+        assert "Line 1" in result.content
+        assert result.suggested_tags == ["tag1", "tag2"]
+
 
 class TestMockGeminiClientWithMetadata:
     """Tests for MockGeminiClient.summarize_with_metadata."""

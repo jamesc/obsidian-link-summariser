@@ -31,6 +31,7 @@ from summarize_links.models import UrlWithContext
 from summarize_links.notes import (
     add_summary_link_to_daily_note,
     extract_urls_with_context,
+    find_daily_notes_with_urls,
     read_daily_note,
     remove_url_line_from_note,
     slug_from_url,
@@ -70,6 +71,9 @@ Examples:
 
   # Summarize links from a specific date
   summarize-links from-note --date 2024-01-15
+
+  # List all daily notes that have URLs
+  summarize-links list
 
   # Summarize specific URLs
   summarize-links urls https://example.com https://another.com
@@ -145,6 +149,13 @@ Examples:
         "urls",
         nargs="+",
         help="URLs to summarize",
+    )
+
+    # list command
+    subparsers.add_parser(
+        "list",
+        help="List daily notes with URLs",
+        description="List dates of all daily notes that contain URLs.",
     )
 
     return parser
@@ -464,6 +475,50 @@ def cmd_from_note(config: Config, date_str: str | None = None) -> int:
     return _process_urls_with_metadata(url_contexts, config, daily_note_filename=note_filename)
 
 
+def cmd_list(config: Config) -> int:
+    """
+    List all daily notes that contain URLs.
+
+    Args:
+        config: Application configuration.
+
+    Returns:
+        Exit code.
+    """
+    # Vault path must be set (validated in load_config)
+    assert config.vault_path is not None
+
+    console.print("[bold]Scanning daily notes for URLs...[/]")
+
+    # Find all daily notes with URLs
+    notes_with_urls = find_daily_notes_with_urls(
+        vault_path=config.vault_path,
+        daily_notes_folder=config.daily_notes_folder,
+    )
+
+    if not notes_with_urls:
+        console.print("[yellow]No daily notes with URLs found.[/]")
+        return EXIT_SUCCESS
+
+    # Display results in a table
+    table = Table(title="Daily Notes with URLs")
+    table.add_column("Date", style="cyan")
+    table.add_column("URLs", style="green", justify="right")
+
+    total_urls = 0
+    for date_str, url_count in notes_with_urls:
+        table.add_row(date_str, str(url_count))
+        total_urls += url_count
+
+    console.print(table)
+    console.print()
+    console.print(
+        f"[bold]Total:[/] {len(notes_with_urls)} notes with {total_urls} URLs"
+    )
+
+    return EXIT_SUCCESS
+
+
 def cmd_urls(config: Config, urls: list[str]) -> int:
     """
     Process specified URLs.
@@ -694,6 +749,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_from_note(config, getattr(args, "date", None))
         elif args.command == "urls":
             return cmd_urls(config, args.urls)
+        elif args.command == "list":
+            return cmd_list(config)
         else:
             console.print(f"[red]Unknown command: {args.command}[/]")
             return EXIT_ERROR

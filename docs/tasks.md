@@ -244,3 +244,64 @@ Added 5 tests in `tests/test_cli.py` for `TestUrlLineDeletion`:
 - Pass `needs_overwrite` to `write_summary_note_with_metadata()` instead of `config.force`
 
 **Tests:** Added `test_reprocessing_mocked_summary_overwrites` in `tests/test_cli.py` (247 tests total)
+
+---
+
+## 2025-12-16: Add 'list' command to show daily notes with URLs
+
+**Goal:** Add a new CLI command `list` that scans all daily notes and displays which dates have URLs in them.
+
+**Changes:**
+
+### `summarize_links/notes.py`
+- Added `find_daily_notes_with_urls()` function that:
+  - Scans the daily notes folder for files matching `YYYY-MM-DD.md` pattern
+  - Extracts URLs from each note using `extract_urls()`
+  - Returns list of tuples `(date_string, url_count)` sorted by date descending
+  - Respects `daily_notes_folder` configuration setting
+  - Handles missing folders gracefully
+
+### `summarize_links/cli.py`
+- Added `list` subcommand to argument parser
+- Added `cmd_list()` function that:
+  - Calls `find_daily_notes_with_urls()` with current config
+  - Displays results in a Rich table with Date and URL count columns
+  - Shows total count of notes and URLs at the bottom
+- Updated command dispatcher in `main()` to handle `list` command
+- Updated help examples to include the `list` command
+
+**Usage:**
+```bash
+summarize-links --vault /path/to/vault list
+```
+
+**Output Example:**
+```
+Scanning daily notes for URLs...
+       Daily Notes with URLs
+┏━━━━━━━━━━━━┳━━━━━━┓
+┃ Date       ┃ URLs ┃
+┡━━━━━━━━━━━━╇━━━━━━┩
+│ 2025-12-16 │    3 │
+│ 2025-12-15 │    5 │
+│ 2025-12-14 │    2 │
+└────────────┴──────┘
+
+Total: 3 notes with 10 URLs
+```
+
+**Tests:** Added 9 new tests:
+- `tests/test_notes.py::TestFindDailyNotesWithUrls`:
+  - `test_find_notes_with_urls` - Basic functionality
+  - `test_sorted_by_date_descending` - Correct sort order
+  - `test_ignores_non_daily_note_files` - Only YYYY-MM-DD.md files
+  - `test_handles_daily_notes_subfolder` - Works with configured subfolder
+  - `test_returns_empty_for_no_urls` - Empty result when no URLs
+  - `test_returns_empty_for_missing_folder` - Handles missing folder
+- `tests/test_cli.py`:
+  - `TestCreateParser::test_list_command` - Parser test
+  - `TestCmdList::test_list_notes_with_urls` - Command handler test
+  - `TestCmdList::test_list_no_notes_with_urls` - Empty result test
+  - `TestCmdList::test_list_with_daily_notes_folder` - Subfolder test
+
+Total tests: 257

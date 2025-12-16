@@ -140,15 +140,29 @@ def _parse_gemini_response(response_text: str) -> SummaryResult:
     """
     text = response_text.strip()
 
-    # Try to extract JSON from markdown code block
-    json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    # Try to extract JSON from markdown code block (handles multiline)
+    json_match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
     if json_match:
-        text = json_match.group(1)
+        text = json_match.group(1).strip()
 
-    # Try to find JSON object in the response
-    json_object_match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", text, re.DOTALL)
-    if json_object_match:
-        text = json_object_match.group(0)
+    # If no code block found, try to find JSON object by finding matching braces
+    if not json_match:
+        # Find the first { and try to extract the full JSON object
+        start_idx = text.find("{")
+        if start_idx != -1:
+            # Count braces to find the matching closing brace
+            brace_count = 0
+            end_idx = start_idx
+            for i, char in enumerate(text[start_idx:], start=start_idx):
+                if char == "{":
+                    brace_count += 1
+                elif char == "}":
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end_idx = i + 1
+                        break
+            if brace_count == 0:
+                text = text[start_idx:end_idx]
 
     try:
         data = json.loads(text)

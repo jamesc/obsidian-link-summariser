@@ -53,6 +53,63 @@ SLUG_REPLACEMENTS = {
 }
 
 
+def find_daily_notes_with_urls(
+    vault_path: Path,
+    daily_notes_folder: str = "",
+) -> list[tuple[str, int]]:
+    """
+    Find all daily notes that contain URLs.
+
+    Scans the daily notes folder for files matching the YYYY-MM-DD.md pattern
+    and returns those that contain at least one URL.
+
+    Args:
+        vault_path: Path to the Obsidian vault root.
+        daily_notes_folder: Subfolder for daily notes (can be empty).
+
+    Returns:
+        List of tuples (date_string, url_count) sorted by date descending.
+        Date string is in YYYY-MM-DD format.
+    """
+    # Construct path to daily notes folder
+    if daily_notes_folder:
+        notes_path = vault_path / daily_notes_folder
+    else:
+        notes_path = vault_path
+
+    if not notes_path.exists():
+        logger.warning(f"Daily notes folder not found: {notes_path}")
+        return []
+
+    # Pattern for daily note filenames: YYYY-MM-DD.md
+    date_pattern = re.compile(r"^(\d{4}-\d{2}-\d{2})\.md$")
+
+    results: list[tuple[str, int]] = []
+
+    for filepath in notes_path.glob("*.md"):
+        match = date_pattern.match(filepath.name)
+        if not match:
+            continue
+
+        date_str = match.group(1)
+
+        try:
+            content = filepath.read_text(encoding="utf-8")
+            urls = extract_urls(content)
+            if urls:
+                results.append((date_str, len(urls)))
+                logger.debug(f"Found {len(urls)} URLs in {filepath.name}")
+        except OSError as e:
+            logger.warning(f"Failed to read {filepath}: {e}")
+            continue
+
+    # Sort by date descending (newest first)
+    results.sort(key=lambda x: x[0], reverse=True)
+
+    logger.info(f"Found {len(results)} daily notes with URLs")
+    return results
+
+
 def read_daily_note(vault_path: Path, note_path: str, daily_notes_folder: str = "") -> str:
     """
     Read content from a daily note file.
