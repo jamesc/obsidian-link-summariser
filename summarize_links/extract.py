@@ -95,7 +95,10 @@ def fetch_content(url: str, timeout: int = REQUEST_TIMEOUT) -> tuple[str, str]:
 
     headers = {
         "User-Agent": USER_AGENT,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,text/markdown,text/plain;q=0.8,*/*;q=0.7",
+        "Accept": (
+            "text/html,application/xhtml+xml,application/xml;q=0.9,"
+            "text/markdown,text/plain;q=0.8,*/*;q=0.7"
+        ),
         "Accept-Language": "en-US,en;q=0.5",
     }
 
@@ -299,8 +302,9 @@ def _extract_with_parser(html: str, parser: str) -> tuple[str | None, str | None
             elif " - " in title:
                 title = title.split(" - ")[0]
 
-        # Try to extract article content FIRST, before any removal
-        # This prevents losing content nested in unusual structures (e.g., article inside nav/header)
+        # Try to extract article content FIRST, before any removal.
+        # This prevents losing content nested in unusual structures
+        # (e.g., article inside nav/header).
         content = _extract_article_content(soup)
 
         if content:

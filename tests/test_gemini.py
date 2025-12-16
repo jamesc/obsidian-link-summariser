@@ -343,7 +343,7 @@ class TestParseGeminiResponse:
         """Should parse multiline JSON inside markdown code blocks."""
         response = '''```json
 {
-  "summary": "# Summary Title\\n\\nThis is a multiline summary with markdown.\\n\\n- Point 1\\n- Point 2",
+  "summary": "# Summary Title\\n\\nThis is a multiline summary.\\n\\n- Point 1",
   "suggested_tags": ["llm", "automation", "software-development"],
   "content_type": "blog"
 }

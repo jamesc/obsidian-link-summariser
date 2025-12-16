@@ -192,10 +192,7 @@ def find_daily_notes_with_urls(
         Date string is in YYYY-MM-DD format.
     """
     # Construct path to daily notes folder
-    if daily_notes_folder:
-        notes_path = vault_path / daily_notes_folder
-    else:
-        notes_path = vault_path
+    notes_path = vault_path / daily_notes_folder if daily_notes_folder else vault_path
 
     if not notes_path.exists():
         logger.warning(f"Daily notes folder not found: {notes_path}")
