@@ -17,10 +17,12 @@
 
 - **Run tests regularly**: Execute `pytest` after each significant change to catch regressions early
 
+- **Always use uv for python environment management**
+
 - **Static analysis before commits**: Run these tools before each commit:
-  - `ruff check .` - Fast linting
-  - `ruff format .` - Code formatting
-  - `mypy .` - Type checking
+  - `uv run ruff check .` - Fast linting
+  - `uv run ruff format .` - Code formatting
+  - `uv run mypy .` - Type checking
 
 - **Type hints everywhere**: Enforce type annotations on all function parameters and return values
 
