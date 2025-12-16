@@ -1,5 +1,7 @@
 # Obsidian Link Summarizer
 
+[![Tests](https://github.com/yourusername/obsidian-link-summariser/actions/workflows/test.yml/badge.svg)](https://github.com/yourusername/obsidian-link-summariser/actions/workflows/test.yml)
+
 A lightweight Python CLI tool that reads URLs from Obsidian daily notes, fetches web pages, generates AI summaries using Google's Gemini API, and creates formatted Markdown summary notes in your Obsidian vault.
 
 ## Features
