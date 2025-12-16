@@ -694,3 +694,260 @@ class TestCliIntegration:
         # Verify mock_mode was passed
         call_kwargs = mock_load_config.call_args[1]
         assert call_kwargs["mock_mode"] is True
+
+
+class TestUrlLineDeletion:
+    """Tests for URL line deletion behavior after successful processing."""
+
+    @pytest.fixture
+    def mock_vault(self, tmp_path: Path) -> Path:
+        """Create a mock vault directory."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "Summaries").mkdir()
+        return vault
+
+    @patch("summarize_links.cli.remove_url_line_from_note")
+    @patch("summarize_links.cli.add_summary_link_to_daily_note")
+    @patch("summarize_links.cli.write_summary_note_with_metadata")
+    @patch("summarize_links.cli.create_client")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
+    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.cli.extract_urls_with_context")
+    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.cli.load_config")
+    def test_mock_mode_does_not_delete_url_lines(
+        self,
+        mock_load_config: MagicMock,
+        mock_read: MagicMock,
+        mock_extract: MagicMock,
+        mock_exists: MagicMock,
+        mock_fetch: MagicMock,
+        mock_create_client: MagicMock,
+        mock_write: MagicMock,
+        mock_add_link: MagicMock,
+        mock_remove_url: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Mock mode should NOT delete URL lines from daily note."""
+        from summarize_links.models import PageMetadata, SummaryResult, UrlWithContext
+
+        # Setup mocks - mock mode enabled
+        mock_config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+            mock_mode=True,  # Mock mode!
+        )
+        mock_load_config.return_value = mock_config
+        mock_read.return_value = "Note with URLs"
+        mock_extract.return_value = [UrlWithContext(url="https://example.com")]
+        mock_exists.return_value = False
+        mock_fetch.return_value = PageMetadata(
+            title="Article Title",
+            domain="example.com",
+            content="Article content",
+        )
+        mock_write.return_value = mock_vault / "Summaries" / "2025-12-16-example.md"
+
+        mock_client = MagicMock()
+        mock_client.summarize_with_metadata.return_value = SummaryResult(content="## Summary")
+        mock_create_client.return_value = mock_client
+
+        # Run CLI
+        result = main(["from-note", "--date", "2025-12-16"])
+
+        assert result == EXIT_SUCCESS
+        # URL line should NOT be deleted in mock mode
+        mock_remove_url.assert_not_called()
+
+    @patch("summarize_links.cli.remove_url_line_from_note")
+    @patch("summarize_links.cli.add_summary_link_to_daily_note")
+    @patch("summarize_links.cli.write_summary_note_with_metadata")
+    @patch("summarize_links.cli.create_client")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
+    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.cli.extract_urls_with_context")
+    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.cli.load_config")
+    def test_real_mode_deletes_url_lines(
+        self,
+        mock_load_config: MagicMock,
+        mock_read: MagicMock,
+        mock_extract: MagicMock,
+        mock_exists: MagicMock,
+        mock_fetch: MagicMock,
+        mock_create_client: MagicMock,
+        mock_write: MagicMock,
+        mock_add_link: MagicMock,
+        mock_remove_url: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Real mode (not mock) should delete URL lines from daily note."""
+        from summarize_links.models import PageMetadata, SummaryResult, UrlWithContext
+
+        # Setup mocks - NOT mock mode
+        mock_config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+            mock_mode=False,  # Real mode!
+        )
+        mock_load_config.return_value = mock_config
+        mock_read.return_value = "Note with URLs"
+        mock_extract.return_value = [UrlWithContext(url="https://example.com")]
+        mock_exists.return_value = False
+        mock_fetch.return_value = PageMetadata(
+            title="Article Title",
+            domain="example.com",
+            content="Article content",
+        )
+        mock_write.return_value = mock_vault / "Summaries" / "2025-12-16-example.md"
+
+        mock_client = MagicMock()
+        mock_client.summarize_with_metadata.return_value = SummaryResult(content="## Summary")
+        mock_create_client.return_value = mock_client
+
+        # Run CLI
+        result = main(["from-note", "--date", "2025-12-16"])
+
+        assert result == EXIT_SUCCESS
+        # URL line SHOULD be deleted in real mode
+        mock_remove_url.assert_called_once()
+        call_args = mock_remove_url.call_args
+        assert call_args[1]["url"] == "https://example.com"
+
+    @patch("summarize_links.cli.remove_url_line_from_note")
+    @patch("summarize_links.cli.add_summary_link_to_daily_note")
+    @patch("summarize_links.cli.write_summary_note_with_metadata")
+    @patch("summarize_links.cli.create_client")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
+    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.cli.extract_urls_with_context")
+    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.cli.load_config")
+    def test_dry_run_does_not_delete_url_lines(
+        self,
+        mock_load_config: MagicMock,
+        mock_read: MagicMock,
+        mock_extract: MagicMock,
+        mock_exists: MagicMock,
+        mock_fetch: MagicMock,
+        mock_create_client: MagicMock,
+        mock_write: MagicMock,
+        mock_add_link: MagicMock,
+        mock_remove_url: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Dry-run mode should NOT delete URL lines from daily note."""
+        from summarize_links.models import UrlWithContext
+
+        # Setup mocks - dry-run enabled
+        mock_config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+            mock_mode=False,
+            dry_run=True,  # Dry-run mode!
+        )
+        mock_load_config.return_value = mock_config
+        mock_read.return_value = "Note with URLs"
+        mock_extract.return_value = [UrlWithContext(url="https://example.com")]
+
+        mock_client = MagicMock()
+        mock_create_client.return_value = mock_client
+
+        # Run CLI
+        result = main(["from-note", "--date", "2025-12-16"])
+
+        assert result == EXIT_SUCCESS
+        # URL line should NOT be deleted in dry-run mode
+        mock_remove_url.assert_not_called()
+
+    @patch("summarize_links.cli.remove_url_line_from_note")
+    @patch("summarize_links.cli.add_summary_link_to_daily_note")
+    @patch("summarize_links.cli.write_summary_note_with_metadata")
+    @patch("summarize_links.cli.create_client")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
+    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.cli.extract_urls_with_context")
+    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.cli.load_config")
+    def test_skipped_urls_not_deleted(
+        self,
+        mock_load_config: MagicMock,
+        mock_read: MagicMock,
+        mock_extract: MagicMock,
+        mock_exists: MagicMock,
+        mock_fetch: MagicMock,
+        mock_create_client: MagicMock,
+        mock_write: MagicMock,
+        mock_add_link: MagicMock,
+        mock_remove_url: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Skipped URLs (already exist) should NOT be deleted from daily note."""
+        from summarize_links.models import UrlWithContext
+
+        # Setup mocks - summary already exists
+        mock_config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+            mock_mode=False,
+        )
+        mock_load_config.return_value = mock_config
+        mock_read.return_value = "Note with URLs"
+        mock_extract.return_value = [UrlWithContext(url="https://example.com")]
+        mock_exists.return_value = True  # Summary already exists!
+
+        mock_client = MagicMock()
+        mock_create_client.return_value = mock_client
+
+        # Run CLI
+        result = main(["from-note", "--date", "2025-12-16"])
+
+        assert result == EXIT_SUCCESS
+        # URL line should NOT be deleted when summary already exists
+        mock_remove_url.assert_not_called()
+
+    @patch("summarize_links.cli.write_stub_note")
+    @patch("summarize_links.cli.remove_url_line_from_note")
+    @patch("summarize_links.cli.create_client")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
+    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.cli.extract_urls_with_context")
+    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.cli.load_config")
+    def test_failed_urls_not_deleted(
+        self,
+        mock_load_config: MagicMock,
+        mock_read: MagicMock,
+        mock_extract: MagicMock,
+        mock_exists: MagicMock,
+        mock_fetch: MagicMock,
+        mock_create_client: MagicMock,
+        mock_remove_url: MagicMock,
+        mock_stub: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Failed URLs (fetch error) should NOT be deleted from daily note."""
+        from summarize_links.models import UrlWithContext
+
+        # Setup mocks - fetch will fail
+        mock_config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+            mock_mode=False,
+        )
+        mock_load_config.return_value = mock_config
+        mock_read.return_value = "Note with URLs"
+        mock_extract.return_value = [UrlWithContext(url="https://example.com")]
+        mock_exists.return_value = False
+        mock_fetch.side_effect = ContentFetchError("Connection failed")
+
+        mock_client = MagicMock()
+        mock_create_client.return_value = mock_client
+
+        # Run CLI
+        result = main(["from-note", "--date", "2025-12-16"])
+
+        # Should have error exit but URL should NOT be deleted
+        assert result == EXIT_ERROR
+        mock_remove_url.assert_not_called()

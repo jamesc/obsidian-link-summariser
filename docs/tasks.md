@@ -167,3 +167,51 @@ summarize-links --force from-note --date 2025-12-15
 - No back-links when using the `urls` command (no daily note context)
 
 **Tests:** Added 5 new tests in `tests/test_notes.py` for `TestAddSummaryLinkToDailyNote`
+
+---
+
+## 2025-12-16: Remove URL lines from daily note after successful summarization
+
+**Goal:** After successfully generating a summary for a URL, automatically delete the original URL line from the daily note to avoid duplicate processing and keep the note clean.
+
+**Changes:**
+
+### `summarize_links/notes.py`
+- Added `remove_url_line_from_note()` function that:
+  - Finds lines containing the URL in the daily note
+  - Removes those lines from the content
+  - Preserves trailing newline if the original had one
+  - Handles URLs in subfolders
+  - Returns `True` if line(s) were removed, `False` otherwise
+
+### `summarize_links/cli.py`
+- Updated `_process_url_with_metadata()` to return a 3-tuple: `(success, message, should_delete_source)`
+  - `should_delete_source` is `True` only when a new summary is created (not skipped, not dry-run, not error)
+- Updated `_process_urls_with_metadata()` to:
+  - Track URLs that were successfully processed
+  - After all processing completes, delete the original URL lines from the daily note
+  - Only perform deletion when not in dry-run mode and when there's a source daily note
+
+**Behavior:**
+- URL lines are deleted only after successful summary generation
+- Skipped URLs (already exist) are NOT deleted
+- Failed URLs (fetch error, API error, etc.) are NOT deleted
+- Dry-run mode shows what would happen but doesn't delete anything
+- The `urls` command (no daily note context) doesn't delete anything
+- Cleanup message displayed: "Cleaning up N processed URLs from daily note..."
+
+**Safety considerations:**
+- Deletion happens AFTER all processing is complete
+- Each URL is removed individually with error handling
+- If removal fails for one URL, others still get processed
+- Original note structure is preserved (only the specific lines are removed)
+
+**Tests:** Added 8 new tests in `tests/test_notes.py` for `TestRemoveUrlLineFromNote`:
+- `test_remove_bare_url_line` - Basic URL removal
+- `test_remove_markdown_link_line` - Markdown link removal
+- `test_remove_url_in_subfolder` - Works with daily notes in subfolders
+- `test_return_false_if_url_not_found` - Handles missing URLs gracefully
+- `test_return_false_if_note_not_found` - Handles missing notes gracefully
+- `test_preserves_trailing_newline` - Maintains file formatting
+- `test_removes_all_lines_with_same_url` - Handles duplicate URLs
+- `test_handles_url_with_query_params` - Works with complex URLs

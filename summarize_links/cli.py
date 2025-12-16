@@ -32,6 +32,7 @@ from summarize_links.notes import (
     add_summary_link_to_daily_note,
     extract_urls_with_context,
     read_daily_note,
+    remove_url_line_from_note,
     slug_from_url,
     summary_exists,
     write_stub_note,
@@ -271,7 +272,7 @@ def _process_url_with_metadata(
     progress: Progress | None = None,
     task_id: TaskID | None = None,
     daily_note_filename: str | None = None,
-) -> tuple[bool, str]:
+) -> tuple[bool, str, bool]:
     """
     Process a single URL with full metadata extraction and enriched frontmatter.
 
@@ -287,7 +288,9 @@ def _process_url_with_metadata(
         daily_note_filename: Optional filename of source daily note for back-linking.
 
     Returns:
-        Tuple of (success, message).
+        Tuple of (success, message, should_delete_source).
+        should_delete_source is True only when a new summary was created
+        (not skipped, not dry-run, not error).
     """
     # Vault path must be set (validated in load_config)
     assert config.vault_path is not None
@@ -297,10 +300,10 @@ def _process_url_with_metadata(
 
     # Check if summary already exists (skip check if force is enabled)
     if not config.force and summary_exists(config.vault_path, config.out_folder, url):
-        return True, f"Skipped (exists): {slug}"
+        return True, f"Skipped (exists): {slug}", False
 
     if config.dry_run:
-        return True, f"Would process: {url} -> {slug}.md"
+        return True, f"Would process: {url} -> {slug}.md", False
 
     try:
         # Fetch and extract content with metadata
@@ -346,7 +349,10 @@ def _process_url_with_metadata(
                 url=url,
             )
 
-        return True, f"Created: {slug}.md"
+        # Signal that this URL was successfully processed and should be deleted from source
+        # Don't delete for mock mode - those summaries will be regenerated later
+        should_delete = not config.mock_mode
+        return True, f"Created: {slug}.md", should_delete
 
     except ContentFetchError as e:
         logger.warning("Failed to fetch %s: %s", url, e)
@@ -357,7 +363,7 @@ def _process_url_with_metadata(
                 url=url,
                 reason=f"Failed to fetch: {e}",
             )
-        return False, f"Fetch error: {url}"
+        return False, f"Fetch error: {url}", False
 
     except ContentExtractionError as e:
         logger.warning("Failed to extract content from %s: %s", url, e)
@@ -368,7 +374,7 @@ def _process_url_with_metadata(
                 url=url,
                 reason=f"Failed to extract content: {e}",
             )
-        return False, f"Extraction error: {url}"
+        return False, f"Extraction error: {url}", False
 
     except RateLimitError as e:
         logger.error("Rate limited while processing %s: %s", url, e)
@@ -379,7 +385,7 @@ def _process_url_with_metadata(
                 url=url,
                 reason="Rate limited - try again later",
             )
-        return False, f"Rate limited: {url}"
+        return False, f"Rate limited: {url}", False
 
     except GeminiAPIError as e:
         logger.error("Gemini API error for %s: %s", url, e)
@@ -390,7 +396,7 @@ def _process_url_with_metadata(
                 url=url,
                 reason=f"API error: {e}",
             )
-        return False, f"API error: {url}"
+        return False, f"API error: {url}", False
 
 
 def cmd_from_note(config: Config, date_str: str | None = None) -> int:
@@ -556,6 +562,7 @@ def _process_urls_with_metadata(
 
     # Process with progress bar
     results: list[tuple[bool, str]] = []
+    urls_to_delete: list[str] = []  # Track URLs that were successfully processed
 
     with Progress(
         SpinnerColumn(),
@@ -566,11 +573,36 @@ def _process_urls_with_metadata(
         task = progress.add_task("[cyan]Processing...", total=len(url_contexts))
 
         for url_context in url_contexts:
-            success, message = _process_url_with_metadata(
+            success, message, should_delete = _process_url_with_metadata(
                 url_context, config, client, progress, task, daily_note_filename
             )
             results.append((success, message))
+
+            # Track URLs that were newly processed (not skipped, not errors)
+            if should_delete:
+                urls_to_delete.append(url_context.url)
+
             progress.advance(task)
+
+    # Delete processed URL lines from the daily note
+    # Only if we have a source note and are not in dry-run mode
+    if daily_note_filename and urls_to_delete and not config.dry_run:
+        assert config.vault_path is not None
+        console.print(
+            f"[cyan]Cleaning up {len(urls_to_delete)} processed URLs from daily note...[/]"
+        )
+        for url in urls_to_delete:
+            try:
+                removed = remove_url_line_from_note(
+                    vault_path=config.vault_path,
+                    daily_notes_folder=config.daily_notes_folder,
+                    note_filename=daily_note_filename,
+                    url=url,
+                )
+                if removed:
+                    logger.debug(f"Removed URL line from daily note: {url}")
+            except Exception as e:
+                logger.warning(f"Failed to remove URL line from daily note: {e}")
 
     # Print results table
     _print_results(results)

@@ -810,3 +810,72 @@ def _build_summary_line_with_context(content: str, url: str, obsidian_link: str)
     # URL not found in content - return simple link
     logger.debug(f"URL not found in content, using simple link: {url}")
     return f"- {obsidian_link}"
+
+
+def remove_url_line_from_note(
+    vault_path: Path,
+    daily_notes_folder: str,
+    note_filename: str,
+    url: str,
+) -> bool:
+    """
+    Remove the line containing a URL from a daily note.
+
+    Called after a URL has been successfully summarized to clean up
+    the original daily note. Only removes the line if the URL is found.
+
+    Args:
+        vault_path: Path to the Obsidian vault root.
+        daily_notes_folder: Subfolder for daily notes (can be empty).
+        note_filename: Filename of the daily note (e.g., "2025-12-15.md").
+        url: The URL to find and remove its containing line.
+
+    Returns:
+        True if a line was removed, False if URL not found.
+
+    Raises:
+        NoteWriteError: If writing the updated note fails.
+    """
+    # Construct full path to daily note
+    if daily_notes_folder:
+        daily_note_path = vault_path / daily_notes_folder / note_filename
+    else:
+        daily_note_path = vault_path / note_filename
+
+    if not daily_note_path.exists():
+        logger.warning(f"Daily note not found for URL removal: {daily_note_path}")
+        return False
+
+    try:
+        content = daily_note_path.read_text(encoding="utf-8")
+        lines = content.split("\n")
+
+        # Find the line(s) containing the URL
+        new_lines: list[str] = []
+        removed = False
+
+        for line in lines:
+            if url in line:
+                logger.info(f"Removing line containing URL: {url}")
+                logger.debug(f"Removed line: {line}")
+                removed = True
+                # Skip this line (don't add to new_lines)
+            else:
+                new_lines.append(line)
+
+        if not removed:
+            logger.debug(f"URL not found in note, nothing to remove: {url}")
+            return False
+
+        # Write the updated content
+        # Preserve trailing newline if original had one
+        new_content = "\n".join(new_lines)
+        if content.endswith("\n") and not new_content.endswith("\n"):
+            new_content += "\n"
+
+        daily_note_path.write_text(new_content, encoding="utf-8")
+        logger.info(f"Successfully removed URL line from daily note: {note_filename}")
+        return True
+
+    except OSError as e:
+        raise NoteWriteError(f"Failed to update daily note {daily_note_path}: {e}") from e

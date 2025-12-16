@@ -19,6 +19,7 @@ from summarize_links.notes import (
     generate_slug,
     get_summary_filepath,
     read_daily_note,
+    remove_url_line_from_note,
     slug_from_url,
     summary_exists,
     write_stub_note,
@@ -992,3 +993,153 @@ class TestWriteSummaryNoteWithMetadata:
         filepath = tmp_path / "Summaries" / "2025-12-16-example-com.md"
         content = filepath.read_text()
         assert "Summary 2" in content
+
+
+class TestRemoveUrlLineFromNote:
+    """Tests for removing URL lines from daily notes."""
+
+    def test_remove_bare_url_line(self, tmp_path: Path) -> None:
+        """Should remove a line containing a bare URL."""
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text("# 2025-12-16\n\n- Task 1\n- https://example.com/article\n- Task 2\n")
+
+        result = remove_url_line_from_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            url="https://example.com/article",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        assert "https://example.com/article" not in content
+        assert "Task 1" in content
+        assert "Task 2" in content
+
+    def test_remove_markdown_link_line(self, tmp_path: Path) -> None:
+        """Should remove a line containing a markdown link with the URL."""
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text(
+            "# 2025-12-16\n\n"
+            "- Task 1\n"
+            "- [Great Article](https://example.com/article) #ai\n"
+            "- Task 2\n"
+        )
+
+        result = remove_url_line_from_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            url="https://example.com/article",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        assert "https://example.com/article" not in content
+        assert "Great Article" not in content
+        assert "#ai" not in content
+        assert "Task 1" in content
+        assert "Task 2" in content
+
+    def test_remove_url_in_subfolder(self, tmp_path: Path) -> None:
+        """Should work with daily notes in subfolder."""
+        journal = tmp_path / "Journal"
+        journal.mkdir()
+        note_file = journal / "2025-12-16.md"
+        note_file.write_text("# 2025-12-16\n\n- https://example.com/article\n- Other task\n")
+
+        result = remove_url_line_from_note(
+            vault_path=tmp_path,
+            daily_notes_folder="Journal",
+            note_filename="2025-12-16.md",
+            url="https://example.com/article",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        assert "https://example.com/article" not in content
+        assert "Other task" in content
+
+    def test_return_false_if_url_not_found(self, tmp_path: Path) -> None:
+        """Should return False if URL is not in the note."""
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text("# 2025-12-16\n\n- https://other-url.com\n")
+
+        result = remove_url_line_from_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            url="https://example.com/not-here",
+        )
+
+        assert result is False
+        # Content should be unchanged
+        content = note_file.read_text()
+        assert "https://other-url.com" in content
+
+    def test_return_false_if_note_not_found(self, tmp_path: Path) -> None:
+        """Should return False if daily note doesn't exist."""
+        result = remove_url_line_from_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="nonexistent.md",
+            url="https://example.com/article",
+        )
+
+        assert result is False
+
+    def test_preserves_trailing_newline(self, tmp_path: Path) -> None:
+        """Should preserve trailing newline if original had one."""
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text("# 2025-12-16\n\n- https://example.com/article\n- Task 2\n")
+
+        remove_url_line_from_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            url="https://example.com/article",
+        )
+
+        content = note_file.read_text()
+        assert content.endswith("\n")
+
+    def test_removes_all_lines_with_same_url(self, tmp_path: Path) -> None:
+        """Should remove all lines containing the URL (in case of duplicates)."""
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text(
+            "# 2025-12-16\n\n"
+            "- https://example.com/article\n"
+            "- Task 2\n"
+            "- https://example.com/article again\n"
+        )
+
+        result = remove_url_line_from_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            url="https://example.com/article",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        assert "https://example.com/article" not in content
+        assert "Task 2" in content
+
+    def test_handles_url_with_query_params(self, tmp_path: Path) -> None:
+        """Should handle URLs with query parameters."""
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text(
+            "# 2025-12-16\n\n- https://example.com/article?utm=test&ref=link\n- Task 2\n"
+        )
+
+        result = remove_url_line_from_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            url="https://example.com/article?utm=test&ref=link",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        assert "https://example.com/article" not in content
+        assert "Task 2" in content
