@@ -8,9 +8,12 @@ A lightweight Python CLI tool that reads URLs from Obsidian daily notes, fetches
 
 - 📝 Extract URLs from Obsidian daily notes (Markdown links and bare URLs)
 - 🤖 Generate AI summaries using Google Gemini Flash (free tier friendly)
-- 📁 Create well-formatted summary notes with frontmatter
+- 📁 Create well-formatted summary notes with rich frontmatter (author, tags, content type)
+- 🏷️ Automatic tag extraction from page metadata and user hashtags
+- 🔗 Automatic URL cleaning (strips UTM tracking parameters)
 - 🔄 Idempotent - safe to run multiple times (skips existing summaries)
 - ⚠️ Graceful degradation - creates stub notes for failures, continues processing
+- 🧹 Auto-cleanup - removes processed URLs from daily notes
 - ⌨️ Integrate with Obsidian via Shell Commands plugin
 - 🧪 Mock mode for development/testing without API calls
 
@@ -48,11 +51,20 @@ summarize-links from-note --vault ~/Notes
 # Summarize URLs from a specific date's daily note
 summarize-links from-note --vault ~/Notes --date 2025-12-16
 
+# Process ALL daily notes with URLs (oldest first)
+summarize-links from-note --vault ~/Notes --all
+
+# List all daily notes that have URLs
+summarize-links list --vault ~/Notes
+
 # Summarize explicit URLs
 summarize-links urls https://example.com/article https://another.com/post --vault ~/Notes
 
 # Limit number of links to process
 summarize-links from-note --vault ~/Notes --max-links 5
+
+# Force regenerate existing summaries
+summarize-links from-note --vault ~/Notes --force
 
 # Dry run (see what would happen without making changes)
 summarize-links from-note --vault ~/Notes --dry-run
@@ -67,8 +79,8 @@ summarize-links from-note --vault ~/Notes --verbose
 ### Command Reference
 
 ```
-summarize-links [-h] [-v] [--vault PATH] [--model MODEL] [--mock] [--dry-run] [--max-links N]
-                {from-note,urls} ...
+summarize-links [-h] [-v] [--vault PATH] [--model MODEL] [--mock] [--dry-run] 
+                [--max-links N] [--force] {from-note,urls,list} ...
 
 Global Options:
   -v, --verbose     Enable verbose output
@@ -77,13 +89,17 @@ Global Options:
   --mock            Use mock Gemini client (no API calls)
   --dry-run         Show what would be done without making changes
   --max-links N     Maximum number of links to process
+  --force           Overwrite existing summaries
 
 Commands:
   from-note         Summarize links from a daily note
     --date DATE     Date of the daily note (YYYY-MM-DD, defaults to today)
+    --all           Process all daily notes that contain URLs
 
   urls              Summarize specific URLs
     URLS...         One or more URLs to summarize
+
+  list              List all daily notes that have URLs
 ```
 
 ### Output Format
@@ -91,7 +107,7 @@ Commands:
 Summary notes are created in the configured output folder (default: `Summaries/`) with:
 
 - **Filename**: `YYYY-MM-DD-slug.md` (date + URL-derived slug)
-- **Frontmatter**: source URL, date, and backlink to source daily note
+- **Frontmatter**: Rich metadata including source URL, title, author, tags, content type, and backlink
 - **Content**: AI-generated Markdown summary
 
 Example output (`2025-12-16-api-pricing.md`):
@@ -99,8 +115,17 @@ Example output (`2025-12-16-api-pricing.md`):
 ```markdown
 ---
 source: https://ai.google.dev/pricing
+title: "Gemini API Pricing"
 date: 2025-12-16
+author: Google
+content_type: documentation
+domain: ai.google.dev
+tags:
+  - ai
+  - gemini
+  - pricing
 from: "[[2025-12-16]]"
+status: success
 ---
 
 ## Overview
@@ -112,6 +137,15 @@ Google AI provides generous free tier pricing for Gemini models...
 - Gemini Flash: 1500 requests/day free
 - ...
 ```
+
+### URL Cleaning
+
+The tool automatically strips tracking parameters from URLs:
+- UTM tags (`utm_source`, `utm_medium`, etc.)
+- Social tracking (`fbclid`, `gclid`, etc.)
+- RSS noise fragments (`#atom-everything`, `#rss`)
+
+Meaningful parameters are preserved (e.g., YouTube `?v=`, GitHub `?tab=`).
 
 ### Obsidian Integration
 
@@ -127,9 +161,16 @@ Google AI provides generous free tier pricing for Gemini models...
 When a URL fails to process (fetch error, rate limit, etc.), the tool creates a **stub note** with:
 - The original URL
 - The reason for failure
-- A message to retry later
+- A `status: error` marker
 
-This ensures you don't lose track of links that couldn't be summarized. Running the command again will skip successfully processed URLs and retry failed ones.
+This ensures you don't lose track of links that couldn't be summarized. Running the command again will skip successfully processed URLs and retry failed ones (stubs are automatically regenerated).
+
+### Mock Mode
+
+When developing or testing, use `--mock` to:
+- Skip real API calls
+- Create summaries with `status: mocked` marker
+- Running again without `--mock` will regenerate mocked summaries with real content
 
 ## Configuration
 
