@@ -22,31 +22,28 @@ logger = logging.getLogger(__name__)
 
 # ----- URL Extraction Patterns -----
 # Pattern to match Markdown links: [text](url)
-MARKDOWN_LINK_PATTERN = r'\[([^\]]+)\]\((https?://[^)]+)\)'
+MARKDOWN_LINK_PATTERN = r"\[([^\]]+)\]\((https?://[^)]+)\)"
 
 # Pattern to match bare URLs (not inside Markdown link syntax)
 # Matches http:// or https:// followed by non-whitespace, non-bracket characters
-BARE_URL_PATTERN = r'(?<!\()(https?://[^\s\[\]()]+)(?!\))'
+BARE_URL_PATTERN = r"(?<!\()(https?://[^\s\[\]()]+)(?!\))"
 
 # Combined pattern for extraction
-URL_PATTERN = re.compile(
-    rf'{MARKDOWN_LINK_PATTERN}|{BARE_URL_PATTERN}',
-    re.IGNORECASE
-)
+URL_PATTERN = re.compile(rf"{MARKDOWN_LINK_PATTERN}|{BARE_URL_PATTERN}", re.IGNORECASE)
 
 # Characters to replace in slugs
 SLUG_REPLACEMENTS = {
-    '/': '-',
-    '\\': '-',
-    ':': '-',
-    ' ': '-',
-    '_': '-',
-    '.': '-',
-    '?': '',
-    '&': '',
-    '=': '',
-    '#': '',
-    '%': '',
+    "/": "-",
+    "\\": "-",
+    ":": "-",
+    " ": "-",
+    "_": "-",
+    ".": "-",
+    "?": "",
+    "&": "",
+    "=": "",
+    "#": "",
+    "%": "",
 }
 
 
@@ -117,7 +114,7 @@ def extract_urls(content: str) -> list[str]:
 
             if url and url not in seen:
                 # Clean up URL (remove trailing punctuation that might have been captured)
-                url = url.rstrip('.,;:')
+                url = url.rstrip(".,;:")
                 urls.append(url)
                 seen.add(url)
                 logger.debug(f"Extracted URL: {url}")
@@ -150,23 +147,20 @@ def generate_slug(text: str) -> str:
         slug = slug.replace(char, replacement)
 
     # Remove any remaining non-alphanumeric characters (except dashes)
-    slug = re.sub(r'[^a-z0-9-]', '', slug)
+    slug = re.sub(r"[^a-z0-9-]", "", slug)
 
     # Collapse multiple dashes into single dash
-    slug = re.sub(r'-+', '-', slug)
+    slug = re.sub(r"-+", "-", slug)
 
     # Remove leading/trailing dashes
-    slug = slug.strip('-')
+    slug = slug.strip("-")
 
     # Limit length
     if len(slug) > MAX_SLUG_LENGTH:
         # Try to cut at a word boundary (dash)
         truncated = slug[:MAX_SLUG_LENGTH]
-        last_dash = truncated.rfind('-')
-        if last_dash > MAX_SLUG_LENGTH // 2:
-            slug = truncated[:last_dash]
-        else:
-            slug = truncated.rstrip('-')
+        last_dash = truncated.rfind("-")
+        slug = truncated[:last_dash] if last_dash > MAX_SLUG_LENGTH // 2 else truncated.rstrip("-")
 
     return slug
 
@@ -186,15 +180,15 @@ def slug_from_url(url: str) -> str:
     parsed = urlparse(url)
 
     # Use path if available, otherwise use domain
-    if parsed.path and parsed.path != '/':
+    if parsed.path and parsed.path != "/":
         # Remove file extension if present
-        path = parsed.path.rstrip('/')
-        if '.' in path.split('/')[-1]:
-            path = path.rsplit('.', 1)[0]
+        path = parsed.path.rstrip("/")
+        if "." in path.split("/")[-1]:
+            path = path.rsplit(".", 1)[0]
         slug_source = path
     else:
         # Use domain name
-        slug_source = parsed.netloc.replace('www.', '')
+        slug_source = parsed.netloc.replace("www.", "")
 
     return generate_slug(slug_source)
 
@@ -308,8 +302,8 @@ def write_summary_note(
 
     if source_note:
         # Create Obsidian backlink to source note
-        note_name = source_note.replace('.md', '')
-        frontmatter_lines.append(f"from: \"[[{note_name}]]\"")
+        note_name = source_note.replace(".md", "")
+        frontmatter_lines.append(f'from: "[[{note_name}]]"')
 
     frontmatter_lines.append("---")
     frontmatter = "\n".join(frontmatter_lines)

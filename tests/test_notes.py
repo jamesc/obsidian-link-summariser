@@ -196,9 +196,7 @@ class TestGetSummaryFilepath:
     def test_basic_filepath(self, tmp_path: Path) -> None:
         """Should generate correct filepath."""
         date = datetime(2025, 12, 16)
-        filepath = get_summary_filepath(
-            tmp_path, "Summaries", "https://example.com/article", date
-        )
+        filepath = get_summary_filepath(tmp_path, "Summaries", "https://example.com/article", date)
 
         assert filepath.parent == tmp_path / "Summaries"
         assert filepath.name.startswith("2025-12-16-")
@@ -206,9 +204,7 @@ class TestGetSummaryFilepath:
 
     def test_uses_current_date_by_default(self, tmp_path: Path) -> None:
         """Should use current date when not specified."""
-        filepath = get_summary_filepath(
-            tmp_path, "Summaries", "https://example.com/test"
-        )
+        filepath = get_summary_filepath(tmp_path, "Summaries", "https://example.com/test")
 
         today = datetime.now().strftime("%Y-%m-%d")
         assert today in filepath.name

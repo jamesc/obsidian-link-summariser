@@ -21,9 +21,7 @@ from summarize_links.notes import (
 class TestFullWorkflow:
     """Integration tests for the complete summarization workflow."""
 
-    def test_extract_urls_from_daily_note(
-        self, mock_vault: Path, sample_urls: list[str]
-    ) -> None:
+    def test_extract_urls_from_daily_note(self, mock_vault: Path, sample_urls: list[str]) -> None:
         """Should extract URLs from a daily note file."""
         # Read the daily note
         content = read_daily_note(mock_vault, "2025-12-16.md")
@@ -70,9 +68,7 @@ class TestFullWorkflow:
         assert "date: 2025-12-16" in first_summary
         assert "## Summary" in first_summary
 
-    def test_idempotency_skip_existing(
-        self, mock_vault: Path, fixed_date: datetime
-    ) -> None:
+    def test_idempotency_skip_existing(self, mock_vault: Path, fixed_date: datetime) -> None:
         """Running twice should skip already-processed URLs."""
         url = "https://example.com/test"
 
@@ -115,14 +111,10 @@ class TestFullWorkflow:
         assert config.max_links == 5
         assert config.daily_notes_folder == "Journal"
 
-    def test_daily_note_in_subfolder(
-        self, mock_vault: Path
-    ) -> None:
+    def test_daily_note_in_subfolder(self, mock_vault: Path) -> None:
         """Should read daily notes from configured subfolder."""
         # Note in Journal folder was created by mock_vault fixture
-        content = read_daily_note(
-            mock_vault, "2025-12-15.md", daily_notes_folder="Journal"
-        )
+        content = read_daily_note(mock_vault, "2025-12-15.md", daily_notes_folder="Journal")
 
         assert "Yesterday's note" in content
 
