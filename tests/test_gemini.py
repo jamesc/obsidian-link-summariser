@@ -130,8 +130,8 @@ class TestGeminiClient:
 
         # Fail twice, then succeed
         mock_model.generate_content.side_effect = [
-            google_exceptions.ResourceExhausted("Rate limit"),
-            google_exceptions.ResourceExhausted("Rate limit"),
+            google_exceptions.ResourceExhausted("Rate limit"),  # type: ignore[no-untyped-call]
+            google_exceptions.ResourceExhausted("Rate limit"),  # type: ignore[no-untyped-call]
             mock_response,
         ]
         mock_genai.GenerativeModel.return_value = mock_model
@@ -148,7 +148,9 @@ class TestGeminiClient:
     def test_rate_limit_error_after_retries(self, mock_genai: MagicMock) -> None:
         """Should raise RateLimitError after all retries exhausted."""
         mock_model = MagicMock()
-        mock_model.generate_content.side_effect = google_exceptions.ResourceExhausted("Rate limit")
+        mock_model.generate_content.side_effect = google_exceptions.ResourceExhausted(  # type: ignore[no-untyped-call]
+            "Rate limit"
+        )
         mock_genai.GenerativeModel.return_value = mock_model
 
         client = GeminiClient(api_key="test-key")
@@ -163,7 +165,9 @@ class TestGeminiClient:
     def test_invalid_argument_error(self, mock_genai: MagicMock) -> None:
         """Should raise GeminiAPIError on invalid argument without retry."""
         mock_model = MagicMock()
-        mock_model.generate_content.side_effect = google_exceptions.InvalidArgument("Bad request")
+        mock_model.generate_content.side_effect = google_exceptions.InvalidArgument(  # type: ignore[no-untyped-call]
+            "Bad request"
+        )
         mock_genai.GenerativeModel.return_value = mock_model
 
         client = GeminiClient(api_key="test-key")
@@ -178,7 +182,7 @@ class TestGeminiClient:
     def test_permission_denied_error(self, mock_genai: MagicMock) -> None:
         """Should raise GeminiAPIError on permission denied without retry."""
         mock_model = MagicMock()
-        mock_model.generate_content.side_effect = google_exceptions.PermissionDenied(
+        mock_model.generate_content.side_effect = google_exceptions.PermissionDenied(  # type: ignore[no-untyped-call]
             "Access denied"
         )
         mock_genai.GenerativeModel.return_value = mock_model
@@ -257,9 +261,10 @@ class TestCreateClient:
         """Should pass model parameter to client."""
         client = create_client(api_key="test-key", model="custom-model", mock_mode=False)
         assert isinstance(client, GeminiClient)
-        assert client._model_name == "custom-model"
+        assert client._model_name == "custom-model"  # noqa: SLF001
 
     def test_default_model(self) -> None:
         """Should use DEFAULT_MODEL when not specified."""
         client = create_client(api_key="test-key", mock_mode=False)
-        assert client._model_name == DEFAULT_MODEL
+        assert isinstance(client, GeminiClient)
+        assert client._model_name == DEFAULT_MODEL  # noqa: SLF001
