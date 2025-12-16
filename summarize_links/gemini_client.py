@@ -3,9 +3,12 @@ Gemini API client for content summarization.
 
 This module provides a client for the Google Gemini API to generate
 summaries of web page content in Obsidian-friendly Markdown format.
+Supports structured output with suggested tags and content classification.
 """
 
+import json
 import logging
+import re
 import time
 from typing import Any, Protocol
 
@@ -14,6 +17,7 @@ from google.api_core import exceptions as google_exceptions
 
 from summarize_links.config import DEFAULT_MODEL
 from summarize_links.exceptions import GeminiAPIError, RateLimitError
+from summarize_links.models import CONTENT_TYPES, SummaryResult
 
 # Module logger
 logger = logging.getLogger(__name__)
@@ -23,18 +27,43 @@ MAX_RETRIES = 3
 INITIAL_RETRY_DELAY = 1.0  # seconds
 MAX_RETRY_DELAY = 30.0  # seconds
 
-# System prompt for summarization
+# System prompt for summarization with structured output
 SUMMARY_SYSTEM_PROMPT = """You are a summarization assistant. Your task is to create
 concise, informative summaries of web page content for a personal knowledge base.
 
-Guidelines:
+Guidelines for the summary:
 - Write in clear, direct prose
 - Use Markdown formatting (headers, bullet points, bold/italic as appropriate)
 - Focus on the main ideas and key takeaways
 - Omit advertisements, navigation, and boilerplate content
 - Keep summaries focused and scannable
 - Include relevant quotes if they capture key insights
-- Use a neutral, informative tone"""
+- Use a neutral, informative tone
+
+You MUST respond with valid JSON in this exact format:
+{
+  "summary": "Your markdown-formatted summary here",
+  "suggested_tags": ["tag1", "tag2", "tag3"],
+  "content_type": "article"
+}
+
+For suggested_tags:
+- Provide 3-5 relevant topic tags
+- Use lowercase, hyphenated format (e.g., "machine-learning", "web-development")
+- Focus on the main topics and technologies discussed
+- Avoid generic tags like "article" or "blog"
+
+For content_type, choose ONE of:
+- "article" (news, opinion, analysis)
+- "tutorial" (how-to, guide, walkthrough)
+- "documentation" (API docs, reference material)
+- "research" (academic papers, studies)
+- "blog" (personal posts, informal writing)
+- "news" (current events, announcements)
+- "video" (video content transcripts)
+- "tool" (software, service, product pages)
+- "reference" (lists, comparisons, resources)
+- "other" (if none of the above fit)"""
 
 
 class SummarizerProtocol(Protocol):
@@ -42,7 +71,7 @@ class SummarizerProtocol(Protocol):
 
     def summarize(self, content: str, url: str, title: str | None = None) -> str:
         """
-        Summarize content from a web page.
+        Summarize content from a web page (legacy interface).
 
         Args:
             content: The text content to summarize.
@@ -51,6 +80,22 @@ class SummarizerProtocol(Protocol):
 
         Returns:
             Markdown-formatted summary.
+        """
+        ...
+
+    def summarize_with_metadata(
+        self, content: str, url: str, title: str | None = None
+    ) -> SummaryResult:
+        """
+        Summarize content and return structured result with tags.
+
+        Args:
+            content: The text content to summarize.
+            url: The source URL for attribution.
+            title: Optional page title.
+
+        Returns:
+            SummaryResult with content, suggested tags, and content type.
         """
         ...
 
@@ -68,14 +113,76 @@ def _build_prompt(content: str, url: str, title: str | None = None) -> str:
         Formatted prompt string.
     """
     title_part = f" titled '{title}'" if title else ""
-    return f"""Please summarize the following web page content{title_part}.
+    return f"""Summarize the following web page content{title_part}.
 
 Source URL: {url}
 
 Content:
 {content}
 
-Provide a comprehensive yet concise summary in Markdown format."""
+Remember to respond with valid JSON containing "summary", "suggested_tags", and "content_type"."""
+
+
+def _parse_gemini_response(response_text: str) -> SummaryResult:
+    """
+    Parse Gemini's JSON response into a SummaryResult.
+
+    Handles various response formats including:
+    - Clean JSON
+    - JSON wrapped in markdown code blocks
+    - Malformed responses (falls back to plain text)
+
+    Args:
+        response_text: Raw response from Gemini API.
+
+    Returns:
+        Parsed SummaryResult object.
+    """
+    text = response_text.strip()
+
+    # Try to extract JSON from markdown code block
+    json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if json_match:
+        text = json_match.group(1)
+
+    # Try to find JSON object in the response
+    json_object_match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", text, re.DOTALL)
+    if json_object_match:
+        text = json_object_match.group(0)
+
+    try:
+        data = json.loads(text)
+
+        # Extract and validate fields
+        summary = data.get("summary", "")
+        if not summary:
+            # If no summary field, use the whole response as summary
+            logger.warning("No 'summary' field in response, using raw text")
+            summary = response_text
+
+        suggested_tags = data.get("suggested_tags", [])
+        if not isinstance(suggested_tags, list):
+            suggested_tags = []
+
+        content_type = data.get("content_type", "article")
+        if content_type not in CONTENT_TYPES:
+            logger.debug(f"Unknown content_type '{content_type}', defaulting to 'article'")
+            content_type = "article"
+
+        return SummaryResult(
+            content=summary,
+            suggested_tags=suggested_tags,
+            content_type=content_type,
+        )
+
+    except json.JSONDecodeError as e:
+        # Fallback: treat the whole response as the summary
+        logger.warning(f"Failed to parse JSON response: {e}. Using raw text as summary.")
+        return SummaryResult(
+            content=response_text,
+            suggested_tags=[],
+            content_type="article",
+        )
 
 
 class GeminiClient:
@@ -195,6 +302,35 @@ class GeminiClient:
             raise RateLimitError("Rate limit exceeded after retries") from last_exception
         raise GeminiAPIError(f"API error after retries: {last_exception}") from last_exception
 
+    def summarize_with_metadata(
+        self, content: str, url: str, title: str | None = None
+    ) -> SummaryResult:
+        """
+        Summarize content and return structured result with tags.
+
+        This method requests JSON output from Gemini including:
+        - A markdown-formatted summary
+        - Suggested topic tags
+        - Content type classification
+
+        Args:
+            content: The text content to summarize.
+            url: The source URL for attribution.
+            title: Optional page title.
+
+        Returns:
+            SummaryResult with content, suggested tags, and content type.
+
+        Raises:
+            RateLimitError: When rate limited after all retries exhausted.
+            GeminiAPIError: When API returns an error.
+        """
+        # Get the raw response (which should be JSON)
+        raw_response = self.summarize(content, url, title)
+
+        # Parse the JSON response into SummaryResult
+        return _parse_gemini_response(raw_response)
+
 
 class MockGeminiClient:
     """
@@ -278,6 +414,49 @@ This summary was generated by MockGeminiClient for testing the summarization pip
 """
         logger.debug("MockGeminiClient: Generated mock summary for %s", url)
         return mock_summary
+
+    def summarize_with_metadata(
+        self, content: str, url: str, title: str | None = None
+    ) -> SummaryResult:
+        """
+        Return a mock summary with metadata.
+
+        Args:
+            content: Content (used for generating mock response).
+            url: URL (used for custom responses or errors).
+            title: Optional title.
+
+        Returns:
+            Mock SummaryResult with summary, tags, and content type.
+
+        Raises:
+            GeminiAPIError: If URL is in fail_urls set.
+        """
+        # Get the summary content (handles fail_urls and custom responses)
+        summary_text = self.summarize(content, url, title)
+
+        # Generate predictable mock tags based on URL
+        mock_tags = ["mock-tag", "testing"]
+
+        # Infer content type from URL patterns
+        content_type = "article"
+        url_lower = url.lower()
+        if "tutorial" in url_lower or "how-to" in url_lower:
+            content_type = "tutorial"
+        elif "docs" in url_lower or "documentation" in url_lower:
+            content_type = "documentation"
+        elif "blog" in url_lower:
+            content_type = "blog"
+        elif "news" in url_lower:
+            content_type = "news"
+        elif "video" in url_lower or "youtube" in url_lower:
+            content_type = "video"
+
+        return SummaryResult(
+            content=summary_text,
+            suggested_tags=mock_tags,
+            content_type=content_type,
+        )
 
 
 def create_client(

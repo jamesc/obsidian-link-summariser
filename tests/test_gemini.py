@@ -11,8 +11,10 @@ from summarize_links.gemini_client import (
     GeminiClient,
     MockGeminiClient,
     _build_prompt,
+    _parse_gemini_response,
     create_client,
 )
+from summarize_links.models import SummaryResult
 
 
 class TestBuildPrompt:
@@ -23,7 +25,7 @@ class TestBuildPrompt:
         prompt = _build_prompt("Test content", "https://example.com")
         assert "Test content" in prompt
         assert "https://example.com" in prompt
-        assert "Markdown format" in prompt
+        assert "JSON" in prompt  # Now requests JSON output
 
     def test_prompt_with_title(self) -> None:
         """Should include title when provided."""
@@ -268,3 +270,161 @@ class TestCreateClient:
         client = create_client(api_key="test-key", mock_mode=False)
         assert isinstance(client, GeminiClient)
         assert client._model_name == DEFAULT_MODEL  # noqa: SLF001
+
+
+class TestParseGeminiResponse:
+    """Tests for JSON response parsing."""
+
+    def test_parse_valid_json(self) -> None:
+        """Should parse valid JSON response."""
+        response = (
+            '{"summary": "Test summary", "suggested_tags": ["ai", "ml"], "content_type": "article"}'
+        )
+        result = _parse_gemini_response(response)
+
+        assert result.content == "Test summary"
+        assert result.suggested_tags == ["ai", "ml"]
+        assert result.content_type == "article"
+
+    def test_parse_json_in_code_block(self) -> None:
+        """Should extract JSON from markdown code block."""
+        response = """Here's the summary:
+```json
+{"summary": "Test summary", "suggested_tags": ["tag1"], "content_type": "tutorial"}
+```"""
+        result = _parse_gemini_response(response)
+
+        assert result.content == "Test summary"
+        assert result.suggested_tags == ["tag1"]
+        assert result.content_type == "tutorial"
+
+    def test_parse_json_without_code_block_marker(self) -> None:
+        """Should extract JSON from code block without json marker."""
+        response = """```
+{"summary": "Summary text", "suggested_tags": [], "content_type": "blog"}
+```"""
+        result = _parse_gemini_response(response)
+
+        assert result.content == "Summary text"
+        assert result.content_type == "blog"
+
+    def test_fallback_on_invalid_json(self) -> None:
+        """Should use raw text as summary when JSON is invalid."""
+        response = "This is not valid JSON, just plain text summary."
+        result = _parse_gemini_response(response)
+
+        assert result.content == response
+        assert result.suggested_tags == []
+        assert result.content_type == "article"
+
+    def test_missing_summary_field(self) -> None:
+        """Should use raw response if summary field is missing."""
+        response = '{"suggested_tags": ["tag1"], "content_type": "article"}'
+        result = _parse_gemini_response(response)
+
+        # Should fall back to entire response since summary is empty
+        assert result.suggested_tags == ["tag1"]
+
+    def test_invalid_content_type(self) -> None:
+        """Should default to article for unknown content types."""
+        response = '{"summary": "Test", "suggested_tags": [], "content_type": "unknown_type"}'
+        result = _parse_gemini_response(response)
+
+        assert result.content_type == "article"
+
+    def test_invalid_tags_type(self) -> None:
+        """Should default to empty list for invalid tags."""
+        response = '{"summary": "Test", "suggested_tags": "not-a-list", "content_type": "article"}'
+        result = _parse_gemini_response(response)
+
+        assert result.suggested_tags == []
+
+
+class TestMockGeminiClientWithMetadata:
+    """Tests for MockGeminiClient.summarize_with_metadata."""
+
+    def test_returns_summary_result(self) -> None:
+        """Should return SummaryResult object."""
+        client = MockGeminiClient()
+        result = client.summarize_with_metadata("Content", "https://example.com", "Title")
+
+        assert isinstance(result, SummaryResult)
+        assert "Summary: Title" in result.content
+        assert "mock-tag" in result.suggested_tags
+        assert result.content_type == "article"
+
+    def test_infers_tutorial_content_type(self) -> None:
+        """Should infer tutorial content type from URL."""
+        client = MockGeminiClient()
+        result = client.summarize_with_metadata("Content", "https://example.com/tutorial/python")
+
+        assert result.content_type == "tutorial"
+
+    def test_infers_documentation_content_type(self) -> None:
+        """Should infer documentation content type from URL."""
+        client = MockGeminiClient()
+        result = client.summarize_with_metadata("Content", "https://docs.example.com/api")
+
+        assert result.content_type == "documentation"
+
+    def test_infers_blog_content_type(self) -> None:
+        """Should infer blog content type from URL."""
+        client = MockGeminiClient()
+        result = client.summarize_with_metadata("Content", "https://blog.example.com/post")
+
+        assert result.content_type == "blog"
+
+    def test_infers_video_content_type(self) -> None:
+        """Should infer video content type from YouTube URL."""
+        client = MockGeminiClient()
+        result = client.summarize_with_metadata("Content", "https://youtube.com/watch?v=123")
+
+        assert result.content_type == "video"
+
+    def test_fail_urls_still_work(self) -> None:
+        """Should raise error for fail_urls."""
+        client = MockGeminiClient(fail_urls={"https://fail.com"})
+
+        with pytest.raises(GeminiAPIError, match="Simulated API error"):
+            client.summarize_with_metadata("Content", "https://fail.com")
+
+
+class TestGeminiClientWithMetadata:
+    """Tests for GeminiClient.summarize_with_metadata."""
+
+    @patch("summarize_links.gemini_client.genai")
+    def test_parses_json_response(self, mock_genai: MagicMock) -> None:
+        """Should parse JSON response into SummaryResult."""
+        mock_model = MagicMock()
+        mock_response = MagicMock()
+        mock_response.parts = [MagicMock()]
+        mock_response.text = (
+            '{"summary": "AI Summary", "suggested_tags": ["ai"], "content_type": "article"}'
+        )
+        mock_model.generate_content.return_value = mock_response
+        mock_genai.GenerativeModel.return_value = mock_model
+
+        client = GeminiClient(api_key="test-key")
+        result = client.summarize_with_metadata("Content", "https://example.com", "Title")
+
+        assert isinstance(result, SummaryResult)
+        assert result.content == "AI Summary"
+        assert result.suggested_tags == ["ai"]
+        assert result.content_type == "article"
+
+    @patch("summarize_links.gemini_client.genai")
+    def test_handles_non_json_response(self, mock_genai: MagicMock) -> None:
+        """Should handle non-JSON response gracefully."""
+        mock_model = MagicMock()
+        mock_response = MagicMock()
+        mock_response.parts = [MagicMock()]
+        mock_response.text = "Plain text summary without JSON"
+        mock_model.generate_content.return_value = mock_response
+        mock_genai.GenerativeModel.return_value = mock_model
+
+        client = GeminiClient(api_key="test-key")
+        result = client.summarize_with_metadata("Content", "https://example.com")
+
+        assert result.content == "Plain text summary without JSON"
+        assert result.suggested_tags == []
+        assert result.content_type == "article"
