@@ -15,6 +15,13 @@ from summarize_links.gemini_client import (
     create_client,
 )
 from summarize_links.models import SummaryResult
+from summarize_links.rate_limiter import RateLimiter
+
+
+@pytest.fixture
+def mock_rate_limiter() -> RateLimiter:
+    """Create a rate limiter with high limits for testing."""
+    return RateLimiter(rpm_limit=1000, tpm_limit=10000000, daily_limit=10000)
 
 
 class TestBuildPrompt:
@@ -105,6 +112,11 @@ class TestMockGeminiClient:
 class TestGeminiClient:
     """Tests for the real Gemini client (mocked API calls)."""
 
+    @pytest.fixture(autouse=True)
+    def setup_rate_limiter(self, mock_rate_limiter: RateLimiter) -> None:
+        """Inject mock rate limiter for all tests in this class."""
+        self._rate_limiter = mock_rate_limiter
+
     @patch("summarize_links.gemini_client.genai")
     def test_successful_summarization(self, mock_genai: MagicMock) -> None:
         """Should return summary on successful API call."""
@@ -115,7 +127,9 @@ class TestGeminiClient:
         mock_model.generate_content.return_value = mock_response
         mock_genai.GenerativeModel.return_value = mock_model
 
-        client = GeminiClient(api_key="test-key", model="gemini-2.0-flash")
+        client = GeminiClient(
+            api_key="test-key", model="gemini-2.0-flash", rate_limiter=self._rate_limiter
+        )
         result = client.summarize("Test content", "https://example.com", "Title")
 
         assert result == "Generated summary"
@@ -138,7 +152,7 @@ class TestGeminiClient:
         ]
         mock_genai.GenerativeModel.return_value = mock_model
 
-        client = GeminiClient(api_key="test-key")
+        client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
         with patch("summarize_links.gemini_client.time.sleep"):
             result = client.summarize("Content", "https://example.com")
@@ -155,7 +169,7 @@ class TestGeminiClient:
         )
         mock_genai.GenerativeModel.return_value = mock_model
 
-        client = GeminiClient(api_key="test-key")
+        client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
         with (
             patch("summarize_links.gemini_client.time.sleep"),
@@ -172,7 +186,7 @@ class TestGeminiClient:
         )
         mock_genai.GenerativeModel.return_value = mock_model
 
-        client = GeminiClient(api_key="test-key")
+        client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
         with pytest.raises(GeminiAPIError, match="Invalid request"):
             client.summarize("Content", "https://example.com")
@@ -189,7 +203,7 @@ class TestGeminiClient:
         )
         mock_genai.GenerativeModel.return_value = mock_model
 
-        client = GeminiClient(api_key="test-key")
+        client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
         with pytest.raises(GeminiAPIError, match="Permission denied"):
             client.summarize("Content", "https://example.com")
@@ -206,7 +220,7 @@ class TestGeminiClient:
         mock_model.generate_content.return_value = mock_response
         mock_genai.GenerativeModel.return_value = mock_model
 
-        client = GeminiClient(api_key="test-key")
+        client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
         with pytest.raises(GeminiAPIError, match="blocked or empty"):
             client.summarize("Content", "https://example.com")
@@ -221,7 +235,7 @@ class TestGeminiClient:
         mock_model.generate_content.return_value = mock_response
         mock_genai.GenerativeModel.return_value = mock_model
 
-        client = GeminiClient(api_key="test-key")
+        client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
         # No model created yet
         mock_genai.configure.assert_not_called()
@@ -421,6 +435,11 @@ class TestMockGeminiClientWithMetadata:
 class TestGeminiClientWithMetadata:
     """Tests for GeminiClient.summarize_with_metadata."""
 
+    @pytest.fixture(autouse=True)
+    def setup_rate_limiter(self, mock_rate_limiter: RateLimiter) -> None:
+        """Inject mock rate limiter for all tests in this class."""
+        self._rate_limiter = mock_rate_limiter
+
     @patch("summarize_links.gemini_client.genai")
     def test_parses_json_response(self, mock_genai: MagicMock) -> None:
         """Should parse JSON response into SummaryResult."""
@@ -433,7 +452,7 @@ class TestGeminiClientWithMetadata:
         mock_model.generate_content.return_value = mock_response
         mock_genai.GenerativeModel.return_value = mock_model
 
-        client = GeminiClient(api_key="test-key")
+        client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
         result = client.summarize_with_metadata("Content", "https://example.com", "Title")
 
         assert isinstance(result, SummaryResult)
@@ -451,7 +470,7 @@ class TestGeminiClientWithMetadata:
         mock_model.generate_content.return_value = mock_response
         mock_genai.GenerativeModel.return_value = mock_model
 
-        client = GeminiClient(api_key="test-key")
+        client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
         result = client.summarize_with_metadata("Content", "https://example.com")
 
         assert result.content == "Plain text summary without JSON"

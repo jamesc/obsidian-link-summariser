@@ -15,7 +15,7 @@
 
 - **Write tests as you go**: Create unit tests alongside each module, not as an afterthought
 
-- **Run tests regularly**: Execute `pytest` after each significant change to catch regressions early
+- **Run tests regularly**: Execute `uv run pytest` after each significant change to catch regressions early
 
 - **Always use uv for python environment management**
 
