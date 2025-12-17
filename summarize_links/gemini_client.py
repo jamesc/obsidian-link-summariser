@@ -26,9 +26,10 @@ from summarize_links.rate_limiter import RateLimiter, get_rate_limiter
 logger = logging.getLogger(__name__)
 
 # Retry configuration
-MAX_RETRIES = 3
-INITIAL_RETRY_DELAY = 1.0  # seconds
-MAX_RETRY_DELAY = 30.0  # seconds
+MAX_RETRIES = 5
+BASE_RETRY_DELAY = 2.0  # Base delay for exponential backoff (seconds)
+MIN_RATE_LIMIT_WAIT = 10.0  # Minimum wait when rate limited (seconds)
+MAX_RETRY_DELAY = 120.0  # Maximum delay cap (seconds)
 
 # System prompt for summarization with structured output
 SUMMARY_SYSTEM_PROMPT = """You are a summarization assistant. Your task is to create
@@ -260,6 +261,68 @@ class GeminiClient:
             logger.debug("Created GenerativeModel instance")
         return self._model
 
+    def _calculate_rate_limit_wait(self, attempt: int, error: Exception) -> float:
+        """
+        Calculate wait time when rate limited, respecting actual rate limit windows.
+
+        Uses a combination of:
+        1. Retry-After header from the API response (if available)
+        2. Rate limiter's calculated wait time based on sliding window
+        3. Exponential backoff as a fallback
+
+        Args:
+            attempt: Current retry attempt (0-indexed).
+            error: The ResourceExhausted exception from the API.
+
+        Returns:
+            Number of seconds to wait before retrying.
+        """
+        # Mark that we hit a rate limit (syncs internal state)
+        self._rate_limiter.mark_rate_limited()
+
+        # Try to extract Retry-After from the error message or metadata
+        retry_after: float | None = None
+        error_str = str(error)
+
+        # Parse retry delay from error message (Gemini often includes this)
+        # Example: "Resource has been exhausted... Retry after 60 seconds"
+        import re
+
+        retry_match = re.search(r"[Rr]etry after (\d+(?:\.\d+)?)", error_str)
+        if retry_match:
+            retry_after = float(retry_match.group(1))
+            logger.debug("Extracted Retry-After from error: %.1fs", retry_after)
+
+        # Get the rate limiter's suggestion based on sliding window
+        rpm_wait = self._rate_limiter.get_time_until_rpm_slot()
+        can_proceed, limiter_wait, reason = self._rate_limiter.check_limits()
+
+        if not can_proceed:
+            logger.debug("Rate limiter suggests waiting %.1fs: %s", limiter_wait, reason)
+
+        # Calculate exponential backoff: BASE * 2^attempt
+        exponential_wait = BASE_RETRY_DELAY * (2**attempt)
+
+        # Choose the appropriate wait time
+        if retry_after is not None:
+            # API told us exactly how long to wait - use that with a small buffer
+            wait_time = retry_after + 1.0
+        elif rpm_wait > 0:
+            # Use the calculated time until an RPM slot opens
+            wait_time = rpm_wait
+        elif limiter_wait > 0:
+            # Use rate limiter's general calculation
+            wait_time = limiter_wait
+        else:
+            # Fallback to exponential backoff with minimum for rate limits
+            wait_time = max(MIN_RATE_LIMIT_WAIT, exponential_wait)
+
+        # Cap at maximum and ensure minimum wait for rate limits
+        wait_time = min(wait_time, MAX_RETRY_DELAY)
+        wait_time = max(wait_time, MIN_RATE_LIMIT_WAIT)
+
+        return wait_time
+
     def summarize(self, content: str, url: str, title: str | None = None) -> str:
         """
         Summarize content using the Gemini API.
@@ -286,7 +349,6 @@ class GeminiClient:
         # Wait if we're near rate limits (blocks until safe to proceed)
         self._rate_limiter.wait_if_needed(estimated_tokens)
 
-        retry_delay = INITIAL_RETRY_DELAY
         last_exception: Exception | None = None
 
         for attempt in range(MAX_RETRIES):
@@ -324,17 +386,33 @@ class GeminiClient:
                 return summary
 
             except google_exceptions.ResourceExhausted as e:
-                # Rate limit from API - use longer backoff and retry
+                # Rate limit from API - calculate smart wait time
                 last_exception = e
-                # Also wait via our rate limiter to ensure we don't hit limits again
+                wait_time = self._calculate_rate_limit_wait(attempt, e)
+
                 logger.warning(
-                    "API rate limited (attempt %d/%d), backing off %.1fs",
+                    "API rate limited (attempt %d/%d). Waiting %.1fs before retry...",
                     attempt + 1,
                     MAX_RETRIES,
-                    retry_delay,
+                    wait_time,
                 )
-                time.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, MAX_RETRY_DELAY)
+
+                # Show rate limit status for debugging
+                status = self._rate_limiter.get_status()
+                logger.debug(
+                    "Rate limit status: RPM=%d/%d, TPM=%d/%d, Daily=%d/%d",
+                    status["rpm"]["current"],
+                    status["rpm"]["limit"],
+                    status["tpm"]["current"],
+                    status["tpm"]["limit"],
+                    status["daily"]["current"],
+                    status["daily"]["limit"],
+                )
+
+                time.sleep(wait_time)
+
+                # After waiting, also check via rate limiter to be safe
+                self._rate_limiter.wait_if_needed(estimated_tokens)
 
             except google_exceptions.InvalidArgument as e:
                 # Bad request - don't retry
@@ -347,16 +425,19 @@ class GeminiClient:
                 raise GeminiAPIError(f"Permission denied: {e}") from e
 
             except google_exceptions.GoogleAPICallError as e:
-                # Other API errors - retry for transient ones
+                # Other API errors - retry with exponential backoff
                 last_exception = e
+                wait_time = BASE_RETRY_DELAY * (2**attempt)
+                wait_time = min(wait_time, MAX_RETRY_DELAY)
+
                 logger.warning(
-                    "API error (attempt %d/%d): %s",
+                    "API error (attempt %d/%d): %s. Retrying in %.1fs...",
                     attempt + 1,
                     MAX_RETRIES,
                     e,
+                    wait_time,
                 )
-                time.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, MAX_RETRY_DELAY)
+                time.sleep(wait_time)
 
         # All retries exhausted
         logger.error("All retries exhausted for Gemini API call")

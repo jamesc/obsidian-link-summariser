@@ -152,9 +152,23 @@ class TestGeminiClient:
         ]
         mock_genai.GenerativeModel.return_value = mock_model
 
+        # Create a mock time that advances when sleep is called
+        current_time = [1000.0]  # Use list to allow mutation in nested function
+
+        def mock_time() -> float:
+            return current_time[0]
+
+        def mock_sleep(seconds: float) -> None:
+            current_time[0] += seconds
+
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
-        with patch("summarize_links.gemini_client.time.sleep"):
+        with (
+            patch("summarize_links.gemini_client.time.sleep", side_effect=mock_sleep),
+            patch("summarize_links.gemini_client.time.time", side_effect=mock_time),
+            patch("summarize_links.rate_limiter.time.sleep", side_effect=mock_sleep),
+            patch("summarize_links.rate_limiter.time.time", side_effect=mock_time),
+        ):
             result = client.summarize("Content", "https://example.com")
 
         assert result == "Generated summary"
@@ -169,10 +183,22 @@ class TestGeminiClient:
         )
         mock_genai.GenerativeModel.return_value = mock_model
 
+        # Create a mock time that advances when sleep is called
+        current_time = [1000.0]
+
+        def mock_time() -> float:
+            return current_time[0]
+
+        def mock_sleep(seconds: float) -> None:
+            current_time[0] += seconds
+
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
         with (
-            patch("summarize_links.gemini_client.time.sleep"),
+            patch("summarize_links.gemini_client.time.sleep", side_effect=mock_sleep),
+            patch("summarize_links.gemini_client.time.time", side_effect=mock_time),
+            patch("summarize_links.rate_limiter.time.sleep", side_effect=mock_sleep),
+            patch("summarize_links.rate_limiter.time.time", side_effect=mock_time),
             pytest.raises(RateLimitError, match="Rate limit exceeded"),
         ):
             client.summarize("Content", "https://example.com")

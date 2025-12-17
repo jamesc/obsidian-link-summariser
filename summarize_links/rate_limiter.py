@@ -331,6 +331,49 @@ class RateLimiter:
             self._reset_daily_if_needed()
             return max(0, self.daily_limit - self._state.daily_requests)
 
+    def get_time_until_rpm_slot(self) -> float:
+        """
+        Get seconds until an RPM slot opens up.
+
+        Useful for calculating backoff when rate limited by the API.
+
+        Returns:
+            Seconds until a request slot opens, or 0 if slots available.
+        """
+        with self._lock:
+            self._clean_old_entries()
+
+            if len(self._request_times) < self.rpm_limit:
+                return 0.0
+
+            # Calculate when the oldest request will expire from the window
+            now = time.time()
+            oldest = self._request_times[0]
+            wait_time = 60.0 - (now - oldest) + 0.5  # Add small buffer
+            return max(0.0, wait_time)
+
+    def mark_rate_limited(self) -> None:
+        """
+        Mark that we received a rate limit response from the API.
+
+        This can help sync our internal state when the API rate limits us
+        unexpectedly (e.g., due to other clients sharing the quota).
+        Adds artificial entries to ensure we wait appropriately.
+        """
+        with self._lock:
+            now = time.time()
+
+            # If we're rate limited but don't have enough recent requests recorded,
+            # it means other factors (other clients, burst limits) are in play.
+            # Add entries to force waiting behavior.
+            while len(self._request_times) < self.rpm_limit:
+                self._request_times.append(now)
+
+            logger.debug(
+                "Marked as rate limited, RPM window now has %d entries",
+                len(self._request_times),
+            )
+
 
 # Global rate limiter instance (initialized when first used)
 _rate_limiter: RateLimiter | None = None
