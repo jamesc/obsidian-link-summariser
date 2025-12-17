@@ -372,6 +372,9 @@ def extract_urls_with_context(content: str) -> list[UrlWithContext]:
                 # Clean up URL (remove trailing punctuation)
                 url = url.rstrip(".,;:")
 
+                # Store original URL before cleaning (for note removal)
+                original_url = url
+
                 # Clean tracking parameters
                 url = clean_url(url)
 
@@ -385,6 +388,7 @@ def extract_urls_with_context(content: str) -> list[UrlWithContext]:
 
                 result = UrlWithContext(
                     url=url,
+                    original_url=original_url,
                     tags=tags,
                     context_text=line.strip(),
                 )

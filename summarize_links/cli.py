@@ -384,12 +384,15 @@ def _process_url_with_metadata(
 
         # Add link to daily note if we have the source note filename
         if daily_note_filename:
+            # Use original_url for finding the URL in the note
+            # (cleaned URL may differ due to normalization like ?key vs ?key=)
+            lookup_url = url_context.original_url or url
             add_summary_link_to_daily_note(
                 vault_path=config.vault_path,
                 daily_notes_folder=config.daily_notes_folder,
                 note_filename=daily_note_filename,
                 summary_path=summary_path,
-                url=url,
+                url=lookup_url,
             )
 
         # Signal that this URL was successfully processed and should be deleted from source
@@ -853,7 +856,8 @@ def _process_urls_with_metadata(
 
             # Track URLs that were newly processed (not skipped, not errors)
             if should_delete:
-                urls_to_delete.append(url_context.url)
+                # Store original_url for removal (cleaned URL may not match note)
+                urls_to_delete.append(url_context.original_url or url_context.url)
 
             progress.advance(task)
 

@@ -17,10 +17,12 @@ class TestUrlWithContext:
         """Test creating a UrlWithContext with all fields."""
         url_ctx = UrlWithContext(
             url="https://example.com",
+            original_url="https://example.com",
             tags=["ai", "ml"],
             context_text="Check out this #ai #ml article",
         )
         assert url_ctx.url == "https://example.com"
+        assert url_ctx.original_url == "https://example.com"
         assert url_ctx.tags == ["ai", "ml"]
         assert "ai" in url_ctx.context_text
 
@@ -29,6 +31,17 @@ class TestUrlWithContext:
         url_ctx = UrlWithContext(url="https://example.com")
         assert url_ctx.tags == []
         assert url_ctx.context_text == ""
+        assert url_ctx.original_url == ""  # Default empty string
+
+    def test_original_url_differs_from_cleaned(self) -> None:
+        """Test that original_url can differ from cleaned url."""
+        # This happens when URL cleaning normalizes the URL
+        url_ctx = UrlWithContext(
+            url="https://example.com?key=",  # Cleaned (with trailing =)
+            original_url="https://example.com?key",  # Original (without trailing =)
+        )
+        assert url_ctx.url == "https://example.com?key="
+        assert url_ctx.original_url == "https://example.com?key"
 
 
 class TestPageMetadata:

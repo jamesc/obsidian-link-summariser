@@ -644,3 +644,48 @@ daily_limit: 10000
 | simonwillison.net (404) | `HTTP error 404 for URL` | `HTTP 404: Page not found (URL may be incorrect or content removed)` |
 
 **Tests:** All 293 existing tests pass
+
+---
+
+## 2025-12-17: Fix URL removal when query params get normalized
+
+**Goal:** Fix bug where URLs with empty query parameter values (like `?2138`) were not being removed from daily notes after summarization.
+
+**Problem:**
+When a URL like `https://www.lukew.com/ff/entry.asp?2138` is processed:
+1. The regex extracts it correctly from the note
+2. `clean_url()` passes it through `parse_qs()` and `urlencode()`, which normalizes `?2138` to `?2138=` (adding trailing `=`)
+3. The cleaned URL `?2138=` is stored and used for all subsequent operations
+4. When trying to find/remove the URL from the note, `?2138=` doesn't match the original `?2138`
+5. Log shows: "URL not found in note, nothing to remove"
+
+**Solution:**
+Store the original URL (before cleaning) alongside the cleaned URL, and use the original for note operations.
+
+**Changes:**
+
+### `summarize_links/models.py`
+- Added `original_url` field to `UrlWithContext` dataclass
+- Default value is empty string for backward compatibility
+- Docstring updated to explain the two URL fields
+
+### `summarize_links/notes.py`
+- Updated `extract_urls_with_context()` to:
+  - Store the URL before cleaning as `original_url`
+  - Store the cleaned URL as `url`
+  - Both are populated in the `UrlWithContext` object
+
+### `summarize_links/cli.py`
+- Updated `_process_url_with_metadata()` to use `original_url` (falling back to `url`) when calling `add_summary_link_to_daily_note()`
+- Updated `_process_batch_with_metadata()` to store `original_url` (falling back to `url`) in `urls_to_delete` list
+
+**Behavior:**
+- `url` field: Cleaned URL used for fetching, slug generation, duplicate detection
+- `original_url` field: Original URL as it appears in the note, used for finding/removing lines
+
+**Tests:** Added 3 new tests:
+- `test_models.py::TestUrlWithContext::test_original_url_differs_from_cleaned` - Model field test
+- `test_notes.py::TestExtractUrlsWithContext::test_original_url_preserved_when_cleaning_normalizes` - Regression test for `?key` → `?key=` normalization
+- `test_notes.py::TestExtractUrlsWithContext::test_original_url_same_when_no_normalization` - Normal case test
+
+Total tests: 296

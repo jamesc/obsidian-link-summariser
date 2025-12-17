@@ -781,6 +781,34 @@ class TestExtractUrlsWithContext:
         assert results[1].url == "https://openai.com/blog/gpt-4"
         assert "gpt" in results[1].tags
 
+    def test_original_url_preserved_when_cleaning_normalizes(self) -> None:
+        """Should preserve original URL when cleaning adds trailing = to query params.
+
+        This is a regression test for URLs like ?2138 being normalized to ?2138=
+        by urlencode, which breaks URL removal from notes.
+        """
+        content = "- https://www.lukew.com/ff/entry.asp?2138 #design"
+        results = extract_urls_with_context(content)
+
+        assert len(results) == 1
+        # Cleaned URL has trailing = added by urlencode
+        assert results[0].url == "https://www.lukew.com/ff/entry.asp?2138="
+        # Original URL matches what's in the note (no trailing =)
+        assert results[0].original_url == "https://www.lukew.com/ff/entry.asp?2138"
+        # This is the key: original_url can be used to find/remove from note
+        assert results[0].original_url in content
+        assert results[0].url not in content  # Cleaned URL won't match!
+
+    def test_original_url_same_when_no_normalization(self) -> None:
+        """Original URL should match cleaned URL when no normalization needed."""
+        content = "- https://example.com/page?key=value #tag"
+        results = extract_urls_with_context(content)
+
+        assert len(results) == 1
+        # Both should be the same when URL doesn't need normalization
+        assert results[0].url == "https://example.com/page?key=value"
+        assert results[0].original_url == "https://example.com/page?key=value"
+
 
 class TestEscapeYamlString:
     """Tests for YAML string escaping."""

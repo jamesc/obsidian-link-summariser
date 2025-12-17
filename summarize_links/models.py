@@ -17,12 +17,14 @@ class UrlWithContext:
     preserving user intent and categorization.
 
     Attributes:
-        url: The extracted URL.
+        url: The cleaned URL (tracking params removed, normalized).
+        original_url: The URL exactly as it appears in the note (for removal).
         tags: Hashtags found on the same line (without # prefix).
         context_text: The full line text for reference.
     """
 
     url: str
+    original_url: str = ""  # Populated by extract_urls_with_context
     tags: list[str] = field(default_factory=list)
     context_text: str = ""
 
