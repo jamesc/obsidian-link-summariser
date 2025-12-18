@@ -927,9 +927,7 @@ class TestNonContentFiltering:
 class TestFetchAndExtract:
     """Tests for high-level fetch and extract functions."""
 
-    def test_fetch_and_extract_returns_content_and_title(
-        self, mocker: MockerFixture
-    ) -> None:
+    def test_fetch_and_extract_returns_content_and_title(self, mocker: MockerFixture) -> None:
         """Should return extracted content and title."""
         from summarize_links.extract import fetch_and_extract
 
@@ -984,9 +982,7 @@ class TestFetchAndExtract:
         assert metadata.description == "Article description"
         assert metadata.domain == "example.com"
 
-    def test_fetch_and_extract_metadata_for_markdown(
-        self, mocker: MockerFixture
-    ) -> None:
+    def test_fetch_and_extract_metadata_for_markdown(self, mocker: MockerFixture) -> None:
         """Should extract metadata from markdown files."""
         from summarize_links.extract import fetch_and_extract_metadata
 
@@ -1008,9 +1004,7 @@ meaningful and useful for summarization purposes.
         assert metadata.author == "Author Name"
         assert "content of the markdown" in metadata.content
 
-    def test_fetch_and_extract_truncates_long_content(
-        self, mocker: MockerFixture
-    ) -> None:
+    def test_fetch_and_extract_truncates_long_content(self, mocker: MockerFixture) -> None:
         """Should truncate content that exceeds max length."""
         from summarize_links.extract import fetch_and_extract
 

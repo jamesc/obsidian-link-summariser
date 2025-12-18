@@ -214,9 +214,7 @@ class TestLoadConfig:
         assert config.dry_run is True
         assert config.verbose is True
 
-    def test_rate_limits_from_yaml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_rate_limits_from_yaml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Should load rate limits from YAML config."""
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
@@ -235,9 +233,7 @@ class TestLoadConfig:
         assert config.tpm_limit == 500000
         assert config.daily_limit == 200
 
-    def test_rate_limits_from_env(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_rate_limits_from_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Environment variables should override YAML rate limits."""
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
         monkeypatch.setenv("GEMINI_RPM_LIMIT", "20")
@@ -260,9 +256,7 @@ class TestLoadConfig:
         assert config.tpm_limit == 1000000
         assert config.daily_limit == 500
 
-    def test_default_tags_from_yaml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_default_tags_from_yaml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Should load default_tags from YAML config."""
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 

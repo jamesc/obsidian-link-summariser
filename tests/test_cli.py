@@ -1269,7 +1269,7 @@ class TestQuietMode:
 
     def test_quiet_mode_suppresses_output(self) -> None:
         """Quiet mode flag should be set from args."""
-        from summarize_links.cli import _quiet_mode, main
+        from summarize_links.cli import main
 
         # Running with --quiet should set the flag
         with patch("summarize_links.cli.load_config") as mock_config:

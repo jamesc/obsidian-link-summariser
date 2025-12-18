@@ -748,9 +748,7 @@ class TestTokenUsageExtraction:
         assert status["tpm"]["current"] >= 500
 
     @patch("summarize_links.gemini_client.genai")
-    def test_falls_back_to_estimate_when_metadata_unavailable(
-        self, mock_genai: MagicMock
-    ) -> None:
+    def test_falls_back_to_estimate_when_metadata_unavailable(self, mock_genai: MagicMock) -> None:
         """Should fall back to estimate when usage_metadata is None."""
         mock_model = MagicMock()
         mock_response = MagicMock()
@@ -801,9 +799,7 @@ class TestRetryOnGenericAPIError:
         assert mock_model.generate_content.call_count == 2
 
     @patch("summarize_links.gemini_client.genai")
-    def test_raises_after_all_retries_exhausted_generic_error(
-        self, mock_genai: MagicMock
-    ) -> None:
+    def test_raises_after_all_retries_exhausted_generic_error(self, mock_genai: MagicMock) -> None:
         """Should raise GeminiAPIError after retries exhausted for generic errors."""
         from summarize_links.gemini_client import MAX_RETRIES
 
