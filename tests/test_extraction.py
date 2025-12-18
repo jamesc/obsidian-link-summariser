@@ -751,3 +751,281 @@ class TestValidateUrl:
     def test_unicode_domain_accepted(self) -> None:
         """Should accept URLs with unicode domains."""
         validate_url("https://例え.jp/page")  # Should not raise
+
+
+class TestPaywallDetection:
+    """Tests for paywall domain detection and HTTP error formatting."""
+
+    def test_known_paywall_domain_exact_match(self) -> None:
+        """Should detect exact match paywall domains."""
+        from summarize_links.extract import _get_paywall_info
+
+        result = _get_paywall_info("https://wsj.com/article")
+        assert result is not None
+        assert "Wall Street Journal" in result
+
+    def test_paywall_subdomain_match(self) -> None:
+        """Should detect paywall domains with www prefix."""
+        from summarize_links.extract import _get_paywall_info
+
+        result = _get_paywall_info("https://www.nytimes.com/article")
+        assert result is not None
+        assert "New York Times" in result
+
+    def test_non_paywall_domain_returns_none(self) -> None:
+        """Should return None for non-paywall domains."""
+        from summarize_links.extract import _get_paywall_info
+
+        result = _get_paywall_info("https://example.com/article")
+        assert result is None
+
+    def test_format_http_error_with_paywall(self) -> None:
+        """Should include paywall info in error message for known sites."""
+        from summarize_links.extract import _format_http_error
+
+        result = _format_http_error(403, "https://wsj.com/article")
+        assert "403" in result
+        assert "Paywall" in result
+        assert "Wall Street Journal" in result
+
+    def test_format_http_error_without_paywall(self) -> None:
+        """Should return standard error for non-paywall sites."""
+        from summarize_links.extract import _format_http_error
+
+        result = _format_http_error(404, "https://example.com/missing")
+        assert "404" in result
+        assert "Page not found" in result
+        assert "Paywall" not in result
+
+    def test_format_http_error_unknown_status(self) -> None:
+        """Should handle unknown HTTP status codes."""
+        from summarize_links.extract import _format_http_error
+
+        result = _format_http_error(418, "https://example.com")
+        assert "418" in result
+        assert "Request failed" in result
+
+
+class TestMarkdownExtraction:
+    """Tests for markdown content extraction."""
+
+    def test_extract_title_from_h1_heading(self) -> None:
+        """Should extract title from first H1 heading."""
+        from summarize_links.extract import _extract_markdown_metadata
+
+        content = "# My Article Title\n\nSome content here."
+        metadata = _extract_markdown_metadata(content, "https://example.com/article.md")
+
+        assert metadata.title == "My Article Title"
+        assert metadata.domain == "example.com"
+
+    def test_extract_author_from_italic_line(self) -> None:
+        """Should extract author from italic line with comma."""
+        from summarize_links.extract import _extract_markdown_metadata
+
+        content = "# Article Title\n\n_John Smith, December 2025_\n\nContent here."
+        metadata = _extract_markdown_metadata(content, "https://example.com/article.md")
+
+        assert metadata.author == "John Smith"
+
+    def test_handles_markdown_without_title(self) -> None:
+        """Should default to Untitled when no H1 found."""
+        from summarize_links.extract import _extract_markdown_metadata
+
+        content = "Just some content without a heading."
+        metadata = _extract_markdown_metadata(content, "https://example.com/doc.md")
+
+        assert metadata.title == "Untitled"
+
+    def test_clean_markdown_removes_html_images(self) -> None:
+        """Should remove HTML image tags from markdown."""
+        from summarize_links.extract import _clean_markdown
+
+        content = 'Text before <img src="image.jpg" alt="test"> text after.'
+        result = _clean_markdown(content)
+
+        assert "<img" not in result
+        assert "Text before" in result
+        assert "text after" in result
+
+    def test_clean_markdown_removes_markdown_images(self) -> None:
+        """Should remove markdown image syntax."""
+        from summarize_links.extract import _clean_markdown
+
+        content = "Text before ![alt text](image.png) text after."
+        result = _clean_markdown(content)
+
+        assert "![" not in result
+        assert "Text before" in result
+        assert "text after" in result
+
+    def test_clean_markdown_collapses_blank_lines(self) -> None:
+        """Should collapse multiple blank lines."""
+        from summarize_links.extract import _clean_markdown
+
+        content = "Line 1\n\n\n\n\nLine 2"
+        result = _clean_markdown(content)
+
+        assert result == "Line 1\n\nLine 2"
+
+
+class TestNonContentFiltering:
+    """Tests for non-content element detection."""
+
+    def test_identifies_nav_class(self) -> None:
+        """Should identify elements with nav class as non-content."""
+        from summarize_links.extract import _is_non_content_element
+
+        html = '<div class="nav-menu">Navigation</div>'
+        soup = BeautifulSoup(html, "lxml")
+        element = soup.find("div")
+
+        assert _is_non_content_element(element) is True
+
+    def test_identifies_sidebar_id(self) -> None:
+        """Should identify elements with sidebar id as non-content."""
+        from summarize_links.extract import _is_non_content_element
+
+        html = '<aside id="sidebar">Sidebar content</aside>'
+        soup = BeautifulSoup(html, "lxml")
+        element = soup.find("aside")
+
+        assert _is_non_content_element(element) is True
+
+    def test_identifies_footer_class(self) -> None:
+        """Should identify elements with footer class as non-content."""
+        from summarize_links.extract import _is_non_content_element
+
+        html = '<div class="footer-links">Footer</div>'
+        soup = BeautifulSoup(html, "lxml")
+        element = soup.find("div")
+
+        assert _is_non_content_element(element) is True
+
+    def test_allows_content_elements(self) -> None:
+        """Should allow elements without non-content patterns."""
+        from summarize_links.extract import _is_non_content_element
+
+        html = '<div class="article-body">Content</div>'
+        soup = BeautifulSoup(html, "lxml")
+        element = soup.find("div")
+
+        assert _is_non_content_element(element) is False
+
+    def test_handles_list_class_attribute(self) -> None:
+        """Should handle class as list (multiple classes)."""
+        from summarize_links.extract import _is_non_content_element
+
+        html = '<div class="main-content sidebar-toggle">Content</div>'
+        soup = BeautifulSoup(html, "lxml")
+        element = soup.find("div")
+
+        # Should detect "sidebar" pattern
+        assert _is_non_content_element(element) is True
+
+
+class TestFetchAndExtract:
+    """Tests for high-level fetch and extract functions."""
+
+    def test_fetch_and_extract_returns_content_and_title(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Should return extracted content and title."""
+        from summarize_links.extract import fetch_and_extract
+
+        mock_html = """
+        <html>
+            <head><title>Test Page</title></head>
+            <body>
+                <article>
+                    <p>This is the main content of the article. It contains enough
+                    text to pass the minimum threshold for content extraction. The
+                    article discusses various topics that are interesting to read.</p>
+                </article>
+            </body>
+        </html>
+        """
+        mocker.patch("summarize_links.extract.fetch_html", return_value=mock_html)
+
+        content, title = fetch_and_extract("https://example.com/article")
+
+        assert "main content" in content
+        assert title == "Test Page"
+
+    def test_fetch_and_extract_metadata_for_html(self, mocker: MockerFixture) -> None:
+        """Should extract full metadata from HTML pages."""
+        from summarize_links.extract import fetch_and_extract_metadata
+
+        mock_html = """
+        <html>
+            <head>
+                <title>Article Title | Site Name</title>
+                <meta name="author" content="Jane Doe">
+                <meta property="og:description" content="Article description">
+            </head>
+            <body>
+                <article>
+                    <p>This is substantial article content that passes the minimum
+                    threshold for extraction. It needs to be at least 200 characters
+                    to be considered valid content by the extraction algorithm.</p>
+                </article>
+            </body>
+        </html>
+        """
+        mocker.patch(
+            "summarize_links.extract.fetch_content",
+            return_value=(mock_html, "html"),
+        )
+
+        metadata = fetch_and_extract_metadata("https://example.com/article")
+
+        assert metadata.title == "Article Title"
+        assert metadata.author == "Jane Doe"
+        assert metadata.description == "Article description"
+        assert metadata.domain == "example.com"
+
+    def test_fetch_and_extract_metadata_for_markdown(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Should extract metadata from markdown files."""
+        from summarize_links.extract import fetch_and_extract_metadata
+
+        mock_markdown = """# Markdown Article
+
+_Author Name, 2025_
+
+This is the content of the markdown article. It contains enough text to be
+meaningful and useful for summarization purposes.
+"""
+        mocker.patch(
+            "summarize_links.extract.fetch_content",
+            return_value=(mock_markdown, "markdown"),
+        )
+
+        metadata = fetch_and_extract_metadata("https://example.com/article.md")
+
+        assert metadata.title == "Markdown Article"
+        assert metadata.author == "Author Name"
+        assert "content of the markdown" in metadata.content
+
+    def test_fetch_and_extract_truncates_long_content(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Should truncate content that exceeds max length."""
+        from summarize_links.extract import fetch_and_extract
+
+        # Create content that will exceed truncation limit
+        long_paragraph = "This is a sentence. " * 5000  # ~100k chars
+        mock_html = f"""
+        <html>
+            <head><title>Long Article</title></head>
+            <body><article><p>{long_paragraph}</p></article></body>
+        </html>
+        """
+        mocker.patch("summarize_links.extract.fetch_html", return_value=mock_html)
+
+        content, _ = fetch_and_extract("https://example.com/long")
+
+        # Should be truncated to max length + truncation message
+        assert len(content) < 60000
+        assert "[Content truncated...]" in content
