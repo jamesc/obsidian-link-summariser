@@ -213,3 +213,165 @@ class TestLoadConfig:
         assert config.mock_mode is True
         assert config.dry_run is True
         assert config.verbose is True
+
+    def test_rate_limits_from_yaml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Should load rate limits from YAML config."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        config_content = {
+            "rpm_limit": 10,
+            "tpm_limit": 500000,
+            "daily_limit": 200,
+        }
+        config_file = tmp_path / ".summarizer-config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump(config_content, f)
+
+        config = load_config(vault_path=tmp_path)
+
+        assert config.rpm_limit == 10
+        assert config.tpm_limit == 500000
+        assert config.daily_limit == 200
+
+    def test_rate_limits_from_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Environment variables should override YAML rate limits."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("GEMINI_RPM_LIMIT", "20")
+        monkeypatch.setenv("GEMINI_TPM_LIMIT", "1000000")
+        monkeypatch.setenv("GEMINI_DAILY_LIMIT", "500")
+
+        config_content = {
+            "rpm_limit": 10,
+            "tpm_limit": 500000,
+            "daily_limit": 200,
+        }
+        config_file = tmp_path / ".summarizer-config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump(config_content, f)
+
+        config = load_config(vault_path=tmp_path)
+
+        # Env should override YAML
+        assert config.rpm_limit == 20
+        assert config.tpm_limit == 1000000
+        assert config.daily_limit == 500
+
+    def test_default_tags_from_yaml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Should load default_tags from YAML config."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        config_content = {
+            "default_tags": ["reading", "web-summary"],
+        }
+        config_file = tmp_path / ".summarizer-config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump(config_content, f)
+
+        config = load_config(vault_path=tmp_path)
+
+        assert config.default_tags == ["reading", "web-summary"]
+
+    def test_default_tags_single_string(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Should handle default_tags as single string."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        config_content = {
+            "default_tags": "single-tag",
+        }
+        config_file = tmp_path / ".summarizer-config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump(config_content, f)
+
+        config = load_config(vault_path=tmp_path)
+
+        assert config.default_tags == ["single-tag"]
+
+
+class TestSetupLogging:
+    """Tests for logging setup."""
+
+    def test_setup_logging_verbose(self) -> None:
+        """Verbose mode should configure logging correctly."""
+        import logging
+
+        from summarize_links.config import setup_logging
+
+        # Clear existing handlers to allow basicConfig to work
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+
+        setup_logging(verbose=True)
+
+        # Check that the effective level allows DEBUG through
+        # basicConfig sets level on root logger
+        assert root_logger.level == logging.DEBUG
+
+    def test_setup_logging_normal(self) -> None:
+        """Normal mode should set INFO level."""
+        import logging
+
+        from summarize_links.config import setup_logging
+
+        # Clear existing handlers to allow basicConfig to work
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+
+        setup_logging(verbose=False)
+
+        # The root logger should be INFO
+        assert root_logger.level == logging.INFO
+
+    def test_third_party_loggers_suppressed(self) -> None:
+        """Third-party loggers should be set to WARNING."""
+        import logging
+
+        from summarize_links.config import setup_logging
+
+        # Clear existing handlers
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+
+        setup_logging(verbose=True)
+
+        # urllib3 and google loggers should be WARNING
+        urllib3_logger = logging.getLogger("urllib3")
+        google_logger = logging.getLogger("google")
+
+        assert urllib3_logger.level >= logging.WARNING
+        assert google_logger.level >= logging.WARNING
+
+
+class TestDailyNotesFolder:
+    """Tests for daily_notes_folder configuration."""
+
+    def test_daily_notes_folder_from_yaml(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Should load daily_notes_folder from YAML config."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        config_content = {
+            "daily_notes_folder": "Journal/Daily",
+        }
+        config_file = tmp_path / ".summarizer-config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump(config_content, f)
+
+        config = load_config(vault_path=tmp_path)
+
+        assert config.daily_notes_folder == "Journal/Daily"
+
+    def test_daily_notes_folder_default_empty(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Default daily_notes_folder should be empty string."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        config = load_config(vault_path=tmp_path)
+
+        assert config.daily_notes_folder == ""

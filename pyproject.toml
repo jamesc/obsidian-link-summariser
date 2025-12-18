@@ -19,6 +19,7 @@ dependencies = [
     "rich>=13.9",
     "pyyaml>=6.0",
     "html5lib>=1.1",
+    "tenacity>=9.1.2",
 ]
 
 [project.optional-dependencies]
@@ -62,3 +63,8 @@ disallow_untyped_defs = true
 testpaths = ["tests"]
 python_files = "test_*.py"
 addopts = "-v --tb=short"
+
+[dependency-groups]
+dev = [
+    "pytest-mock>=3.15.1",
+]

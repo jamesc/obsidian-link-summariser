@@ -4,6 +4,56 @@ This document tracks completed development tasks for the Obsidian Link Summarize
 
 ---
 
+## 2025-12-18: Test Coverage Improvement Initiative
+
+**Goal:** Increase test coverage from 85% to 91%+ by adding comprehensive tests for identified gaps.
+
+**Coverage Before:** 85% overall
+**Coverage After:** 91% overall
+
+**Module-by-Module Improvements:**
+
+| Module | Before | After |
+|--------|--------|-------|
+| extract.py | 75% | 88% |
+| cli.py | 81% | 87% |
+| gemini_client.py | 89% | 93% |
+| config.py | 88% | 98% |
+
+**Changes:**
+
+### `tests/test_extraction.py` (+21 tests, +278 lines)
+- `TestPaywallDetection`: 6 tests for paywall domain detection and HTTP error formatting
+- `TestMarkdownExtraction`: 6 tests for markdown metadata and content extraction
+- `TestNonContentFiltering`: 5 tests for protected tags and element removal
+- `TestFetchAndExtract`: 4 tests for full extraction pipeline edge cases
+
+### `tests/test_cli.py` (+4 tests, +108 lines)
+- `TestCmdStatus`: 2 tests for rate limit status display
+- `TestQuietMode`: 1 test for quiet mode suppression
+- `TestInvalidUrlHandling`: 1 test for graceful URL failure handling
+
+### `tests/test_gemini.py` (+8 tests, +165 lines)
+- `TestRateLimitWaitCalculation`: 3 tests for wait time calculations
+- `TestTokenUsageExtraction`: 2 tests for token count extraction from responses
+- `TestRetryOnGenericAPIError`: 3 tests for retry behavior on API errors
+
+### `tests/test_config.py` (+10 tests, +168 lines)
+- Rate limit configuration: 3 tests for YAML and environment variable loading
+- `setup_logging`: 4 tests for verbose mode and log levels
+- `daily_notes_folder`: 3 tests for path handling
+
+**Performance Fix:**
+- Patched `time.sleep` in retry tests to eliminate 3s wait times per test
+- Test suite now runs in ~4.6s instead of ~12s
+
+**Documentation:**
+- Created [test-coverage-plan.md](test-coverage-plan.md) with detailed implementation plan
+
+**Tests:** 371 total tests passing (up from 328)
+
+---
+
 ## 2025-12-16: Add --all flag to from-note command
 
 **Goal:** Process all daily notes with URLs in a single command.
@@ -754,3 +804,127 @@ Added regex-based extraction functions that can recover the summary, tags, and c
 - `test_parse_gemini_response_with_multiline_code_in_summary` - Curly braces in code
 
 Total tests: 308
+
+---
+
+## 2025-12-18: Technical Debt Cleanup - Phase 1
+
+**Goal:** Remove legacy code duplication and improve code quality as identified in technical-debt-plan.md.
+
+**Changes:**
+
+### Removed Legacy Functions (`summarize_links/cli.py`)
+- Removed `_process_url()` (legacy function without metadata support)
+- Removed `_process_urls()` (legacy batch processor without metadata)
+- These were 90%+ duplicated with `_process_url_with_metadata()` and `_process_urls_with_metadata()`
+- All code paths now use the metadata versions
+- Removed ~150 lines of duplicated code
+
+### Cleaned Up Imports
+- Removed unused imports: `fetch_and_extract`, `truncate_content`, `write_summary_note`
+- These were only used by the removed legacy functions
+
+### Updated Tests (`tests/test_cli.py`)
+- Renamed `TestProcessUrl` to `TestProcessUrlWithMetadata`
+- Updated all tests to use `_process_url_with_metadata()` with `UrlWithContext`
+- Tests now verify 3-tuple return value `(success, message, should_delete)`
+- Added imports for `PageMetadata`, `SummaryResult`, `UrlWithContext` at module level
+- Removed redundant local imports in test functions
+
+### Removed Duplicate Test Fixture
+- Removed local `mock_vault` fixture from `TestUrlLineDeletion` class
+- Now uses the global fixture from `conftest.py`
+
+### Code Quality Improvements
+- Added `py.typed` marker file for PEP 561 compliance
+- Added `DEFAULT_MAX_TAGS` constant (was hardcoded as 10 in multiple places)
+- Updated `MAX_CONTENT_LENGTH` to use underscore separator for readability (50_000)
+- Updated `models.py`, `notes.py`, `config.py` to use `DEFAULT_MAX_TAGS` constant
+
+### Config Validation
+- `load_config()` now automatically calls `config.validate()` before returning
+- Previously validation could be skipped, leading to late failures
+- Errors now surface immediately with clear messages
+
+### Rate Limiter Cleanup
+- Removed redundant mutable default reinitializations in `RateLimiter.__post_init__`
+- `default_factory` already handles this correctly in dataclasses
+
+**Technical Debt Issues Addressed:**
+- Issue #1: Duplicate `_process_url` and `_process_url_with_metadata` ✓
+- Issue #2: Duplicate `_process_urls` and `_process_urls_with_metadata` ✓
+- Issue #3: Duplicate `mock_vault` fixture ✓
+- Issue #6: Unused `_process_urls` function ✓
+- Issue #7: Duplicate import patterns ✓
+- Issue #12: Magic numbers (max_tags) ✓
+- Issue #15: Missing py.typed marker ✓
+- Issue #18: Mutable default reinit ✓
+- Issue #26: Config validation too late ✓
+
+**Tests:** All 308 tests pass
+
+---
+
+## 2025-12-18: Technical Debt Cleanup - Medium Priority Issues
+
+**Goal:** Address medium priority issues #5, #10, #11 from technical-debt-plan.md.
+
+**Changes:**
+
+### Issue #5: Inconsistent Function Signatures
+- Already addressed in Phase 2 when `write_summary_note()` docstring was updated
+- Marked as completed in tech debt plan
+
+### Issue #10: HTTP Retry Strategy (`summarize_links/extract.py`)
+Added retry logic for transient HTTP errors using `tenacity` library:
+
+- Created `_RetryableError` internal exception for retry-eligible errors
+- Added `_log_retry()` callback for logging retry attempts
+- Created `_fetch_with_retry()` function with tenacity decorator:
+  - Retries on connection errors (`requests.RequestException`)
+  - Retries on timeouts
+  - Retries on 5xx server errors (wrapped in `_RetryableError`)
+  - Does NOT retry 4xx client errors (these are not transient)
+  - Max 3 attempts with exponential backoff (1-4 second wait)
+- Updated `fetch_content()` to use the retry wrapper
+
+**New Constants:**
+- `HTTP_RETRY_ATTEMPTS = 3`
+- `HTTP_RETRY_WAIT_MIN = 1` (seconds)
+- `HTTP_RETRY_WAIT_MAX = 4` (seconds)
+
+### Issue #11: Logging Patterns - Quiet Flag (`summarize_links/cli.py`)
+Added `--quiet` / `-q` flag to suppress non-error console output:
+
+- Added `_quiet_mode` global flag
+- Created `_print(message, **kwargs)` helper that respects quiet mode
+- Created `_print_error(message, **kwargs)` helper that always prints (for errors)
+- Replaced all `console.print()` calls with appropriate helpers:
+  - Normal status output → `_print()`
+  - Error messages → `_print_error()`
+  - Progress bars and tables → `_print()`
+- Added `-q/--quiet` CLI argument
+
+**Behavior:**
+- `--quiet` suppresses informational output (dry-run warnings, progress, tables)
+- Errors always shown regardless of quiet mode
+- Useful for scripting and automation
+
+### Dependencies Added (`pyproject.toml`)
+- `tenacity>=9.1.2` - Retry logic with decorators
+- `pytest-mock>=3.15.1` - Testing retry behavior (dev dependency)
+
+### Tests Added
+**`tests/test_extraction.py`** - `TestFetchContentRetry` class:
+- `test_retry_on_connection_error` - Verifies 3 attempts on network error
+- `test_no_retry_on_client_error` - Verifies single attempt on 404
+- `test_retry_on_server_error` - Verifies retry on 500
+- `test_exhausted_retries_raises_error` - Verifies `ContentFetchError` after all retries
+
+**`tests/test_cli.py`** - Updated `TestCreateParser`:
+- Added tests for `--quiet` and `-q` flag parsing
+
+**Total tests:** 312 passing
+
+**Technical Debt Plan Updates:**
+Marked Issues #5, #10, #11 as ✅ Done in `docs/technical-debt-plan.md`

@@ -21,6 +21,30 @@ from dotenv import load_dotenv
 
 from summarize_links.exceptions import ConfigError
 
+__all__ = [
+    # Configuration class
+    "Config",
+    # Configuration loaders
+    "load_config",
+    "load_yaml_config",
+    "setup_logging",
+    # Constants - defaults
+    "DEFAULT_MODEL",
+    "DEFAULT_OUT_FOLDER",
+    "DEFAULT_MAX_LINKS",
+    "DEFAULT_DAILY_NOTES_FOLDER",
+    "DEFAULT_MAX_TAGS",
+    "CONFIG_FILENAME",
+    # Constants - limits
+    "MAX_CONTENT_LENGTH",
+    "MAX_SLUG_LENGTH",
+    "REQUEST_TIMEOUT",
+    # Constants - Gemini rate limits
+    "GEMINI_RPM_LIMIT",
+    "GEMINI_TPM_LIMIT",
+    "GEMINI_DAILY_LIMIT",
+]
+
 # Configure module logger
 logger = logging.getLogger(__name__)
 
@@ -34,9 +58,10 @@ DEFAULT_DAILY_NOTES_FOLDER = ""  # Root of vault by default
 CONFIG_FILENAME = ".summarizer-config.yaml"
 
 # Content processing limits
-MAX_CONTENT_LENGTH = 50000  # Maximum characters to send to Gemini
+MAX_CONTENT_LENGTH = 50_000  # Maximum characters to send to Gemini
 MAX_SLUG_LENGTH = 50  # Maximum length for filename slugs
 REQUEST_TIMEOUT = 10  # HTTP request timeout in seconds
+DEFAULT_MAX_TAGS = 10  # Maximum tags in frontmatter
 
 # Gemini API rate limits (free tier)
 GEMINI_RPM_LIMIT = 5  # Requests per minute
@@ -81,7 +106,7 @@ class Config:
     verbose: bool = False
     force: bool = False
     default_tags: list[str] | None = None
-    max_tags: int = 10
+    max_tags: int = DEFAULT_MAX_TAGS
     rpm_limit: int = GEMINI_RPM_LIMIT
     tpm_limit: int = GEMINI_TPM_LIMIT
     daily_limit: int = GEMINI_DAILY_LIMIT
@@ -264,6 +289,9 @@ def load_config(
         config.daily_limit = int(yaml_config["daily_limit"])
 
     logger.debug(f"Loaded config: model={config.model}, out_folder={config.out_folder}")
+
+    # Validate the configuration before returning
+    config.validate()
 
     return config
 

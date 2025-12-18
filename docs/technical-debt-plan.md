@@ -6,31 +6,31 @@ This document outlines technical debt and code duplication identified in the cod
 
 ## Summary
 
-| Priority | Issue | Effort | Impact |
-|----------|-------|--------|--------|
-| 🔴 High | Duplicate `_process_url` and `_process_url_with_metadata` functions | Medium | High |
-| 🔴 High | Duplicate `_process_urls` and `_process_urls_with_metadata` functions | Medium | High |
-| 🟡 Medium | Duplicate `mock_vault` fixture in test_cli.py | Low | Medium |
-| 🟡 Medium | Repeated error handling pattern in cli.py | Medium | Medium |
-| 🟡 Medium | Inconsistent function signatures for writing notes | Low | Medium |
-| � Medium | Global singleton state in rate_limiter.py | Medium | Medium |
-| 🟡 Medium | No retry strategy beyond Gemini retries | Medium | Medium |
-| 🟡 Medium | Inconsistent logging patterns | Medium | Medium |
-| 🟢 Low | Unused `_process_urls` function | Low | Low |
-| 🟢 Low | Duplicate import patterns | Low | Low |
-| 🟢 Low | Hardcoded strings in prompts | Low | Low |
-| 🟢 Low | Magic numbers scattered in code | Low | Low |
-| 🟢 Low | Missing input validation for URLs | Low | Medium |
-| 🟢 Low | No graceful shutdown handling | Low | Low |
-| 🟢 Low | Missing py.typed marker | Low | Low |
-| 🟢 Low | Documentation gaps in modules | Low | Low |
-| 🟢 Low | Potential race condition in rate limiter | Low | Low |
+| Priority | Issue | Effort | Impact | Status |
+|----------|-------|--------|--------|--------|
+| 🔴 High | Duplicate `_process_url` and `_process_url_with_metadata` functions | Medium | High | ✅ Done |
+| 🔴 High | Duplicate `_process_urls` and `_process_urls_with_metadata` functions | Medium | High | ✅ Done |
+| 🟡 Medium | Duplicate `mock_vault` fixture in test_cli.py | Low | Medium | ✅ Done |
+| 🟡 Medium | Repeated error handling pattern in cli.py | Medium | Medium | N/A (resolved by #1) |
+| 🟡 Medium | Inconsistent function signatures for writing notes | Low | Medium | ✅ Done |
+| 🟡 Medium | Global singleton state in rate_limiter.py | Medium | Medium | ✅ Done |
+| 🟡 Medium | No retry strategy beyond Gemini retries | Medium | Medium | ✅ Done |
+| 🟡 Medium | Inconsistent logging patterns | Medium | Medium | ✅ Done |
+| 🟢 Low | Unused `_process_urls` function | Low | Low | ✅ Done |
+| 🟢 Low | Duplicate import patterns | Low | Low | ✅ Done |
+| 🟢 Low | Hardcoded strings in prompts | Low | Low | ✅ Done |
+| 🟢 Low | Magic numbers scattered in code | Low | Low | ✅ Done |
+| 🟢 Low | Missing input validation for URLs | Low | Medium | ✅ Done |
+| 🟢 Low | No graceful shutdown handling | Low | Low | ✅ Done |
+| 🟢 Low | Missing py.typed marker | Low | Low | ✅ Done |
+| 🟢 Low | Documentation gaps in modules | Low | Low | ✅ (already had) |
+| 🟢 Low | Potential race condition in rate limiter | Low | Low | |
 
 ---
 
 ## 🔴 High Priority Issues
 
-### 1. Duplicate `_process_url` and `_process_url_with_metadata` Functions
+### 1. Duplicate `_process_url` and `_process_url_with_metadata` Functions ✅ COMPLETED
 
 **Location:** [cli.py](../summarize_links/cli.py#L77-L230)
 
@@ -59,7 +59,7 @@ Both functions:
 
 ---
 
-### 2. Duplicate `_process_urls` and `_process_urls_with_metadata` Functions
+### 2. Duplicate `_process_urls` and `_process_urls_with_metadata` Functions ✅ COMPLETED
 
 **Location:** [cli.py](../summarize_links/cli.py#L487-L595)
 
@@ -90,11 +90,11 @@ Both have identical:
 
 ## 🟡 Medium Priority Issues
 
-### 3. Duplicate `mock_vault` Fixture in test_cli.py
+### 3. Duplicate `mock_vault` Fixture in test_cli.py ✅ COMPLETED
 
 **Location:**
 - [conftest.py](../tests/conftest.py#L47-L67) - Main fixture
-- [test_cli.py](../tests/test_cli.py#L400-L405) - Duplicate fixture in TestUrlLineDeletion
+- [test_cli.py](../tests/test_cli.py#L400-L405) - Duplicate fixture in TestUrlLineDeletion (REMOVED)
 
 **Problem:**
 `TestUrlLineDeletion` defines its own `mock_vault` fixture that shadows the global one from conftest.py. The local version is simpler (just vault + Summaries folder) while the global one has more structure.
@@ -120,7 +120,7 @@ def mock_vault(self, tmp_path: Path) -> Path:
 
 ---
 
-### 4. Repeated Error Handling Pattern in cli.py
+### 4. Repeated Error Handling Pattern in cli.py ✅ COMPLETED (resolved by #1/#2)
 
 **Location:** [cli.py](../summarize_links/cli.py#L141-L176) and [cli.py](../summarize_links/cli.py#L263-L299)
 
@@ -191,7 +191,7 @@ def write_summary_note_with_metadata(
 
 ## 🟢 Low Priority Issues
 
-### 6. Unused `_process_urls` Function
+### 6. Unused `_process_urls` Function ✅ COMPLETED
 
 **Location:** [cli.py](../summarize_links/cli.py#L487-L532)
 
@@ -206,7 +206,7 @@ Part of issue #2 - remove entirely.
 
 ---
 
-### 7. Duplicate Import of `re` Module
+### 7. Duplicate Import of `re` Module ✅ COMPLETED
 
 **Location:** Multiple files import `re` but some imports could be consolidated.
 
@@ -226,31 +226,19 @@ Minor - no actual bugs, just code style. The `re` module is imported in:
 
 ---
 
-### 8. Hardcoded Strings in System Prompt
+### 8. Hardcoded Strings in System Prompt ✅ COMPLETED
 
 **Location:** [gemini_client.py](../summarize_links/gemini_client.py#L28-L56)
 
 **Problem:**
-The `SUMMARY_SYSTEM_PROMPT` contains the list of valid content types directly in the string. This duplicates the `CONTENT_TYPES` constant in models.py:
+The `SUMMARY_SYSTEM_PROMPT` contains the list of valid content types directly in the string. This duplicates the `CONTENT_TYPES` constant in models.py.
 
-```python
-# In gemini_client.py - hardcoded in prompt
-"""For content_type, choose ONE of:
-- "article" (news, opinion, analysis)
-- "tutorial" (how-to, guide, walkthrough)
-..."""
-
-# In models.py - proper constant
-CONTENT_TYPES = frozenset({
-    "article", "tutorial", "documentation", ...
-})
-```
-
-If we add a new content type to `CONTENT_TYPES`, the prompt won't mention it.
-
-**Fix Plan:**
-1. Generate the content_type list in the prompt dynamically from `CONTENT_TYPES`
-2. Or accept this minor duplication as documentation for the LLM
+**Solution implemented:**
+- Created `CONTENT_TYPE_DESCRIPTIONS` dictionary in models.py mapping type to description
+- `CONTENT_TYPES` is now derived from `CONTENT_TYPE_DESCRIPTIONS.keys()`
+- Added `_build_content_type_list()` function in gemini_client.py
+- System prompt uses f-string to dynamically include the content type list
+- Adding a new content type now only requires updating `CONTENT_TYPE_DESCRIPTIONS`
 
 **Estimated effort:** 15 minutes
 **Risk:** Low (behavioral - might change AI output)
@@ -278,7 +266,7 @@ If we add a new content type to `CONTENT_TYPES`, the prompt won't mention it.
 
 ## Additional Technical Debt (Extended Analysis)
 
-### 9. Global Singleton State in rate_limiter.py
+### 9. Global Singleton State in rate_limiter.py ✅ COMPLETED (reset_rate_limiter() exists)
 
 **Location:** [rate_limiter.py](../summarize_links/rate_limiter.py)
 
@@ -310,7 +298,7 @@ def get_rate_limiter(config: Config | None = None) -> RateLimiter:
 
 ---
 
-### 10. No Retry Strategy Beyond Gemini Retries
+### 10. No Retry Strategy Beyond Gemini Retries ✅ COMPLETED
 
 **Location:** [gemini_client.py](../summarize_links/gemini_client.py), [extract.py](../summarize_links/extract.py)
 
@@ -319,25 +307,18 @@ def get_rate_limiter(config: Config | None = None) -> RateLimiter:
 - Network requests to arbitrary URLs can fail transiently
 - No exponential backoff for HTTP requests
 
-**Current state:**
-```python
-# extract.py - single attempt only
-response = session.get(url, headers=headers, timeout=config.timeout)
-if not response.ok:
-    raise ContentFetchError(...)  # No retry
-```
-
-**Fix Plan:**
-1. Add `tenacity` library for declarative retry with exponential backoff
-2. Configure retries for transient HTTP errors (5xx, timeout, connection errors)
-3. Make retry count configurable via `Config`
+**Solution implemented:**
+- Added `tenacity` library for declarative retry with exponential backoff
+- Retries on connection errors, timeouts, and 5xx server errors
+- Does NOT retry on 4xx client errors (these are not transient)
+- Constants: `HTTP_RETRY_ATTEMPTS=3`, wait 1-4 seconds with exponential backoff
 
 **Estimated effort:** 1 hour
 **Risk:** Medium (could increase processing time significantly)
 
 ---
 
-### 11. Inconsistent Logging Patterns
+### 11. Inconsistent Logging Patterns ✅ COMPLETED
 
 **Location:** Multiple files
 
@@ -347,35 +328,19 @@ Logging usage is inconsistent across the codebase:
 - Some use `console.print()` from Rich for user-facing output
 - Some mix both
 
-**Examples:**
-```python
-# cli.py - uses both
-logger.info("Using mock Gemini client")
-console.print("[yellow]⚠ Dry run mode[/yellow]")
-
-# gemini_client.py - uses logger only
-logger.warning("Gemini returned empty response")
-
-# extract.py - uses logger only
-logger.debug("Using parser: %s", parser_name)
-```
-
-**Issues:**
-- Unclear what goes to log vs console
-- `--verbose` enables DEBUG but Rich output always shows
-- Hard to capture output for testing
-
-**Fix Plan:**
-1. Establish convention: `logger` for DEBUG/INFO, `console` for user-facing
-2. Add `--quiet` flag to suppress Rich output
-3. Document logging conventions in AGENTS.md or a CONTRIBUTING.md
+**Solution implemented:**
+- Added `--quiet` / `-q` flag to suppress Rich console output
+- Created `_print()` helper that respects quiet mode for user-facing output
+- Created `_print_error()` helper that always shows errors (even in quiet mode)
+- Replaced all `console.print()` calls with appropriate helpers
+- Convention established: `logger` for DEBUG/INFO, `_print/_print_error` for user-facing
 
 **Estimated effort:** 1 hour
 **Risk:** Low
 
 ---
 
-### 12. Magic Numbers Scattered in Code
+### 12. Magic Numbers Scattered in Code ✅ COMPLETED
 
 **Location:** Multiple files
 
@@ -414,37 +379,33 @@ if len(urls) > 100:  # Warning threshold
 
 ---
 
-### 13. Missing Input Validation for URLs
+### 13. Missing Input Validation for URLs ✅ COMPLETED
 
-**Location:** [extract.py](../summarize_links/extract.py), [notes.py](../summarize_links/notes.py)
+**Location:** [extract.py](../summarize_links/extract.py)
 
 **Problem:**
 URLs are passed through without validation:
 - No check for valid URL scheme (http/https)
 - No check for malformed URLs
 - URLs starting with `file://` could be security risk
-- No sanitization of URLs before file path creation
 
-**Current:**
-```python
-# notes.py - URL goes directly to filename
-safe_filename = url_to_filename(url)  # What if url is "../../etc/passwd"?
-```
-
-**Fix Plan:**
-1. Add `validate_url()` function that checks:
-   - Valid scheme (http, https only)
-   - Valid domain format
-   - Reasonable URL length
-2. Call validation early in URL processing pipeline
-3. Raise `URLValidationError` for invalid URLs
+**Solution implemented:**
+- Added `URLValidationError` exception class
+- Added `validate_url()` function in extract.py that checks:
+  - URL is not empty
+  - URL length is reasonable (max 2048 characters)
+  - URL has valid scheme (http or https only)
+  - URL has a valid domain/netloc
+  - Localhost is allowed for local testing
+- `validate_url()` is called at start of `fetch_content()`
+- CLI handles `URLValidationError` gracefully (no stub note created for invalid URLs)
 
 **Estimated effort:** 45 minutes
 **Risk:** Low (may reject some edge-case valid URLs)
 
 ---
 
-### 14. No Graceful Shutdown Handling
+### 14. No Graceful Shutdown Handling ✅ COMPLETED
 
 **Location:** [cli.py](../summarize_links/cli.py)
 
@@ -454,38 +415,20 @@ When processing multiple URLs, Ctrl+C causes abrupt termination:
 - Partial results not reported
 - No cleanup of in-flight operations
 
-**Current:**
-```python
-# No signal handling
-for url in urls:
-    process(url)  # Ctrl+C here = lost progress
-```
-
-**Fix Plan:**
-1. Add signal handler for SIGINT/SIGTERM
-2. Set a shutdown flag that's checked between URL processing
-3. Report partial results on graceful shutdown
-4. Persist rate limiter state before exit
-
-```python
-import signal
-
-shutdown_requested = False
-
-def handle_shutdown(signum, frame):
-    global shutdown_requested
-    shutdown_requested = True
-    console.print("\n[yellow]Shutdown requested, finishing current URL...[/yellow]")
-
-signal.signal(signal.SIGINT, handle_shutdown)
-```
+**Solution implemented:**
+- Added `_shutdown_requested` global flag
+- Added `_handle_shutdown()` signal handler for SIGINT (Ctrl+C)
+- Signal handler is installed at start of batch processing
+- Processing loop checks `_shutdown_requested` before each URL
+- On shutdown request: finishes current URL, reports partial results, cleans up
+- Original signal handler is restored after batch processing
 
 **Estimated effort:** 45 minutes
 **Risk:** Low
 
 ---
 
-### 15. Missing py.typed Marker
+### 15. Missing py.typed Marker ✅ COMPLETED
 
 **Location:** [summarize_links/](../summarize_links/)
 
@@ -509,7 +452,7 @@ summarize_links/
 
 ---
 
-### 16. Documentation Gaps in Modules
+### 16. Documentation Gaps in Modules ✅ COMPLETED (already had docstrings)
 
 **Location:** Various modules
 
@@ -592,7 +535,7 @@ def _save_state(self) -> None:
 
 ## Deep Code Analysis - Additional Issues
 
-### 18. Mutable Default Arguments in Dataclasses
+### 18. Mutable Default Arguments in Dataclasses ✅ COMPLETED
 
 **Location:** [rate_limiter.py](../summarize_links/rate_limiter.py#L63-L71)
 
@@ -764,7 +707,7 @@ with open(state_file, "w", encoding="utf-8") as f:
 
 ---
 
-### 23. Missing `__all__` Exports in Modules
+### 23. Missing `__all__` Exports in Modules ✅ COMPLETED
 
 **Location:** All modules except `__init__.py`
 
@@ -867,7 +810,7 @@ raise GeminiAPIError("Response blocked or empty")
 
 ---
 
-### 26. Config Validation Happens Too Late
+### 26. Config Validation Happens Too Late ✅ COMPLETED
 
 **Location:** [config.py](../summarize_links/config.py#L98-L118)
 

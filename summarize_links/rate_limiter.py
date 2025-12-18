@@ -27,6 +27,14 @@ from summarize_links.config import (
 )
 from summarize_links.exceptions import RateLimitError
 
+__all__ = [
+    # Main class
+    "RateLimiter",
+    # Singleton access
+    "get_rate_limiter",
+    "reset_rate_limiter",
+]
+
 # Module logger
 logger = logging.getLogger(__name__)
 
@@ -95,12 +103,6 @@ class RateLimiter:
 
     def __post_init__(self) -> None:
         """Initialize rate limiter and load persistent state."""
-        # Reinitialize mutable defaults (dataclass quirk)
-        self._request_times = deque()
-        self._token_usage = deque()
-        self._state = RateLimitState()
-        self._lock = threading.Lock()
-
         # Load persistent state if path provided
         if self.state_path:
             self._load_state()

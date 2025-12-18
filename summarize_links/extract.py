@@ -14,15 +14,45 @@ from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup, Tag
+from tenacity import (
+    RetryCallState,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from summarize_links.config import MAX_CONTENT_LENGTH, REQUEST_TIMEOUT
-from summarize_links.exceptions import ContentExtractionError, ContentFetchError
+from summarize_links.exceptions import (
+    ContentExtractionError,
+    ContentFetchError,
+    URLValidationError,
+)
 from summarize_links.models import PageMetadata
+
+__all__ = [
+    # High-level fetch functions
+    "fetch_and_extract",
+    "fetch_and_extract_metadata",
+    # Individual operations
+    "fetch_content",
+    "fetch_html",
+    "extract_readable_content",
+    "extract_page_metadata",
+    "truncate_content",
+    # URL validation
+    "validate_url",
+]
 
 # Configure module logger
 logger = logging.getLogger(__name__)
 
 # ----- Constants -----
+
+# Retry configuration for transient HTTP errors
+HTTP_RETRY_ATTEMPTS = 3  # Total attempts (1 initial + 2 retries)
+HTTP_RETRY_WAIT_MIN = 1  # Minimum wait between retries (seconds)
+HTTP_RETRY_WAIT_MAX = 4  # Maximum wait between retries (seconds)
 
 # User agent to identify as a legitimate browser (some sites block default requests)
 USER_AGENT = (
@@ -126,6 +156,71 @@ NON_CONTENT_PATTERNS = [
     r"\bbanner\b",
 ]
 
+# ----- URL Validation Constants -----
+
+# Allowed URL schemes (security: prevent file://, javascript:, etc.)
+ALLOWED_SCHEMES = {"http", "https"}
+
+# Maximum URL length to accept (prevent memory issues with very long URLs)
+MAX_URL_LENGTH = 2048
+
+
+def validate_url(url: str) -> None:
+    """
+    Validate a URL for safety and correctness.
+
+    Checks:
+    - URL is not empty
+    - URL length is reasonable (max 2048 characters)
+    - URL has valid scheme (http or https only)
+    - URL has a valid domain/netloc
+
+    Args:
+        url: The URL to validate.
+
+    Raises:
+        URLValidationError: If the URL is invalid or unsafe.
+    """
+    if not url:
+        raise URLValidationError("URL cannot be empty")
+
+    if not isinstance(url, str):
+        raise URLValidationError(f"URL must be a string, got {type(url).__name__}")
+
+    # Check length
+    if len(url) > MAX_URL_LENGTH:
+        raise URLValidationError(
+            f"URL exceeds maximum length ({len(url)} > {MAX_URL_LENGTH} characters)"
+        )
+
+    # Parse URL
+    try:
+        parsed = urlparse(url)
+    except Exception as e:
+        raise URLValidationError(f"Failed to parse URL: {e}") from e
+
+    # Check scheme
+    scheme = parsed.scheme.lower()
+    if not scheme:
+        raise URLValidationError(f"URL has no scheme (expected http or https): {url[:100]}")
+    if scheme not in ALLOWED_SCHEMES:
+        raise URLValidationError(
+            f"Invalid URL scheme '{scheme}' (only http and https allowed): {url[:100]}"
+        )
+
+    # Check domain/netloc
+    if not parsed.netloc:
+        raise URLValidationError(f"URL has no domain: {url[:100]}")
+
+    # Basic domain format check (must have at least one dot or be localhost)
+    domain = parsed.netloc.lower()
+    # Strip port if present
+    if ":" in domain:
+        domain = domain.split(":")[0]
+
+    if domain != "localhost" and "." not in domain:
+        raise URLValidationError(f"URL has invalid domain format: {domain}")
+
 
 def _create_session() -> requests.Session:
     """
@@ -191,26 +286,42 @@ def _format_http_error(status_code: int, url: str) -> str:
     return f"HTTP {status_code}: {explanation}"
 
 
-def fetch_content(url: str, timeout: int = REQUEST_TIMEOUT) -> tuple[str, str]:
+class _RetryableError(Exception):
+    """Internal exception for errors that should trigger a retry."""
+
+    pass
+
+
+def _log_retry(retry_state: RetryCallState) -> None:
+    """Log retry attempts for debugging."""
+    logger.warning(
+        "Retrying fetch (attempt %d/%d) after error: %s",
+        retry_state.attempt_number,
+        HTTP_RETRY_ATTEMPTS,
+        retry_state.outcome.exception() if retry_state.outcome else "unknown",
+    )
+
+
+@retry(
+    retry=retry_if_exception_type(_RetryableError),
+    stop=stop_after_attempt(HTTP_RETRY_ATTEMPTS),
+    wait=wait_exponential(multiplier=1, min=HTTP_RETRY_WAIT_MIN, max=HTTP_RETRY_WAIT_MAX),
+    before_sleep=_log_retry,
+    reraise=True,
+)
+def _fetch_with_retry(url: str, timeout: int) -> tuple[str, str]:
     """
-    Fetch content from a URL and return content with its type.
+    Internal fetch function with retry logic for transient errors.
 
-    Uses browser-like headers and a session to avoid bot detection.
-    Automatically follows redirects and persists cookies.
+    Only retries on:
+    - Connection errors (network issues)
+    - Timeouts
+    - Server errors (5xx)
 
-    Args:
-        url: URL to fetch.
-        timeout: Request timeout in seconds.
-
-    Returns:
-        Tuple of (content, content_type) where content_type is 'html', 'markdown', or 'text'.
-
-    Raises:
-        ContentFetchError: If the request fails.
+    Does NOT retry on:
+    - Client errors (4xx) - these are permanent failures
+    - Invalid content types
     """
-    logger.debug(f"Fetching URL: {url}")
-
-    # Parse URL to set Referer header (some sites check this)
     parsed = urlparse(url)
     referer = f"{parsed.scheme}://{parsed.netloc}/"
 
@@ -219,6 +330,11 @@ def fetch_content(url: str, timeout: int = REQUEST_TIMEOUT) -> tuple[str, str]:
         session.headers["Referer"] = referer
 
         response = session.get(url, timeout=timeout, allow_redirects=True)
+
+        # Check for server errors (5xx) - these are retryable
+        if 500 <= response.status_code < 600:
+            raise _RetryableError(f"Server error {response.status_code}")
+
         response.raise_for_status()
 
         # Determine content type
@@ -236,14 +352,51 @@ def fetch_content(url: str, timeout: int = REQUEST_TIMEOUT) -> tuple[str, str]:
 
         raise ContentFetchError(f"URL returned unsupported content type: {content_type_header}")
 
-    except requests.exceptions.Timeout:
-        raise ContentFetchError(f"Request timed out after {timeout}s: {url}") from None
+    except requests.exceptions.Timeout as e:
+        # Timeouts are retryable
+        raise _RetryableError(f"Timeout after {timeout}s") from e
     except requests.exceptions.ConnectionError as e:
-        raise ContentFetchError(f"Connection error for {url}: {e}") from e
+        # Connection errors are retryable
+        raise _RetryableError(f"Connection error: {e}") from e
     except requests.exceptions.HTTPError as e:
+        # Client errors (4xx) are NOT retryable - raise directly
         raise ContentFetchError(_format_http_error(e.response.status_code, url)) from e
+    except _RetryableError:
+        # Let retryable errors propagate for tenacity
+        raise
     except requests.exceptions.RequestException as e:
         raise ContentFetchError(f"Request failed for {url}: {e}") from e
+
+
+def fetch_content(url: str, timeout: int = REQUEST_TIMEOUT) -> tuple[str, str]:
+    """
+    Fetch content from a URL and return content with its type.
+
+    Uses browser-like headers and a session to avoid bot detection.
+    Automatically follows redirects and persists cookies.
+    Retries on transient errors (timeouts, connection errors, server errors).
+
+    Args:
+        url: URL to fetch.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        Tuple of (content, content_type) where content_type is 'html', 'markdown', or 'text'.
+
+    Raises:
+        URLValidationError: If the URL is invalid or unsafe.
+        ContentFetchError: If the request fails after all retries.
+    """
+    # Validate URL before attempting to fetch
+    validate_url(url)
+
+    logger.debug(f"Fetching URL: {url}")
+
+    try:
+        return _fetch_with_retry(url, timeout)
+    except _RetryableError as e:
+        # All retries exhausted - convert to ContentFetchError
+        raise ContentFetchError(f"Failed after {HTTP_RETRY_ATTEMPTS} attempts: {url} ({e})") from e
 
 
 def fetch_html(url: str, timeout: int = REQUEST_TIMEOUT) -> str:

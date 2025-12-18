@@ -15,9 +15,33 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-from summarize_links.config import MAX_SLUG_LENGTH
+from summarize_links.config import DEFAULT_MAX_TAGS, MAX_SLUG_LENGTH
 from summarize_links.exceptions import NoteReadError, NoteWriteError, URLExtractionError
 from summarize_links.models import PageMetadata, SummaryResult, UrlWithContext, merge_tags
+
+__all__ = [
+    # URL extraction
+    "extract_urls",
+    "extract_urls_with_context",
+    "extract_hashtags_from_line",
+    "clean_url",
+    # Daily note operations
+    "find_daily_notes_with_urls",
+    "read_daily_note",
+    "add_summary_link_to_daily_note",
+    "remove_url_line_from_note",
+    # Summary note operations
+    "write_summary_note_with_metadata",
+    "write_stub_note",
+    "summary_exists",
+    "get_summary_filepath",
+    # Utilities
+    "build_frontmatter",
+    "generate_slug",
+    "slug_from_url",
+    # Lower-level (for internal use)
+    "write_summary_note",
+]
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -603,7 +627,7 @@ def build_frontmatter(
     source_note: str | None = None,
     status: str = "success",
     default_tags: list[str] | None = None,
-    max_tags: int = 10,
+    max_tags: int = DEFAULT_MAX_TAGS,
 ) -> str:
     """
     Build YAML frontmatter for a summary note.
@@ -696,10 +720,14 @@ def write_summary_note(
     status: str = "success",
 ) -> Path:
     """
-    Write a summary note to the vault.
+    Write a summary note with minimal frontmatter.
+
+    This is the lower-level function used internally by write_stub_note()
+    for creating error/stub notes. For production summaries with rich
+    metadata (title, author, tags, etc.), use write_summary_note_with_metadata().
 
     Creates the output folder if it doesn't exist. The note includes
-    frontmatter with source URL, date, and link to original daily note.
+    basic frontmatter with source URL, date, and link to original daily note.
 
     Args:
         vault_path: Path to the Obsidian vault root.
@@ -716,6 +744,11 @@ def write_summary_note(
 
     Raises:
         NoteWriteError: If writing the note fails.
+
+    Note:
+        For full-featured summaries with PageMetadata and SummaryResult,
+        prefer write_summary_note_with_metadata() which builds comprehensive
+        frontmatter automatically.
     """
     if date is None:
         date = datetime.now()
@@ -774,7 +807,7 @@ def write_summary_note_with_metadata(
     source_note: str | None = None,
     overwrite: bool = False,
     default_tags: list[str] | None = None,
-    max_tags: int = 10,
+    max_tags: int = DEFAULT_MAX_TAGS,
     status: str = "success",
 ) -> Path:
     """

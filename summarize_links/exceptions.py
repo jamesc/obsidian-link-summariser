@@ -6,6 +6,19 @@ enabling clearer error handling and more informative error messages throughout
 the application.
 """
 
+__all__ = [
+    "SummarizerError",
+    "ConfigError",
+    "URLExtractionError",
+    "URLValidationError",
+    "ContentFetchError",
+    "ContentExtractionError",
+    "GeminiAPIError",
+    "RateLimitError",
+    "NoteReadError",
+    "NoteWriteError",
+]
+
 
 class SummarizerError(Exception):
     """Base exception for all summarizer errors."""
@@ -21,6 +34,12 @@ class ConfigError(SummarizerError):
 
 class URLExtractionError(SummarizerError):
     """Raised when URL extraction from a note fails."""
+
+    pass
+
+
+class URLValidationError(SummarizerError):
+    """Raised when a URL fails validation (invalid scheme, malformed, etc.)."""
 
     pass
 

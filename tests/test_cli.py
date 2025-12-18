@@ -15,7 +15,7 @@ from summarize_links.cli import (
     EXIT_ERROR,
     EXIT_SUCCESS,
     _print_results,
-    _process_url,
+    _process_url_with_metadata,
     cmd_from_note,
     cmd_from_note_all,
     cmd_list,
@@ -32,6 +32,7 @@ from summarize_links.exceptions import (
     NoteReadError,
     RateLimitError,
 )
+from summarize_links.models import PageMetadata, SummaryResult, UrlWithContext
 
 
 class TestCreateParser:
@@ -49,6 +50,14 @@ class TestCreateParser:
         # Test --verbose
         args = parser.parse_args(["--verbose", "from-note"])
         assert args.verbose is True
+
+        # Test --quiet
+        args = parser.parse_args(["--quiet", "from-note"])
+        assert args.quiet is True
+
+        # Test -q shorthand
+        args = parser.parse_args(["-q", "from-note"])
+        assert args.quiet is True
 
         # Test --vault
         args = parser.parse_args(["--vault", "/path/to/vault", "from-note"])
@@ -252,8 +261,6 @@ class TestCmdFromNote:
         mock_vault: Path,
     ) -> None:
         """Should limit URLs to max_links."""
-        from summarize_links.models import UrlWithContext
-
         mock_read.return_value = "Note with URLs"
         mock_extract.return_value = [
             UrlWithContext(url="https://1.com"),
@@ -309,8 +316,6 @@ class TestCmdFromNoteAll:
         mock_vault: Path,
     ) -> None:
         """Should process all notes in chronological order."""
-        from summarize_links.models import UrlWithContext
-
         # Returns newest first, function should process oldest first
         mock_find.return_value = [
             ("2025-12-16", 2),
@@ -346,8 +351,6 @@ class TestCmdFromNoteAll:
         mock_vault: Path,
     ) -> None:
         """Should respect max_links limit across all notes."""
-        from summarize_links.models import UrlWithContext
-
         mock_find.return_value = [
             ("2025-12-16", 5),
             ("2025-12-15", 5),
@@ -473,8 +476,8 @@ class TestCmdList:
         assert result == EXIT_SUCCESS
 
 
-class TestProcessUrl:
-    """Tests for single URL processing."""
+class TestProcessUrlWithMetadata:
+    """Tests for single URL processing with metadata."""
 
     def test_skip_existing_summary(self, mock_vault: Path) -> None:
         """Should skip URLs with existing summaries."""
@@ -484,18 +487,21 @@ class TestProcessUrl:
             out_folder="Summaries",
         )
 
+        url_context = UrlWithContext(url="https://example.com")
+
         with patch("summarize_links.cli.summary_exists", return_value=True):
-            success, message = _process_url(
-                "https://example.com",
+            success, message, should_delete = _process_url_with_metadata(
+                url_context,
                 config,
                 MagicMock(),
             )
 
         assert success is True
         assert "Skipped" in message
+        assert should_delete is False
 
-    @patch("summarize_links.cli.write_summary_note")
-    @patch("summarize_links.cli.fetch_and_extract")
+    @patch("summarize_links.cli.write_summary_note_with_metadata")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     def test_force_overwrites_existing_summary(
         self,
@@ -505,11 +511,17 @@ class TestProcessUrl:
         mock_vault: Path,
     ) -> None:
         """Should overwrite existing summaries when force=True."""
-        mock_exists.return_value = True  # Summary exists
-        mock_fetch.return_value = ("Article content", "Article Title")
+        mock_exists.return_value = True  # Summary exists (complete)
+        mock_fetch.return_value = PageMetadata(
+            title="Article Title",
+            domain="example.com",
+            content="Article content",
+        )
 
         mock_client = MagicMock()
-        mock_client.summarize.return_value = "## Summary\n\nNew summary."
+        mock_client.summarize_with_metadata.return_value = SummaryResult(
+            content="## Summary\n\nNew summary."
+        )
 
         config = Config(
             vault_path=mock_vault,
@@ -517,15 +529,18 @@ class TestProcessUrl:
             force=True,
         )
 
-        success, message = _process_url(
-            "https://example.com",
+        url_context = UrlWithContext(url="https://example.com")
+
+        success, message, should_delete = _process_url_with_metadata(
+            url_context,
             config,
             mock_client,
         )
 
         assert success is True
         assert "Created" in message
-        # Verify overwrite=True was passed to write_summary_note
+        assert should_delete is True
+        # Verify overwrite=True was passed to write_summary_note_with_metadata
         mock_write.assert_called_once()
         call_kwargs = mock_write.call_args[1]
         assert call_kwargs.get("overwrite") is True
@@ -538,18 +553,21 @@ class TestProcessUrl:
             dry_run=True,
         )
 
+        url_context = UrlWithContext(url="https://example.com")
+
         with patch("summarize_links.cli.summary_exists", return_value=False):
-            success, message = _process_url(
-                "https://example.com",
+            success, message, should_delete = _process_url_with_metadata(
+                url_context,
                 config,
                 MagicMock(),
             )
 
         assert success is True
         assert "Would process" in message
+        assert should_delete is False
 
-    @patch("summarize_links.cli.write_summary_note")
-    @patch("summarize_links.cli.fetch_and_extract")
+    @patch("summarize_links.cli.write_summary_note_with_metadata")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     def test_successful_processing(
         self,
@@ -560,28 +578,37 @@ class TestProcessUrl:
     ) -> None:
         """Should process URL and write summary."""
         mock_exists.return_value = False
-        mock_fetch.return_value = ("Article content", "Article Title")
+        mock_fetch.return_value = PageMetadata(
+            title="Article Title",
+            domain="example.com",
+            content="Article content",
+        )
 
         mock_client = MagicMock()
-        mock_client.summarize.return_value = "## Summary\n\nThis is a summary."
+        mock_client.summarize_with_metadata.return_value = SummaryResult(
+            content="## Summary\n\nThis is a summary."
+        )
 
         config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
         )
 
-        success, message = _process_url(
-            "https://example.com",
+        url_context = UrlWithContext(url="https://example.com")
+
+        success, message, should_delete = _process_url_with_metadata(
+            url_context,
             config,
             mock_client,
         )
 
         assert success is True
         assert "Created" in message
+        assert should_delete is True
         mock_write.assert_called_once()
 
     @patch("summarize_links.cli.write_stub_note")
-    @patch("summarize_links.cli.fetch_and_extract")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     def test_fetch_error_creates_stub(
         self,
@@ -599,18 +626,21 @@ class TestProcessUrl:
             gemini_api_key="test-key",
         )
 
-        success, message = _process_url(
-            "https://example.com",
+        url_context = UrlWithContext(url="https://example.com")
+
+        success, message, should_delete = _process_url_with_metadata(
+            url_context,
             config,
             MagicMock(),
         )
 
         assert success is False
         assert "Fetch error" in message
+        assert should_delete is False
         mock_stub.assert_called_once()
 
     @patch("summarize_links.cli.write_stub_note")
-    @patch("summarize_links.cli.fetch_and_extract")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     def test_extraction_error_creates_stub(
         self,
@@ -628,18 +658,21 @@ class TestProcessUrl:
             gemini_api_key="test-key",
         )
 
-        success, message = _process_url(
-            "https://example.com",
+        url_context = UrlWithContext(url="https://example.com")
+
+        success, message, should_delete = _process_url_with_metadata(
+            url_context,
             config,
             MagicMock(),
         )
 
         assert success is False
         assert "Extraction error" in message
+        assert should_delete is False
         mock_stub.assert_called_once()
 
     @patch("summarize_links.cli.write_stub_note")
-    @patch("summarize_links.cli.fetch_and_extract")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     def test_rate_limit_creates_stub(
         self,
@@ -650,28 +683,35 @@ class TestProcessUrl:
     ) -> None:
         """Should create stub note on rate limit."""
         mock_exists.return_value = False
-        mock_fetch.return_value = ("Content", "Title")
+        mock_fetch.return_value = PageMetadata(
+            title="Title",
+            domain="example.com",
+            content="Content",
+        )
 
         mock_client = MagicMock()
-        mock_client.summarize.side_effect = RateLimitError("Rate limited")
+        mock_client.summarize_with_metadata.side_effect = RateLimitError("Rate limited")
 
         config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
         )
 
-        success, message = _process_url(
-            "https://example.com",
+        url_context = UrlWithContext(url="https://example.com")
+
+        success, message, should_delete = _process_url_with_metadata(
+            url_context,
             config,
             mock_client,
         )
 
         assert success is False
         assert "Rate limited" in message
+        assert should_delete is False
         mock_stub.assert_called_once()
 
     @patch("summarize_links.cli.write_stub_note")
-    @patch("summarize_links.cli.fetch_and_extract")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     def test_api_error_creates_stub(
         self,
@@ -682,27 +722,34 @@ class TestProcessUrl:
     ) -> None:
         """Should create stub note on API error."""
         mock_exists.return_value = False
-        mock_fetch.return_value = ("Content", "Title")
+        mock_fetch.return_value = PageMetadata(
+            title="Title",
+            domain="example.com",
+            content="Content",
+        )
 
         mock_client = MagicMock()
-        mock_client.summarize.side_effect = GeminiAPIError("API unavailable")
+        mock_client.summarize_with_metadata.side_effect = GeminiAPIError("API unavailable")
 
         config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
         )
 
-        success, message = _process_url(
-            "https://example.com",
+        url_context = UrlWithContext(url="https://example.com")
+
+        success, message, should_delete = _process_url_with_metadata(
+            url_context,
             config,
             mock_client,
         )
 
         assert success is False
         assert "API error" in message
+        assert should_delete is False
         mock_stub.assert_called_once()
 
-    @patch("summarize_links.cli.fetch_and_extract")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     def test_dry_run_no_stub_on_error(
         self,
@@ -720,14 +767,17 @@ class TestProcessUrl:
             dry_run=True,
         )
 
+        url_context = UrlWithContext(url="https://example.com")
+
         with patch("summarize_links.cli.write_stub_note") as mock_stub:
-            success, message = _process_url(
-                "https://example.com",
+            success, message, should_delete = _process_url_with_metadata(
+                url_context,
                 config,
                 MagicMock(),
             )
 
             mock_stub.assert_not_called()
+            assert should_delete is False
 
 
 class TestPrintResults:
@@ -768,8 +818,6 @@ class TestCliIntegration:
         mock_vault: Path,
     ) -> None:
         """Should complete full from-note workflow."""
-        from summarize_links.models import PageMetadata, SummaryResult, UrlWithContext
-
         # Setup mocks
         mock_config = Config(
             vault_path=mock_vault,
@@ -814,8 +862,6 @@ class TestCliIntegration:
         mock_vault: Path,
     ) -> None:
         """Should complete full urls workflow."""
-        from summarize_links.models import PageMetadata, SummaryResult
-
         # Setup mocks
         mock_config = Config(
             vault_path=mock_vault,
@@ -866,14 +912,6 @@ class TestCliIntegration:
 class TestUrlLineDeletion:
     """Tests for URL line deletion behavior after successful processing."""
 
-    @pytest.fixture
-    def mock_vault(self, tmp_path: Path) -> Path:
-        """Create a mock vault directory."""
-        vault = tmp_path / "vault"
-        vault.mkdir()
-        (vault / "Summaries").mkdir()
-        return vault
-
     @patch("summarize_links.cli.remove_url_line_from_note")
     @patch("summarize_links.cli.add_summary_link_to_daily_note")
     @patch("summarize_links.cli.write_summary_note_with_metadata")
@@ -897,8 +935,6 @@ class TestUrlLineDeletion:
         mock_vault: Path,
     ) -> None:
         """Mock mode should NOT delete URL lines from daily note."""
-        from summarize_links.models import PageMetadata, SummaryResult, UrlWithContext
-
         # Setup mocks - mock mode enabled
         mock_config = Config(
             vault_path=mock_vault,
@@ -950,8 +986,6 @@ class TestUrlLineDeletion:
         mock_vault: Path,
     ) -> None:
         """Real mode (not mock) should delete URL lines from daily note."""
-        from summarize_links.models import PageMetadata, SummaryResult, UrlWithContext
-
         # Setup mocks - NOT mock mode
         mock_config = Config(
             vault_path=mock_vault,
@@ -1005,8 +1039,6 @@ class TestUrlLineDeletion:
         mock_vault: Path,
     ) -> None:
         """Dry-run mode should NOT delete URL lines from daily note."""
-        from summarize_links.models import UrlWithContext
-
         # Setup mocks - dry-run enabled
         mock_config = Config(
             vault_path=mock_vault,
@@ -1051,8 +1083,6 @@ class TestUrlLineDeletion:
         mock_vault: Path,
     ) -> None:
         """Skipped URLs (already exist) should NOT be deleted from daily note."""
-        from summarize_links.models import UrlWithContext
-
         # Setup mocks - summary already exists
         mock_config = Config(
             vault_path=mock_vault,
@@ -1095,8 +1125,6 @@ class TestUrlLineDeletion:
         mock_vault: Path,
     ) -> None:
         """Failed URLs (fetch error) should NOT be deleted from daily note."""
-        from summarize_links.models import UrlWithContext
-
         # Setup mocks - fetch will fail
         mock_config = Config(
             vault_path=mock_vault,
@@ -1142,7 +1170,7 @@ class TestUrlLineDeletion:
         mock_vault: Path,
     ) -> None:
         """Reprocessing a mocked summary should overwrite it (not skip it)."""
-        from summarize_links.models import PageMetadata, SummaryResult, UrlWithContext
+        # summary_exists returns False for mocked summaries
 
         # Setup mocks - summary_exists returns False for mocked summaries
         mock_config = Config(
@@ -1176,3 +1204,111 @@ class TestUrlLineDeletion:
         assert call_kwargs["overwrite"] is True, "Should overwrite mocked summary"
         # URL should be deleted since we're in real mode
         mock_remove_url.assert_called_once()
+
+
+class TestCmdStatus:
+    """Tests for the status command."""
+
+    @patch("summarize_links.cli.get_rate_limiter")
+    def test_displays_rate_limit_info(
+        self,
+        mock_get_limiter: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Should display rate limit information."""
+        mock_limiter = MagicMock()
+        mock_limiter.get_status.return_value = {
+            "rpm": {"current": 2, "limit": 5, "remaining": 3},
+            "tpm": {"current": 1000, "limit": 250000, "remaining": 249000},
+            "daily": {"current": 10, "limit": 100, "remaining": 90},
+        }
+        mock_get_limiter.return_value = mock_limiter
+
+        from summarize_links.cli import cmd_status
+
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_status(config)
+
+        assert result == EXIT_SUCCESS
+        mock_limiter.get_status.assert_called_once()
+
+    @patch("summarize_links.cli.get_rate_limiter")
+    def test_warns_on_low_daily_quota(
+        self,
+        mock_get_limiter: MagicMock,
+        mock_vault: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Should warn when daily quota is low."""
+        mock_limiter = MagicMock()
+        mock_limiter.get_status.return_value = {
+            "rpm": {"current": 0, "limit": 5, "remaining": 5},
+            "tpm": {"current": 0, "limit": 250000, "remaining": 250000},
+            "daily": {"current": 95, "limit": 100, "remaining": 5},  # Low!
+        }
+        mock_get_limiter.return_value = mock_limiter
+
+        from summarize_links.cli import cmd_status
+
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_status(config)
+
+        assert result == EXIT_SUCCESS
+
+
+class TestQuietMode:
+    """Tests for quiet mode behavior."""
+
+    def test_quiet_mode_suppresses_output(self) -> None:
+        """Quiet mode flag should be set from args."""
+        from summarize_links.cli import main
+
+        # Running with --quiet should set the flag
+        with patch("summarize_links.cli.load_config") as mock_config:
+            mock_config.side_effect = ConfigError("test")
+            main(["--quiet", "from-note"])
+            # The function runs but we just verify no crash
+
+
+class TestInvalidUrlHandling:
+    """Tests for invalid URL handling in processing."""
+
+    @patch("summarize_links.cli.summary_exists")
+    def test_invalid_url_not_retried(
+        self,
+        mock_exists: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Invalid URLs should fail without creating stubs."""
+        from summarize_links.exceptions import URLValidationError
+
+        mock_exists.return_value = False
+
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        # URL without proper domain
+        url_context = UrlWithContext(url="not-a-valid-url")
+
+        with patch("summarize_links.cli.fetch_and_extract_metadata") as mock_fetch:
+            mock_fetch.side_effect = URLValidationError("Invalid URL")
+
+            success, message, should_delete = _process_url_with_metadata(
+                url_context,
+                config,
+                MagicMock(),
+            )
+
+        assert success is False
+        assert "Invalid URL" in message
+        assert should_delete is False

@@ -19,10 +19,17 @@
 
 - **Always use uv for python environment management**
 
-- **Static analysis before commits**: Run these tools before each commit:
-  - `uv run ruff check .` - Fast linting
-  - `uv run ruff format .` - Code formatting
-  - `uv run mypy .` - Type checking
+- **Static analysis before commits - MANDATORY**: Run ALL these tools before EVERY commit:
+  1. `uv run ruff check .` - Fast linting
+  2. `uv run ruff format .` - Code formatting
+  3. `uv run mypy .` - Type checking
+  
+  **CRITICAL**: If ANY check fails:
+  1. Fix the issue
+  2. Re-run ALL THREE checks again (not just the one that failed)
+  3. Only commit when all three pass
+  
+  This prevents cascading failures where fixing one issue introduces another.
 
 - **Type hints everywhere**: Enforce type annotations on all function parameters and return values
 
