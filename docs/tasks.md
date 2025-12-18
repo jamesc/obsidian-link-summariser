@@ -815,46 +815,66 @@ Total tests: 308
 
 ---
 
-## 2025-12-18: Technical Debt Cleanup - Phase 2
+## 2025-12-18: Technical Debt Cleanup - Medium Priority Issues
 
-**Goal:** Continue addressing technical debt items from technical-debt-plan.md.
+**Goal:** Address medium priority issues #5, #10, #11 from technical-debt-plan.md.
 
 **Changes:**
 
-### Issue #5: Improved Function Signature Documentation
-- Updated `write_summary_note()` docstring to clarify it's for internal/stub use
-- Documents that `write_summary_note_with_metadata()` should be used for production summaries
-- Added "Note" section pointing to the metadata version
+### Issue #5: Inconsistent Function Signatures
+- Already addressed in Phase 2 when `write_summary_note()` docstring was updated
+- Marked as completed in tech debt plan
 
-### Issue #23: Added `__all__` Exports to All Modules
-Added explicit `__all__` lists to define public APIs:
+### Issue #10: HTTP Retry Strategy (`summarize_links/extract.py`)
+Added retry logic for transient HTTP errors using `tenacity` library:
 
-- **`config.py`**: Exports `Config`, loader functions, and all constants
-- **`exceptions.py`**: Exports all exception classes
-- **`models.py`**: Exports dataclasses, `CONTENT_TYPES`, and tag utilities
-- **`extract.py`**: Exports high-level fetch functions and individual operations
-- **`notes.py`**: Exports URL extraction, daily note operations, summary note operations
-- **`gemini_client.py`**: Exports `SummarizerProtocol`, client implementations, factory
-- **`rate_limiter.py`**: Exports `RateLimiter`, singleton functions
+- Created `_RetryableError` internal exception for retry-eligible errors
+- Added `_log_retry()` callback for logging retry attempts
+- Created `_fetch_with_retry()` function with tenacity decorator:
+  - Retries on connection errors (`requests.RequestException`)
+  - Retries on timeouts
+  - Retries on 5xx server errors (wrapped in `_RetryableError`)
+  - Does NOT retry 4xx client errors (these are not transient)
+  - Max 3 attempts with exponential backoff (1-4 second wait)
+- Updated `fetch_content()` to use the retry wrapper
 
-### Issues Already Resolved (marked in plan)
-- **Issue #4**: Repeated error handling - resolved by removing duplicate functions in Phase 1
-- **Issue #9**: Global singleton state - `reset_rate_limiter()` already exists and is tested
-- **Issue #16**: Module docstrings - all modules already have proper docstrings
+**New Constants:**
+- `HTTP_RETRY_ATTEMPTS = 3`
+- `HTTP_RETRY_WAIT_MIN = 1` (seconds)
+- `HTTP_RETRY_WAIT_MAX = 4` (seconds)
+
+### Issue #11: Logging Patterns - Quiet Flag (`summarize_links/cli.py`)
+Added `--quiet` / `-q` flag to suppress non-error console output:
+
+- Added `_quiet_mode` global flag
+- Created `_print(message, **kwargs)` helper that respects quiet mode
+- Created `_print_error(message, **kwargs)` helper that always prints (for errors)
+- Replaced all `console.print()` calls with appropriate helpers:
+  - Normal status output → `_print()`
+  - Error messages → `_print_error()`
+  - Progress bars and tables → `_print()`
+- Added `-q/--quiet` CLI argument
+
+**Behavior:**
+- `--quiet` suppresses informational output (dry-run warnings, progress, tables)
+- Errors always shown regardless of quiet mode
+- Useful for scripting and automation
+
+### Dependencies Added (`pyproject.toml`)
+- `tenacity>=9.1.2` - Retry logic with decorators
+- `pytest-mock>=3.15.1` - Testing retry behavior (dev dependency)
+
+### Tests Added
+**`tests/test_extraction.py`** - `TestFetchContentRetry` class:
+- `test_retry_on_connection_error` - Verifies 3 attempts on network error
+- `test_no_retry_on_client_error` - Verifies single attempt on 404
+- `test_retry_on_server_error` - Verifies retry on 500
+- `test_exhausted_retries_raises_error` - Verifies `ContentFetchError` after all retries
+
+**`tests/test_cli.py`** - Updated `TestCreateParser`:
+- Added tests for `--quiet` and `-q` flag parsing
+
+**Total tests:** 312 passing
 
 **Technical Debt Plan Updates:**
-Updated `docs/technical-debt-plan.md` to mark all completed issues:
-- Added ✅ COMPLETED markers to summary table (9 items)
-- Added completion markers to individual issue sections
-- Added notes explaining how issues were resolved
-
-**Tests:** All 308 tests pass
-
-**Git Commits on `jc/tech-debt` branch:**
-1. `30ca891` - refactor: remove legacy _process_url and _process_urls functions
-2. `cc3ca00` - refactor: add py.typed and consolidate constants
-3. `dc77fca` - fix: enforce config validation and remove redundant dataclass init
-4. `1e05e44` - docs: update tasks.md with tech debt cleanup summary
-5. `b007ca7` - docs: mark completed tech debt items in plan
-6. `f6dfc82` - docs: improve write_summary_note docstring, update tech debt plan status
-7. `9a38c02` - refactor: add __all__ exports to all modules (Issue #23)
+Marked Issues #5, #10, #11 as ✅ Done in `docs/technical-debt-plan.md`
