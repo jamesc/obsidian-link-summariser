@@ -27,6 +27,14 @@ from summarize_links.config import (
 )
 from summarize_links.exceptions import RateLimitError
 
+__all__ = [
+    # Main class
+    "RateLimiter",
+    # Singleton access
+    "get_rate_limiter",
+    "reset_rate_limiter",
+]
+
 # Module logger
 logger = logging.getLogger(__name__)
 

@@ -19,6 +19,30 @@ from summarize_links.config import DEFAULT_MAX_TAGS, MAX_SLUG_LENGTH
 from summarize_links.exceptions import NoteReadError, NoteWriteError, URLExtractionError
 from summarize_links.models import PageMetadata, SummaryResult, UrlWithContext, merge_tags
 
+__all__ = [
+    # URL extraction
+    "extract_urls",
+    "extract_urls_with_context",
+    "extract_hashtags_from_line",
+    "clean_url",
+    # Daily note operations
+    "find_daily_notes_with_urls",
+    "read_daily_note",
+    "add_summary_link_to_daily_note",
+    "remove_url_line_from_note",
+    # Summary note operations
+    "write_summary_note_with_metadata",
+    "write_stub_note",
+    "summary_exists",
+    "get_summary_filepath",
+    # Utilities
+    "build_frontmatter",
+    "generate_slug",
+    "slug_from_url",
+    # Lower-level (for internal use)
+    "write_summary_note",
+]
+
 # Configure module logger
 logger = logging.getLogger(__name__)
 

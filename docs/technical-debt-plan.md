@@ -120,7 +120,7 @@ def mock_vault(self, tmp_path: Path) -> Path:
 
 ---
 
-### 4. Repeated Error Handling Pattern in cli.py
+### 4. Repeated Error Handling Pattern in cli.py ✅ COMPLETED (resolved by #1/#2)
 
 **Location:** [cli.py](../summarize_links/cli.py#L141-L176) and [cli.py](../summarize_links/cli.py#L263-L299)
 
@@ -764,7 +764,7 @@ with open(state_file, "w", encoding="utf-8") as f:
 
 ---
 
-### 23. Missing `__all__` Exports in Modules
+### 23. Missing `__all__` Exports in Modules ✅ COMPLETED
 
 **Location:** All modules except `__init__.py`
 

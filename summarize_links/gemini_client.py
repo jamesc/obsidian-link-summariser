@@ -22,6 +22,16 @@ from summarize_links.exceptions import GeminiAPIError, RateLimitError
 from summarize_links.models import CONTENT_TYPES, SummaryResult
 from summarize_links.rate_limiter import RateLimiter, get_rate_limiter
 
+__all__ = [
+    # Protocol for dependency injection
+    "SummarizerProtocol",
+    # Client implementations
+    "GeminiClient",
+    "MockGeminiClient",
+    # Factory function
+    "create_client",
+]
+
 # Module logger
 logger = logging.getLogger(__name__)
 

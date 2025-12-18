@@ -6,6 +6,18 @@ enabling clearer error handling and more informative error messages throughout
 the application.
 """
 
+__all__ = [
+    "SummarizerError",
+    "ConfigError",
+    "URLExtractionError",
+    "ContentFetchError",
+    "ContentExtractionError",
+    "GeminiAPIError",
+    "RateLimitError",
+    "NoteReadError",
+    "NoteWriteError",
+]
+
 
 class SummarizerError(Exception):
     """Base exception for all summarizer errors."""
