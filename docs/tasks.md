@@ -4,6 +4,56 @@ This document tracks completed development tasks for the Obsidian Link Summarize
 
 ---
 
+## 2025-12-18: Test Coverage Improvement Initiative
+
+**Goal:** Increase test coverage from 85% to 91%+ by adding comprehensive tests for identified gaps.
+
+**Coverage Before:** 85% overall
+**Coverage After:** 91% overall
+
+**Module-by-Module Improvements:**
+
+| Module | Before | After |
+|--------|--------|-------|
+| extract.py | 75% | 88% |
+| cli.py | 81% | 87% |
+| gemini_client.py | 89% | 93% |
+| config.py | 88% | 98% |
+
+**Changes:**
+
+### `tests/test_extraction.py` (+21 tests, +278 lines)
+- `TestPaywallDetection`: 6 tests for paywall domain detection and HTTP error formatting
+- `TestMarkdownExtraction`: 6 tests for markdown metadata and content extraction
+- `TestNonContentFiltering`: 5 tests for protected tags and element removal
+- `TestFetchAndExtract`: 4 tests for full extraction pipeline edge cases
+
+### `tests/test_cli.py` (+4 tests, +108 lines)
+- `TestCmdStatus`: 2 tests for rate limit status display
+- `TestQuietMode`: 1 test for quiet mode suppression
+- `TestInvalidUrlHandling`: 1 test for graceful URL failure handling
+
+### `tests/test_gemini.py` (+8 tests, +165 lines)
+- `TestRateLimitWaitCalculation`: 3 tests for wait time calculations
+- `TestTokenUsageExtraction`: 2 tests for token count extraction from responses
+- `TestRetryOnGenericAPIError`: 3 tests for retry behavior on API errors
+
+### `tests/test_config.py` (+10 tests, +168 lines)
+- Rate limit configuration: 3 tests for YAML and environment variable loading
+- `setup_logging`: 4 tests for verbose mode and log levels
+- `daily_notes_folder`: 3 tests for path handling
+
+**Performance Fix:**
+- Patched `time.sleep` in retry tests to eliminate 3s wait times per test
+- Test suite now runs in ~4.6s instead of ~12s
+
+**Documentation:**
+- Created [test-coverage-plan.md](test-coverage-plan.md) with detailed implementation plan
+
+**Tests:** 371 total tests passing (up from 328)
+
+---
+
 ## 2025-12-16: Add --all flag to from-note command
 
 **Goal:** Process all daily notes with URLs in a single command.
