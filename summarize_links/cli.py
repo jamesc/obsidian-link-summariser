@@ -25,7 +25,7 @@ from summarize_links.exceptions import (
     RateLimitError,
     SummarizerError,
 )
-from summarize_links.extract import fetch_and_extract, fetch_and_extract_metadata, truncate_content
+from summarize_links.extract import fetch_and_extract_metadata
 from summarize_links.gemini_client import SummarizerProtocol, create_client
 from summarize_links.models import UrlWithContext
 from summarize_links.notes import (
@@ -37,7 +37,6 @@ from summarize_links.notes import (
     slug_from_url,
     summary_exists,
     write_stub_note,
-    write_summary_note,
     write_summary_note_with_metadata,
 )
 from summarize_links.rate_limiter import get_rate_limiter
@@ -173,128 +172,6 @@ Examples:
     )
 
     return parser
-
-
-def _process_url(
-    url: str,
-    config: Config,
-    client: SummarizerProtocol,
-    progress: Progress | None = None,
-    task_id: TaskID | None = None,
-    daily_note_filename: str | None = None,
-    source_date: datetime | None = None,
-) -> tuple[bool, str]:
-    """
-    Process a single URL: fetch, extract, summarize, write.
-
-    Args:
-        url: URL to process.
-        config: Application configuration.
-        client: Gemini client instance implementing SummarizerProtocol.
-        progress: Optional progress instance for updates.
-        task_id: Optional task ID for progress updates.
-        daily_note_filename: Optional filename of source daily note for back-linking.
-        source_date: Optional date from the source daily note (for filename).
-
-    Returns:
-        Tuple of (success, message).
-    """
-    # Vault path must be set (validated in load_config)
-    assert config.vault_path is not None
-
-    slug = slug_from_url(url)
-
-    # Check if summary already exists (skip check if force is enabled)
-    if not config.force and summary_exists(config.vault_path, config.out_folder, url, source_date):
-        return True, f"Skipped (exists): {slug}"
-
-    if config.dry_run:
-        return True, f"Would process: {url} -> {slug}.md"
-
-    try:
-        # Fetch and extract content
-        if progress and task_id is not None:
-            progress.update(task_id, description=f"[cyan]Fetching: {url[:50]}...")
-
-        content, title = fetch_and_extract(url)
-        content = truncate_content(content)
-
-        # Generate summary
-        if progress and task_id is not None:
-            progress.update(task_id, description=f"[cyan]Summarizing: {slug}...")
-
-        # Generate AI summary
-        summary = client.summarize(content, url, title)
-
-        # Write the summary note
-        summary_path = write_summary_note(
-            vault_path=config.vault_path,
-            out_folder=config.out_folder,
-            url=url,
-            content=summary,
-            date=source_date,
-            overwrite=config.force,
-        )
-
-        # Add link to daily note if we have the source note filename
-        if daily_note_filename:
-            add_summary_link_to_daily_note(
-                vault_path=config.vault_path,
-                daily_notes_folder=config.daily_notes_folder,
-                note_filename=daily_note_filename,
-                summary_path=summary_path,
-                url=url,
-            )
-
-        return True, f"Created: {slug}.md"
-
-    except ContentFetchError as e:
-        logger.warning("Failed to fetch %s: %s", url, e)
-        if not config.dry_run:
-            write_stub_note(
-                vault_path=config.vault_path,
-                out_folder=config.out_folder,
-                url=url,
-                reason=f"Failed to fetch: {e}",
-                date=source_date,
-            )
-        return False, f"Fetch error: {url}"
-
-    except ContentExtractionError as e:
-        logger.warning("Failed to extract content from %s: %s", url, e)
-        if not config.dry_run:
-            write_stub_note(
-                vault_path=config.vault_path,
-                out_folder=config.out_folder,
-                url=url,
-                reason=f"Failed to extract content: {e}",
-                date=source_date,
-            )
-        return False, f"Extraction error: {url}"
-
-    except RateLimitError as e:
-        logger.error("Rate limited while processing %s: %s", url, e)
-        if not config.dry_run:
-            write_stub_note(
-                vault_path=config.vault_path,
-                out_folder=config.out_folder,
-                url=url,
-                reason="Rate limited - try again later",
-                date=source_date,
-            )
-        return False, f"[Rate limited] {url}"
-
-    except GeminiAPIError as e:
-        logger.error("Gemini API error for %s: %s", url, e)
-        if not config.dry_run:
-            write_stub_note(
-                vault_path=config.vault_path,
-                out_folder=config.out_folder,
-                url=url,
-                reason=f"API error: {e}",
-                date=source_date,
-            )
-        return False, f"API error: {url}"
 
 
 def _process_url_with_metadata(
@@ -744,62 +621,6 @@ def cmd_urls(config: Config, urls: list[str]) -> int:
     url_contexts = [UrlWithContext(url=url) for url in urls]
 
     return _process_urls_with_metadata(url_contexts, config)
-
-
-def _process_urls(urls: list[str], config: Config, daily_note_filename: str | None = None) -> int:
-    """
-    Process a list of URLs.
-
-    Args:
-        urls: URLs to process.
-        config: Application configuration.
-        daily_note_filename: Optional filename of source daily note for back-linking.
-
-    Returns:
-        Exit code.
-    """
-    # Create the Gemini client
-    client = create_client(
-        api_key=config.gemini_api_key,
-        model=config.model,
-        mock_mode=config.mock_mode,
-        state_path=config.vault_path,
-        rpm_limit=config.rpm_limit,
-        tpm_limit=config.tpm_limit,
-        daily_limit=config.daily_limit,
-    )
-
-    if config.mock_mode:
-        console.print("[yellow]Running in mock mode (no API calls)[/]")
-    if config.dry_run:
-        console.print("[yellow]Running in dry-run mode (no changes)[/]")
-
-    # Process with progress bar
-    results: list[tuple[bool, str]] = []
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        task = progress.add_task("[cyan]Processing...", total=len(urls))
-
-        for url in urls:
-            success, message = _process_url(
-                url, config, client, progress, task, daily_note_filename
-            )
-            results.append((success, message))
-            progress.advance(task)
-
-    # Print results table
-    _print_results(results)
-
-    # Return appropriate exit code
-    failures = sum(1 for success, _ in results if not success)
-    if failures == len(results):
-        return EXIT_ERROR
-    return EXIT_SUCCESS
 
 
 def _process_urls_with_metadata(
