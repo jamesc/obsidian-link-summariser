@@ -754,3 +754,61 @@ Added regex-based extraction functions that can recover the summary, tags, and c
 - `test_parse_gemini_response_with_multiline_code_in_summary` - Curly braces in code
 
 Total tests: 308
+
+---
+
+## 2025-12-18: Technical Debt Cleanup - Phase 1
+
+**Goal:** Remove legacy code duplication and improve code quality as identified in technical-debt-plan.md.
+
+**Changes:**
+
+### Removed Legacy Functions (`summarize_links/cli.py`)
+- Removed `_process_url()` (legacy function without metadata support)
+- Removed `_process_urls()` (legacy batch processor without metadata)
+- These were 90%+ duplicated with `_process_url_with_metadata()` and `_process_urls_with_metadata()`
+- All code paths now use the metadata versions
+- Removed ~150 lines of duplicated code
+
+### Cleaned Up Imports
+- Removed unused imports: `fetch_and_extract`, `truncate_content`, `write_summary_note`
+- These were only used by the removed legacy functions
+
+### Updated Tests (`tests/test_cli.py`)
+- Renamed `TestProcessUrl` to `TestProcessUrlWithMetadata`
+- Updated all tests to use `_process_url_with_metadata()` with `UrlWithContext`
+- Tests now verify 3-tuple return value `(success, message, should_delete)`
+- Added imports for `PageMetadata`, `SummaryResult`, `UrlWithContext` at module level
+- Removed redundant local imports in test functions
+
+### Removed Duplicate Test Fixture
+- Removed local `mock_vault` fixture from `TestUrlLineDeletion` class
+- Now uses the global fixture from `conftest.py`
+
+### Code Quality Improvements
+- Added `py.typed` marker file for PEP 561 compliance
+- Added `DEFAULT_MAX_TAGS` constant (was hardcoded as 10 in multiple places)
+- Updated `MAX_CONTENT_LENGTH` to use underscore separator for readability (50_000)
+- Updated `models.py`, `notes.py`, `config.py` to use `DEFAULT_MAX_TAGS` constant
+
+### Config Validation
+- `load_config()` now automatically calls `config.validate()` before returning
+- Previously validation could be skipped, leading to late failures
+- Errors now surface immediately with clear messages
+
+### Rate Limiter Cleanup
+- Removed redundant mutable default reinitializations in `RateLimiter.__post_init__`
+- `default_factory` already handles this correctly in dataclasses
+
+**Technical Debt Issues Addressed:**
+- Issue #1: Duplicate `_process_url` and `_process_url_with_metadata` ✓
+- Issue #2: Duplicate `_process_urls` and `_process_urls_with_metadata` ✓
+- Issue #3: Duplicate `mock_vault` fixture ✓
+- Issue #6: Unused `_process_urls` function ✓
+- Issue #7: Duplicate import patterns ✓
+- Issue #12: Magic numbers (max_tags) ✓
+- Issue #15: Missing py.typed marker ✓
+- Issue #18: Mutable default reinit ✓
+- Issue #26: Config validation too late ✓
+
+**Tests:** All 308 tests pass
