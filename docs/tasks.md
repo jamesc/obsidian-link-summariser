@@ -812,3 +812,49 @@ Total tests: 308
 - Issue #26: Config validation too late ✓
 
 **Tests:** All 308 tests pass
+
+---
+
+## 2025-12-18: Technical Debt Cleanup - Phase 2
+
+**Goal:** Continue addressing technical debt items from technical-debt-plan.md.
+
+**Changes:**
+
+### Issue #5: Improved Function Signature Documentation
+- Updated `write_summary_note()` docstring to clarify it's for internal/stub use
+- Documents that `write_summary_note_with_metadata()` should be used for production summaries
+- Added "Note" section pointing to the metadata version
+
+### Issue #23: Added `__all__` Exports to All Modules
+Added explicit `__all__` lists to define public APIs:
+
+- **`config.py`**: Exports `Config`, loader functions, and all constants
+- **`exceptions.py`**: Exports all exception classes
+- **`models.py`**: Exports dataclasses, `CONTENT_TYPES`, and tag utilities
+- **`extract.py`**: Exports high-level fetch functions and individual operations
+- **`notes.py`**: Exports URL extraction, daily note operations, summary note operations
+- **`gemini_client.py`**: Exports `SummarizerProtocol`, client implementations, factory
+- **`rate_limiter.py`**: Exports `RateLimiter`, singleton functions
+
+### Issues Already Resolved (marked in plan)
+- **Issue #4**: Repeated error handling - resolved by removing duplicate functions in Phase 1
+- **Issue #9**: Global singleton state - `reset_rate_limiter()` already exists and is tested
+- **Issue #16**: Module docstrings - all modules already have proper docstrings
+
+**Technical Debt Plan Updates:**
+Updated `docs/technical-debt-plan.md` to mark all completed issues:
+- Added ✅ COMPLETED markers to summary table (9 items)
+- Added completion markers to individual issue sections
+- Added notes explaining how issues were resolved
+
+**Tests:** All 308 tests pass
+
+**Git Commits on `jc/tech-debt` branch:**
+1. `30ca891` - refactor: remove legacy _process_url and _process_urls functions
+2. `cc3ca00` - refactor: add py.typed and consolidate constants
+3. `dc77fca` - fix: enforce config validation and remove redundant dataclass init
+4. `1e05e44` - docs: update tasks.md with tech debt cleanup summary
+5. `b007ca7` - docs: mark completed tech debt items in plan
+6. `f6dfc82` - docs: improve write_summary_note docstring, update tech debt plan status
+7. `9a38c02` - refactor: add __all__ exports to all modules (Issue #23)
