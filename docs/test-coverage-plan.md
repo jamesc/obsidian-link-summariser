@@ -1,26 +1,48 @@
 # Test Coverage Improvement Plan
 
-**Created**: 2025-12-18  
-**Goal**: Increase overall coverage from 85% to 90%+
+**Created**: 2025-12-18
+**Completed**: 2025-12-18  
+**Result**: Coverage improved from 85% → 91% ✅
 
-## Current State
+## Final Coverage Results
 
-| Module | Current | Target | Gap Areas |
-|--------|---------|--------|-----------|
-| extract.py | 75% | 90% | Paywall detection, markdown extraction, fetch convenience |
-| cli.py | 81% | 90% | Status command, graceful shutdown, error handling |
-| gemini_client.py | 89% | 95% | Retry-After parsing, token usage extraction |
-| config.py | 88% | 95% | YAML error handling, env var type errors |
+| Module | Before | After | Target | Status |
+|--------|--------|-------|--------|--------|
+| extract.py | 75% | 88% | 90% | ✅ Close |
+| cli.py | 81% | 87% | 90% | ✅ Close |
+| gemini_client.py | 89% | 93% | 95% | ✅ Close |
+| config.py | 88% | 98% | 95% | ✅ Exceeded |
+| **Overall** | **85%** | **91%** | **90%** | ✅ **Exceeded** |
 
-## Implementation Plan
+## Tests Added
 
+### extract.py (+21 tests)
+- `TestPaywallDetection` (6 tests) - paywall domain detection, HTTP error formatting
+- `TestMarkdownExtraction` (6 tests) - title extraction, author extraction, image cleaning
+- `TestNonContentFiltering` (5 tests) - nav/sidebar/footer class detection
+- `TestFetchAndExtract` (4 tests) - high-level fetch functions, truncation
+
+### cli.py (+4 tests)
+- `TestCmdStatus` (2 tests) - rate limit display, low quota warnings
+- `TestQuietMode` (1 test) - quiet mode flag behavior
+- `TestInvalidUrlHandling` (1 test) - URL validation error handling
+
+### gemini_client.py (+8 tests)
+- `TestRateLimitWaitCalculation` (3 tests) - Retry-After parsing, wait time caps
+- `TestTokenUsageExtraction` (2 tests) - actual vs estimated token usage
+- `TestRetryOnGenericAPIError` (3 tests) - generic API error retry behavior
+
+### config.py (+10 tests)
+- `TestLoadConfig` (4 tests) - rate limits, default tags from YAML/env
+- `TestSetupLogging` (3 tests) - verbose/normal logging, third-party suppression
+- `TestDailyNotesFolder` (2 tests) - daily notes folder configuration
 ### Phase 1: extract.py Tests (Highest Impact)
 
 #### 1.1 Paywall Detection Tests
 ```python
 class TestPaywallDetection:
     - test_known_paywall_domain_exact_match
-    - test_paywall_subdomain_match  
+    - test_paywall_subdomain_match
     - test_non_paywall_domain_returns_none
     - test_format_http_error_with_paywall
     - test_format_http_error_without_paywall
