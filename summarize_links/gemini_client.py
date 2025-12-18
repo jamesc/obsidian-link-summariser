@@ -127,6 +127,108 @@ Content:
 Remember to respond with valid JSON containing "summary", "suggested_tags", and "content_type"."""
 
 
+def _extract_summary_from_malformed_json(text: str) -> str | None:
+    """
+    Try to extract summary content from malformed JSON response.
+
+    When Gemini returns JSON with unescaped characters in the summary field,
+    standard JSON parsing fails. This function attempts to extract the summary
+    content using regex patterns.
+
+    Args:
+        text: The malformed JSON text.
+
+    Returns:
+        Extracted summary content, or None if extraction fails.
+    """
+    # Try to find the summary field value
+    # Pattern: "summary": "content..." or "summary": 'content...'
+    # The summary typically ends before "suggested_tags" or "content_type"
+
+    # First try to find content between "summary": " and the next field
+    patterns = [
+        # Match "summary": "..." ending at suggested_tags or content_type
+        r'"summary"\s*:\s*"(.*?)"\s*,\s*"(?:suggested_tags|content_type)"',
+        # Match with single quotes
+        r'"summary"\s*:\s*\'(.*?)\'\s*,\s*"(?:suggested_tags|content_type)"',
+        # Match until we hit the array or closing structure
+        r'"summary"\s*:\s*"(.*?)"\s*,\s*"suggested_tags"\s*:\s*\[',
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, re.DOTALL)
+        if match:
+            summary = match.group(1)
+            # Unescape common JSON escape sequences
+            summary = summary.replace('\\"', '"')
+            summary = summary.replace("\\n", "\n")
+            summary = summary.replace("\\t", "\t")
+            summary = summary.replace("\\\\", "\\")
+            return summary
+
+    # Fallback: try to extract everything after "summary": " until a reasonable end
+    match = re.search(r'"summary"\s*:\s*"(.{100,})', text, re.DOTALL)
+    if match:
+        content = match.group(1)
+        # Find a reasonable end point - look for the pattern that ends the summary
+        # Usually it's: ", "suggested_tags" or similar
+        end_patterns = [
+            r'",\s*"suggested_tags"',
+            r'",\s*"content_type"',
+            r'"\s*,\s*"[a-z_]+"\s*:',  # Any next field
+            r'"\s*}',  # End of object
+        ]
+        for end_pattern in end_patterns:
+            end_match = re.search(end_pattern, content)
+            if end_match:
+                summary = content[: end_match.start()]
+                summary = summary.replace('\\"', '"')
+                summary = summary.replace("\\n", "\n")
+                summary = summary.replace("\\t", "\t")
+                summary = summary.replace("\\\\", "\\")
+                return summary
+
+    return None
+
+
+def _extract_tags_from_malformed_json(text: str) -> list[str]:
+    """
+    Try to extract suggested_tags from malformed JSON response.
+
+    Args:
+        text: The malformed JSON text.
+
+    Returns:
+        List of extracted tags, or empty list if extraction fails.
+    """
+    # Try to find the suggested_tags array
+    match = re.search(r'"suggested_tags"\s*:\s*\[(.*?)\]', text, re.DOTALL)
+    if match:
+        tags_content = match.group(1)
+        # Extract quoted strings from the array
+        tags = re.findall(r'"([^"]+)"', tags_content)
+        return tags
+    return []
+
+
+def _extract_content_type_from_malformed_json(text: str) -> str:
+    """
+    Try to extract content_type from malformed JSON response.
+
+    Args:
+        text: The malformed JSON text.
+
+    Returns:
+        Extracted content type, or "article" as default.
+    """
+    match = re.search(r'"content_type"\s*:\s*"([^"]+)"', text)
+    if match:
+        content_type = match.group(1)
+        if content_type in CONTENT_TYPES:
+            return content_type
+    return "article"
+
+
 def _parse_gemini_response(response_text: str) -> SummaryResult:
     """
     Parse Gemini's JSON response into a SummaryResult.
@@ -134,7 +236,7 @@ def _parse_gemini_response(response_text: str) -> SummaryResult:
     Handles various response formats including:
     - Clean JSON
     - JSON wrapped in markdown code blocks
-    - Malformed responses (falls back to plain text)
+    - Malformed responses (attempts field extraction, falls back to plain text)
 
     Args:
         response_text: Raw response from Gemini API.
@@ -143,6 +245,7 @@ def _parse_gemini_response(response_text: str) -> SummaryResult:
         Parsed SummaryResult object.
     """
     text = response_text.strip()
+    original_text = text  # Keep original for fallback extraction
 
     # Try to extract JSON from markdown code block (handles multiline)
     json_match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
@@ -194,8 +297,26 @@ def _parse_gemini_response(response_text: str) -> SummaryResult:
         )
 
     except json.JSONDecodeError as e:
-        # Fallback: treat the whole response as the summary
-        logger.warning(f"Failed to parse JSON response: {e}. Using raw text as summary.")
+        # JSON parsing failed - try to extract fields from malformed JSON
+        logger.warning(f"Failed to parse JSON response: {e}. Attempting field extraction.")
+
+        # Try to extract the summary from the malformed JSON
+        extracted_summary = _extract_summary_from_malformed_json(original_text)
+
+        if extracted_summary:
+            # Successfully extracted summary, try to get other fields too
+            logger.info("Successfully extracted summary from malformed JSON response.")
+            extracted_tags = _extract_tags_from_malformed_json(original_text)
+            extracted_type = _extract_content_type_from_malformed_json(original_text)
+
+            return SummaryResult(
+                content=extracted_summary,
+                suggested_tags=extracted_tags,
+                content_type=extracted_type,
+            )
+
+        # Complete fallback: use raw text as summary
+        logger.warning("Could not extract fields from malformed JSON. Using raw text.")
         return SummaryResult(
             content=response_text,
             suggested_tags=[],

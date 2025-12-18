@@ -689,3 +689,68 @@ Store the original URL (before cleaning) alongside the cleaned URL, and use the 
 - `test_notes.py::TestExtractUrlsWithContext::test_original_url_same_when_no_normalization` - Normal case test
 
 Total tests: 296
+
+---
+
+## 2025-12-18: Improved handling of malformed JSON responses from Gemini
+
+**Goal:** Fix issue where Gemini returns JSON with unescaped quotes or other invalid characters in the summary field, causing JSON parsing to fail and fall back to raw text (which includes JSON structure).
+
+**Problem:**
+When summarizing content with lots of quoted text or code examples (like https://mays.co/optimizing-claude-code), Gemini sometimes returns JSON with unescaped characters:
+```json
+{"summary": "This article talks about "Claude Code" and how...", ...}
+```
+The error: `Expecting ',' delimiter: line 2 column 1766 (char 1767)`
+
+The previous fallback just used the entire raw response as the summary, which wasn't useful.
+
+**Solution:**
+Added regex-based extraction functions that can recover the summary, tags, and content type even when JSON parsing fails.
+
+**Changes in `summarize_links/gemini_client.py`:**
+
+### New Functions
+- `_extract_summary_from_malformed_json()`: Uses multiple regex patterns to extract the summary field value:
+  - Tries to match summary ending at next field (`suggested_tags` or `content_type`)
+  - Falls back to finding end patterns like `", "suggested_tags"`
+  - Unescapes common JSON escape sequences (`\\n`, `\\"`, etc.)
+  - Returns `None` if extraction fails
+
+- `_extract_tags_from_malformed_json()`: Extracts the `suggested_tags` array using regex:
+  - Finds content inside `"suggested_tags": [...]`
+  - Extracts all quoted strings from the array
+  - Returns empty list if not found
+
+- `_extract_content_type_from_malformed_json()`: Extracts the `content_type` field:
+  - Simple pattern match for `"content_type": "value"`
+  - Validates against `CONTENT_TYPES` constant
+  - Returns `"article"` as default
+
+### Updated `_parse_gemini_response()`
+- Now attempts field extraction when `json.loads()` fails
+- Uses the new extraction functions to recover what it can
+- Logs success/failure of extraction attempts
+- Only falls back to raw text if extraction completely fails
+
+**Behavior:**
+- JSON parsing still tried first (most responses are valid)
+- On JSON error, extraction functions attempt field-by-field recovery
+- Tags and content type often recoverable even when summary has issues
+- Graceful degradation: partial success better than complete failure
+
+**Tests:** Added `TestMalformedJsonExtraction` class with 12 tests:
+- `test_extract_summary_basic` - Unescaped quotes in summary
+- `test_extract_summary_with_code_blocks` - Code blocks in summary
+- `test_extract_summary_with_newlines` - Escaped newlines
+- `test_extract_summary_returns_none_for_no_summary` - Missing field
+- `test_extract_tags_basic` - Tag array extraction
+- `test_extract_tags_empty_array` - Empty tags
+- `test_extract_tags_no_field` - Missing tags field
+- `test_extract_content_type_basic` - Content type extraction
+- `test_extract_content_type_invalid` - Invalid content type
+- `test_extract_content_type_missing` - Missing content type
+- `test_parse_gemini_response_uses_extraction_on_malformed_json` - Integration test
+- `test_parse_gemini_response_with_multiline_code_in_summary` - Curly braces in code
+
+Total tests: 308

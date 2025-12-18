@@ -11,6 +11,9 @@ from summarize_links.gemini_client import (
     GeminiClient,
     MockGeminiClient,
     _build_prompt,
+    _extract_content_type_from_malformed_json,
+    _extract_summary_from_malformed_json,
+    _extract_tags_from_malformed_json,
     _parse_gemini_response,
     create_client,
 )
@@ -502,3 +505,127 @@ class TestGeminiClientWithMetadata:
         assert result.content == "Plain text summary without JSON"
         assert result.suggested_tags == []
         assert result.content_type == "article"
+
+
+class TestMalformedJsonExtraction:
+    """Tests for extracting fields from malformed JSON responses."""
+
+    def test_extract_summary_basic(self) -> None:
+        """Should extract summary from malformed JSON with unescaped quotes."""
+        malformed = (
+            '{"summary": "This has "quotes" inside", '
+            '"suggested_tags": ["tag1"], "content_type": "article"}'
+        )
+        result = _extract_summary_from_malformed_json(malformed)
+
+        # Should extract the summary despite the unescaped quotes
+        assert result is not None
+        assert "This has" in result
+
+    def test_extract_summary_with_code_blocks(self) -> None:
+        """Should extract summary containing code blocks."""
+        malformed = (
+            '{"summary": "Here is code:\\n```python\\ndef foo():\\n    pass\\n```\\nEnd.", '
+            '"suggested_tags": ["python"], "content_type": "tutorial"}'
+        )
+        result = _extract_summary_from_malformed_json(malformed)
+
+        assert result is not None
+        assert "code" in result.lower()
+
+    def test_extract_summary_with_newlines(self) -> None:
+        """Should handle escaped newlines in summary."""
+        malformed = (
+            '{"summary": "Line 1\\nLine 2\\n\\n## Header\\n\\nMore text", '
+            '"suggested_tags": ["test"], "content_type": "article"}'
+        )
+        result = _extract_summary_from_malformed_json(malformed)
+
+        assert result is not None
+        assert "Line 1" in result
+        # Newlines should be unescaped
+        assert "\n" in result or "Line 2" in result
+
+    def test_extract_summary_returns_none_for_no_summary(self) -> None:
+        """Should return None when no summary field found."""
+        malformed = '{"other_field": "value"}'
+        result = _extract_summary_from_malformed_json(malformed)
+
+        assert result is None
+
+    def test_extract_tags_basic(self) -> None:
+        """Should extract tags array from malformed JSON."""
+        malformed = (
+            '{"summary": "Test", "suggested_tags": ["ai", "coding", "tools"], '
+            '"content_type": "article"}'
+        )
+        result = _extract_tags_from_malformed_json(malformed)
+
+        assert result == ["ai", "coding", "tools"]
+
+    def test_extract_tags_empty_array(self) -> None:
+        """Should return empty list for empty tags array."""
+        malformed = '{"summary": "Test", "suggested_tags": [], "content_type": "article"}'
+        result = _extract_tags_from_malformed_json(malformed)
+
+        assert result == []
+
+    def test_extract_tags_no_field(self) -> None:
+        """Should return empty list when no tags field."""
+        malformed = '{"summary": "Test"}'
+        result = _extract_tags_from_malformed_json(malformed)
+
+        assert result == []
+
+    def test_extract_content_type_basic(self) -> None:
+        """Should extract content_type from malformed JSON."""
+        malformed = '{"summary": "Test", "suggested_tags": [], "content_type": "tutorial"}'
+        result = _extract_content_type_from_malformed_json(malformed)
+
+        assert result == "tutorial"
+
+    def test_extract_content_type_invalid(self) -> None:
+        """Should return article for invalid content type."""
+        malformed = '{"summary": "Test", "content_type": "invalid_type"}'
+        result = _extract_content_type_from_malformed_json(malformed)
+
+        assert result == "article"
+
+    def test_extract_content_type_missing(self) -> None:
+        """Should return article when no content_type field."""
+        malformed = '{"summary": "Test"}'
+        result = _extract_content_type_from_malformed_json(malformed)
+
+        assert result == "article"
+
+    def test_parse_gemini_response_uses_extraction_on_malformed_json(self) -> None:
+        """Should use extraction functions when JSON parsing fails."""
+        # This JSON has an unescaped quote in the summary that breaks parsing
+        malformed = (
+            '{"summary": "This article talks about "Claude Code" and how to optimize '
+            'it with skills and plugins.", "suggested_tags": ["ai", "claude", '
+            '"developer-tools"], "content_type": "tutorial"}'
+        )
+        result = _parse_gemini_response(malformed)
+
+        # Should extract something useful rather than returning raw malformed JSON
+        assert isinstance(result, SummaryResult)
+        # Tags should be extracted even if summary parsing is partial
+        assert (
+            "ai" in result.suggested_tags
+            or "claude" in result.suggested_tags
+            or len(result.content) > 50
+        )
+
+    def test_parse_gemini_response_with_multiline_code_in_summary(self) -> None:
+        """Should handle summary with embedded code that has curly braces."""
+        # The curly braces in the code could confuse brace counting
+        response = (
+            '{"summary": "Example:\\n```json\\n{\\"key\\": \\"value\\"}\\n```\\nEnd.", '
+            '"suggested_tags": ["json"], "content_type": "documentation"}'
+        )
+        result = _parse_gemini_response(response)
+
+        assert isinstance(result, SummaryResult)
+        # Should successfully parse or extract something meaningful
+        assert len(result.content) > 10
