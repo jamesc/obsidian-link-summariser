@@ -589,6 +589,8 @@ class TestFetchContentRetry:
 
         from summarize_links.extract import fetch_content
 
+        mocker.patch("time.sleep")  # Skip actual waiting between retries
+
         # Mock session.get to fail twice then succeed
         mock_session = mocker.MagicMock()
         mock_response = mocker.MagicMock()
@@ -616,6 +618,8 @@ class TestFetchContentRetry:
         from summarize_links.exceptions import ContentFetchError
         from summarize_links.extract import fetch_content
 
+        mocker.patch("time.sleep")  # Skip actual waiting between retries
+
         mock_session = mocker.MagicMock()
         mock_response = mocker.MagicMock()
         mock_response.status_code = 404
@@ -637,6 +641,8 @@ class TestFetchContentRetry:
     def test_retry_on_server_error(self, mocker: MockerFixture) -> None:
         """Should retry on 5xx server errors."""
         from summarize_links.extract import fetch_content
+
+        mocker.patch("time.sleep")  # Skip actual waiting between retries
 
         mock_session = mocker.MagicMock()
         mock_response_500 = mocker.MagicMock()
@@ -662,6 +668,8 @@ class TestFetchContentRetry:
 
         from summarize_links.exceptions import ContentFetchError
         from summarize_links.extract import HTTP_RETRY_ATTEMPTS, fetch_content
+
+        mocker.patch("time.sleep")  # Skip actual waiting between retries
 
         mock_session = mocker.MagicMock()
         mock_session.get.side_effect = requests.exceptions.ConnectionError("Network down")
