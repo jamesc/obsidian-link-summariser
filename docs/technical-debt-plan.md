@@ -13,7 +13,7 @@ This document outlines technical debt and code duplication identified in the cod
 | 🟡 Medium | Duplicate `mock_vault` fixture in test_cli.py | Low | Medium | ✅ Done |
 | 🟡 Medium | Repeated error handling pattern in cli.py | Medium | Medium | N/A (resolved by #1) |
 | 🟡 Medium | Inconsistent function signatures for writing notes | Low | Medium | ✅ Done |
-| 🟡 Medium | Global singleton state in rate_limiter.py | Medium | Medium | |
+| 🟡 Medium | Global singleton state in rate_limiter.py | Medium | Medium | ✅ Done |
 | 🟡 Medium | No retry strategy beyond Gemini retries | Medium | Medium | ✅ Done |
 | 🟡 Medium | Inconsistent logging patterns | Medium | Medium | ✅ Done |
 | 🟢 Low | Unused `_process_urls` function | Low | Low | ✅ Done |
