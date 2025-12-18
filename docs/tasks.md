@@ -975,14 +975,12 @@ Marked Issues #5, #10, #11 as ✅ Done in `docs/technical-debt-plan.md`
 
 ### Default Model Limits (`summarize_links/config.py`)
 
-Added `DEFAULT_MODEL_LIMITS` with actual API limits:
+Added `DEFAULT_MODEL_LIMITS` with actual API limits (free tier):
 | Model | RPM | TPM | Daily |
 |-------|-----|-----|-------|
-| gemini-2.5-flash | 10 | 250,000 | 500 |
-| gemini-2.5-pro | 5 | 250,000 | 25 |
-| gemini-2.0-flash | 10 | 250,000 | 500 |
-| gemini-1.5-flash | 15 | 1,000,000 | 1,500 |
-| gemini-1.5-pro | 2 | 32,000 | 50 |
+| gemini-3-flash | 5 | 250,000 | 20 |
+| gemini-2.5-flash | 5 | 250,000 | 20 |
+| gemini-2.5-flash-lite | 10 | 250,000 | 20 |
 
 Added `FALLBACK_MODEL_LIMITS` for unknown models (conservative):
 - RPM: 2, TPM: 32,000, Daily: 20
