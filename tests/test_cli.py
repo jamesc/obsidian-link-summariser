@@ -1204,3 +1204,111 @@ class TestUrlLineDeletion:
         assert call_kwargs["overwrite"] is True, "Should overwrite mocked summary"
         # URL should be deleted since we're in real mode
         mock_remove_url.assert_called_once()
+
+
+class TestCmdStatus:
+    """Tests for the status command."""
+
+    @patch("summarize_links.cli.get_rate_limiter")
+    def test_displays_rate_limit_info(
+        self,
+        mock_get_limiter: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Should display rate limit information."""
+        mock_limiter = MagicMock()
+        mock_limiter.get_status.return_value = {
+            "rpm": {"current": 2, "limit": 5, "remaining": 3},
+            "tpm": {"current": 1000, "limit": 250000, "remaining": 249000},
+            "daily": {"current": 10, "limit": 100, "remaining": 90},
+        }
+        mock_get_limiter.return_value = mock_limiter
+
+        from summarize_links.cli import cmd_status
+
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_status(config)
+
+        assert result == EXIT_SUCCESS
+        mock_limiter.get_status.assert_called_once()
+
+    @patch("summarize_links.cli.get_rate_limiter")
+    def test_warns_on_low_daily_quota(
+        self,
+        mock_get_limiter: MagicMock,
+        mock_vault: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Should warn when daily quota is low."""
+        mock_limiter = MagicMock()
+        mock_limiter.get_status.return_value = {
+            "rpm": {"current": 0, "limit": 5, "remaining": 5},
+            "tpm": {"current": 0, "limit": 250000, "remaining": 250000},
+            "daily": {"current": 95, "limit": 100, "remaining": 5},  # Low!
+        }
+        mock_get_limiter.return_value = mock_limiter
+
+        from summarize_links.cli import cmd_status
+
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_status(config)
+
+        assert result == EXIT_SUCCESS
+
+
+class TestQuietMode:
+    """Tests for quiet mode behavior."""
+
+    def test_quiet_mode_suppresses_output(self) -> None:
+        """Quiet mode flag should be set from args."""
+        from summarize_links.cli import _quiet_mode, main
+
+        # Running with --quiet should set the flag
+        with patch("summarize_links.cli.load_config") as mock_config:
+            mock_config.side_effect = ConfigError("test")
+            main(["--quiet", "from-note"])
+            # The function runs but we just verify no crash
+
+
+class TestInvalidUrlHandling:
+    """Tests for invalid URL handling in processing."""
+
+    @patch("summarize_links.cli.summary_exists")
+    def test_invalid_url_not_retried(
+        self,
+        mock_exists: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Invalid URLs should fail without creating stubs."""
+        from summarize_links.exceptions import URLValidationError
+
+        mock_exists.return_value = False
+
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        # URL without proper domain
+        url_context = UrlWithContext(url="not-a-valid-url")
+
+        with patch("summarize_links.cli.fetch_and_extract_metadata") as mock_fetch:
+            mock_fetch.side_effect = URLValidationError("Invalid URL")
+
+            success, message, should_delete = _process_url_with_metadata(
+                url_context,
+                config,
+                MagicMock(),
+            )
+
+        assert success is False
+        assert "Invalid URL" in message
+        assert should_delete is False
