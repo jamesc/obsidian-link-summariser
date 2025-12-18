@@ -10,16 +10,21 @@ Environment variables take precedence over YAML config to allow
 easy overrides and secure API key management.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from dotenv import load_dotenv
 
 from summarize_links.exceptions import ConfigError
+
+if TYPE_CHECKING:
+    from summarize_links.rate_limiter import ModelRateLimits
 
 __all__ = [
     # Configuration class
@@ -43,6 +48,9 @@ __all__ = [
     "GEMINI_RPM_LIMIT",
     "GEMINI_TPM_LIMIT",
     "GEMINI_DAILY_LIMIT",
+    "DEFAULT_MODEL_LIMITS",
+    # Functions
+    "get_model_rate_limits",
 ]
 
 # Configure module logger
@@ -63,10 +71,99 @@ MAX_SLUG_LENGTH = 50  # Maximum length for filename slugs
 REQUEST_TIMEOUT = 10  # HTTP request timeout in seconds
 DEFAULT_MAX_TAGS = 10  # Maximum tags in frontmatter
 
-# Gemini API rate limits (free tier)
+# Gemini API rate limits (free tier) - legacy constants for backward compatibility
 GEMINI_RPM_LIMIT = 5  # Requests per minute
 GEMINI_TPM_LIMIT = 250000  # Tokens per minute (peak)
 GEMINI_DAILY_LIMIT = 20  # Requests per day
+
+# Default rate limits per model (actual API limits before safety margin)
+# These are the raw API limits - the rate limiter applies a 10% safety margin
+# Note: Actual limits vary by usage tier (Free/Tier 1-3) and can be checked
+# in Google AI Studio. These are defaults for the free tier.
+# See: https://ai.google.dev/gemini-api/docs/rate-limits
+DEFAULT_MODEL_LIMITS: dict[str, dict[str, int]] = {
+    # Gemini 3 models (free tier limits from AI Studio)
+    "gemini-3-flash": {
+        "rpm_limit": 5,
+        "tpm_limit": 250000,
+        "daily_limit": 20,
+    },
+    # Gemini 2.5 models (free tier limits from AI Studio)
+    "gemini-2.5-flash": {
+        "rpm_limit": 5,
+        "tpm_limit": 250000,
+        "daily_limit": 20,
+    },
+    "gemini-2.5-flash-lite": {
+        "rpm_limit": 10,
+        "tpm_limit": 250000,
+        "daily_limit": 20,
+    },
+}
+
+# Fallback limits for unknown models (conservative)
+FALLBACK_MODEL_LIMITS: dict[str, int] = {
+    "rpm_limit": 2,
+    "tpm_limit": 32000,
+    "daily_limit": 20,
+}
+
+
+def get_model_rate_limits(
+    model: str,
+    yaml_model_limits: dict[str, dict[str, int]] | None = None,
+) -> ModelRateLimits:
+    """
+    Get rate limits for a specific model.
+
+    Looks up limits in this order:
+    1. YAML config model_limits (if provided)
+    2. DEFAULT_MODEL_LIMITS
+    3. FALLBACK_MODEL_LIMITS (for unknown models)
+
+    Args:
+        model: Model name (e.g., "gemini-2.5-flash").
+        yaml_model_limits: Optional model limits from YAML config.
+
+    Returns:
+        ModelRateLimits instance with the appropriate limits.
+    """
+    # Import here to avoid circular import
+    from summarize_links.rate_limiter import ModelRateLimits
+
+    # Check YAML config first
+    if yaml_model_limits and model in yaml_model_limits:
+        limits_dict = yaml_model_limits[model]
+        logger.debug("Using YAML config limits for model '%s'", model)
+        return ModelRateLimits(
+            rpm_limit=limits_dict.get("rpm_limit", FALLBACK_MODEL_LIMITS["rpm_limit"]),
+            tpm_limit=limits_dict.get("tpm_limit", FALLBACK_MODEL_LIMITS["tpm_limit"]),
+            daily_limit=limits_dict.get("daily_limit", FALLBACK_MODEL_LIMITS["daily_limit"]),
+        )
+
+    # Check default model limits
+    if model in DEFAULT_MODEL_LIMITS:
+        limits_dict = DEFAULT_MODEL_LIMITS[model]
+        logger.debug("Using default limits for model '%s'", model)
+        return ModelRateLimits(
+            rpm_limit=limits_dict["rpm_limit"],
+            tpm_limit=limits_dict["tpm_limit"],
+            daily_limit=limits_dict["daily_limit"],
+        )
+
+    # Fallback for unknown models
+    logger.warning(
+        "Unknown model '%s', using conservative fallback limits: RPM=%d, TPM=%d, Daily=%d",
+        model,
+        FALLBACK_MODEL_LIMITS["rpm_limit"],
+        FALLBACK_MODEL_LIMITS["tpm_limit"],
+        FALLBACK_MODEL_LIMITS["daily_limit"],
+    )
+    return ModelRateLimits(
+        rpm_limit=FALLBACK_MODEL_LIMITS["rpm_limit"],
+        tpm_limit=FALLBACK_MODEL_LIMITS["tpm_limit"],
+        daily_limit=FALLBACK_MODEL_LIMITS["daily_limit"],
+    )
 
 
 @dataclass
@@ -90,9 +187,10 @@ class Config:
         force: If True, overwrite existing summaries
         default_tags: Tags to add to all summary notes
         max_tags: Maximum number of tags to include in frontmatter
-        rpm_limit: Gemini API requests per minute limit
-        tpm_limit: Gemini API tokens per minute limit
-        daily_limit: Gemini API requests per day limit
+        rpm_limit: Gemini API requests per minute limit (legacy, per-model preferred)
+        tpm_limit: Gemini API tokens per minute limit (legacy, per-model preferred)
+        daily_limit: Gemini API requests per day limit (legacy, per-model preferred)
+        model_limits: Per-model rate limit configuration from YAML
     """
 
     gemini_api_key: str = ""
@@ -110,6 +208,7 @@ class Config:
     rpm_limit: int = GEMINI_RPM_LIMIT
     tpm_limit: int = GEMINI_TPM_LIMIT
     daily_limit: int = GEMINI_DAILY_LIMIT
+    model_limits: dict[str, dict[str, int]] | None = None
 
     def validate(self) -> None:
         """
@@ -272,7 +371,14 @@ def load_config(
     if "max_tags" in yaml_config:
         config.max_tags = int(yaml_config["max_tags"])
 
-    # Rate limits (YAML and env vars)
+    # Per-model rate limits (YAML only)
+    if "model_limits" in yaml_config:
+        model_limits = yaml_config["model_limits"]
+        if isinstance(model_limits, dict):
+            config.model_limits = model_limits
+            logger.debug("Loaded per-model rate limits from YAML config")
+
+    # Rate limits (YAML and env vars) - legacy global limits
     if os.getenv("GEMINI_RPM_LIMIT"):
         config.rpm_limit = int(os.getenv("GEMINI_RPM_LIMIT", str(GEMINI_RPM_LIMIT)))
     elif "rpm_limit" in yaml_config:

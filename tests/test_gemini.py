@@ -20,13 +20,14 @@ from summarize_links.gemini_client import (
     create_client,
 )
 from summarize_links.models import CONTENT_TYPE_DESCRIPTIONS, CONTENT_TYPES, SummaryResult
-from summarize_links.rate_limiter import RateLimiter
+from summarize_links.rate_limiter import ModelRateLimits, RateLimiter
 
 
 @pytest.fixture
 def mock_rate_limiter() -> RateLimiter:
     """Create a rate limiter with high limits for testing."""
-    return RateLimiter(rpm_limit=1000, tpm_limit=10000000, daily_limit=10000)
+    limits = ModelRateLimits(rpm_limit=1000, tpm_limit=10000000, daily_limit=10000)
+    return RateLimiter(model="test-model", limits=limits, _apply_safety_margin=False)
 
 
 class TestContentTypeListGeneration:
