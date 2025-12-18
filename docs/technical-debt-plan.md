@@ -278,7 +278,7 @@ If we add a new content type to `CONTENT_TYPES`, the prompt won't mention it.
 
 ## Additional Technical Debt (Extended Analysis)
 
-### 9. Global Singleton State in rate_limiter.py
+### 9. Global Singleton State in rate_limiter.py ✅ COMPLETED (reset_rate_limiter() exists)
 
 **Location:** [rate_limiter.py](../summarize_links/rate_limiter.py)
 
@@ -509,7 +509,7 @@ summarize_links/
 
 ---
 
-### 16. Documentation Gaps in Modules
+### 16. Documentation Gaps in Modules ✅ COMPLETED (already had docstrings)
 
 **Location:** Various modules
 

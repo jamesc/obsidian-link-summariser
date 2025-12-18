@@ -696,10 +696,14 @@ def write_summary_note(
     status: str = "success",
 ) -> Path:
     """
-    Write a summary note to the vault.
+    Write a summary note with minimal frontmatter.
+
+    This is the lower-level function used internally by write_stub_note()
+    for creating error/stub notes. For production summaries with rich
+    metadata (title, author, tags, etc.), use write_summary_note_with_metadata().
 
     Creates the output folder if it doesn't exist. The note includes
-    frontmatter with source URL, date, and link to original daily note.
+    basic frontmatter with source URL, date, and link to original daily note.
 
     Args:
         vault_path: Path to the Obsidian vault root.
@@ -716,6 +720,11 @@ def write_summary_note(
 
     Raises:
         NoteWriteError: If writing the note fails.
+
+    Note:
+        For full-featured summaries with PageMetadata and SummaryResult,
+        prefer write_summary_note_with_metadata() which builds comprehensive
+        frontmatter automatically.
     """
     if date is None:
         date = datetime.now()
