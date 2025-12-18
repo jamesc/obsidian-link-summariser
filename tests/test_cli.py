@@ -51,6 +51,14 @@ class TestCreateParser:
         args = parser.parse_args(["--verbose", "from-note"])
         assert args.verbose is True
 
+        # Test --quiet
+        args = parser.parse_args(["--quiet", "from-note"])
+        assert args.quiet is True
+
+        # Test -q shorthand
+        args = parser.parse_args(["-q", "from-note"])
+        assert args.quiet is True
+
         # Test --vault
         args = parser.parse_args(["--vault", "/path/to/vault", "from-note"])
         assert args.vault == "/path/to/vault"

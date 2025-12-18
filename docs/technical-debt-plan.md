@@ -12,10 +12,10 @@ This document outlines technical debt and code duplication identified in the cod
 | 🔴 High | Duplicate `_process_urls` and `_process_urls_with_metadata` functions | Medium | High | ✅ Done |
 | 🟡 Medium | Duplicate `mock_vault` fixture in test_cli.py | Low | Medium | ✅ Done |
 | 🟡 Medium | Repeated error handling pattern in cli.py | Medium | Medium | N/A (resolved by #1) |
-| 🟡 Medium | Inconsistent function signatures for writing notes | Low | Medium | |
+| 🟡 Medium | Inconsistent function signatures for writing notes | Low | Medium | ✅ Done |
 | 🟡 Medium | Global singleton state in rate_limiter.py | Medium | Medium | |
-| 🟡 Medium | No retry strategy beyond Gemini retries | Medium | Medium | |
-| 🟡 Medium | Inconsistent logging patterns | Medium | Medium | |
+| 🟡 Medium | No retry strategy beyond Gemini retries | Medium | Medium | ✅ Done |
+| 🟡 Medium | Inconsistent logging patterns | Medium | Medium | ✅ Done |
 | 🟢 Low | Unused `_process_urls` function | Low | Low | ✅ Done |
 | 🟢 Low | Duplicate import patterns | Low | Low | ✅ Done |
 | 🟢 Low | Hardcoded strings in prompts | Low | Low | |
@@ -310,7 +310,7 @@ def get_rate_limiter(config: Config | None = None) -> RateLimiter:
 
 ---
 
-### 10. No Retry Strategy Beyond Gemini Retries
+### 10. No Retry Strategy Beyond Gemini Retries ✅ COMPLETED
 
 **Location:** [gemini_client.py](../summarize_links/gemini_client.py), [extract.py](../summarize_links/extract.py)
 
@@ -319,25 +319,18 @@ def get_rate_limiter(config: Config | None = None) -> RateLimiter:
 - Network requests to arbitrary URLs can fail transiently
 - No exponential backoff for HTTP requests
 
-**Current state:**
-```python
-# extract.py - single attempt only
-response = session.get(url, headers=headers, timeout=config.timeout)
-if not response.ok:
-    raise ContentFetchError(...)  # No retry
-```
-
-**Fix Plan:**
-1. Add `tenacity` library for declarative retry with exponential backoff
-2. Configure retries for transient HTTP errors (5xx, timeout, connection errors)
-3. Make retry count configurable via `Config`
+**Solution implemented:**
+- Added `tenacity` library for declarative retry with exponential backoff
+- Retries on connection errors, timeouts, and 5xx server errors
+- Does NOT retry on 4xx client errors (these are not transient)
+- Constants: `HTTP_RETRY_ATTEMPTS=3`, wait 1-4 seconds with exponential backoff
 
 **Estimated effort:** 1 hour
 **Risk:** Medium (could increase processing time significantly)
 
 ---
 
-### 11. Inconsistent Logging Patterns
+### 11. Inconsistent Logging Patterns ✅ COMPLETED
 
 **Location:** Multiple files
 
@@ -347,28 +340,12 @@ Logging usage is inconsistent across the codebase:
 - Some use `console.print()` from Rich for user-facing output
 - Some mix both
 
-**Examples:**
-```python
-# cli.py - uses both
-logger.info("Using mock Gemini client")
-console.print("[yellow]⚠ Dry run mode[/yellow]")
-
-# gemini_client.py - uses logger only
-logger.warning("Gemini returned empty response")
-
-# extract.py - uses logger only
-logger.debug("Using parser: %s", parser_name)
-```
-
-**Issues:**
-- Unclear what goes to log vs console
-- `--verbose` enables DEBUG but Rich output always shows
-- Hard to capture output for testing
-
-**Fix Plan:**
-1. Establish convention: `logger` for DEBUG/INFO, `console` for user-facing
-2. Add `--quiet` flag to suppress Rich output
-3. Document logging conventions in AGENTS.md or a CONTRIBUTING.md
+**Solution implemented:**
+- Added `--quiet` / `-q` flag to suppress Rich console output
+- Created `_print()` helper that respects quiet mode for user-facing output
+- Created `_print_error()` helper that always shows errors (even in quiet mode)
+- Replaced all `console.print()` calls with appropriate helpers
+- Convention established: `logger` for DEBUG/INFO, `_print/_print_error` for user-facing
 
 **Estimated effort:** 1 hour
 **Risk:** Low

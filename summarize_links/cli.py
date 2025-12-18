@@ -9,6 +9,7 @@ import argparse
 import logging
 import sys
 from datetime import datetime
+from typing import Any
 
 from rich.console import Console
 from rich.logging import RichHandler
@@ -46,6 +47,35 @@ logger = logging.getLogger(__name__)
 
 # Rich console for output
 console = Console()
+
+# Global quiet mode flag (set by --quiet argument)
+_quiet_mode = False
+
+
+def _print(message: Any = "", style: str | None = None, **kwargs: object) -> None:
+    """
+    Print to console if not in quiet mode.
+
+    Args:
+        message: Message to print (Rich markup supported). Can be string or Rich object.
+        style: Optional Rich style to apply.
+        **kwargs: Additional arguments passed to console.print().
+    """
+    if not _quiet_mode:
+        if style:
+            console.print(message, style=style, **kwargs)
+        else:
+            console.print(message, **kwargs)
+
+
+def _print_error(message: str) -> None:
+    """
+    Print error message (always shown, even in quiet mode).
+
+    Args:
+        message: Error message to print (Rich markup supported).
+    """
+    console.print(message)
 
 # Exit codes
 EXIT_SUCCESS = 0
@@ -92,6 +122,12 @@ Examples:
         "--verbose",
         action="store_true",
         help="Enable verbose output",
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress informational output (errors still shown)",
     )
     parser.add_argument(
         "--vault",
@@ -345,13 +381,13 @@ def cmd_from_note(config: Config, date_str: str | None = None) -> int:
         try:
             date = datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
-            console.print(f"[red]Invalid date format: {date_str}[/]")
-            console.print("Use YYYY-MM-DD format (e.g., 2024-01-15)")
+            _print_error(f"[red]Invalid date format: {date_str}[/]")
+            _print_error("Use YYYY-MM-DD format (e.g., 2024-01-15)")
             return EXIT_ERROR
     else:
         date = datetime.now().date()
 
-    console.print(f"[bold]Processing daily note for: {date}[/]")
+    _print(f"[bold]Processing daily note for: {date}[/]")
 
     # Read the daily note
     try:
@@ -363,21 +399,21 @@ def cmd_from_note(config: Config, date_str: str | None = None) -> int:
             daily_notes_folder=config.daily_notes_folder,
         )
     except NoteReadError as e:
-        console.print(f"[red]Error reading daily note: {e}[/]")
+        _print_error(f"[red]Error reading daily note: {e}[/]")
         return EXIT_ERROR
 
     # Extract URLs with context (user tags from daily note)
     url_contexts = extract_urls_with_context(note_content)
     if not url_contexts:
-        console.print("[yellow]No URLs found in daily note.[/]")
+        _print("[yellow]No URLs found in daily note.[/]")
         return EXIT_SUCCESS
 
     # Apply max_links limit
     if config.max_links and len(url_contexts) > config.max_links:
-        console.print(f"[yellow]Found {len(url_contexts)} URLs, limiting to {config.max_links}[/]")
+        _print(f"[yellow]Found {len(url_contexts)} URLs, limiting to {config.max_links}[/]")
         url_contexts = url_contexts[: config.max_links]
     else:
-        console.print(f"[green]Found {len(url_contexts)} URLs to process[/]")
+        _print(f"[green]Found {len(url_contexts)} URLs to process[/]")
 
     # Process URLs with rich metadata pipeline
     # Convert date to datetime for the processing functions
@@ -403,7 +439,7 @@ def cmd_from_note_all(config: Config) -> int:
     # Vault path must be set (validated in load_config)
     assert config.vault_path is not None
 
-    console.print("[bold]Finding all daily notes with URLs...[/]")
+    _print("[bold]Finding all daily notes with URLs...[/]")
 
     # Find all daily notes with URLs (returns newest first, we want oldest first)
     notes_with_urls = find_daily_notes_with_urls(
@@ -412,14 +448,14 @@ def cmd_from_note_all(config: Config) -> int:
     )
 
     if not notes_with_urls:
-        console.print("[yellow]No daily notes with URLs found.[/]")
+        _print("[yellow]No daily notes with URLs found.[/]")
         return EXIT_SUCCESS
 
     # Reverse to process oldest first (chronological order)
     notes_with_urls = list(reversed(notes_with_urls))
 
     total_urls = sum(count for _, count in notes_with_urls)
-    console.print(
+    _print(
         f"[green]Found {len(notes_with_urls)} daily notes with {total_urls} total URLs[/]"
     )
 
@@ -432,18 +468,18 @@ def cmd_from_note_all(config: Config) -> int:
         # Check if we've hit the max_links limit
         if config.max_links and processed_count >= config.max_links:
             remaining_notes = len(notes_with_urls) - notes_processed
-            console.print(
+            _print(
                 f"[yellow]Reached max_links limit ({config.max_links}). "
                 f"Skipping remaining {remaining_notes} notes.[/]"
             )
             break
 
-        console.print(f"\n[bold cyan]Processing: {date_str} ({url_count} URLs)[/]")
+        _print(f"\n[bold cyan]Processing: {date_str} ({url_count} URLs)[/]")
 
         try:
             date = datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
-            console.print(f"[red]Invalid date format: {date_str}, skipping[/]")
+            _print_error(f"[red]Invalid date format: {date_str}, skipping[/]")
             continue
 
         # Read the daily note
@@ -455,7 +491,7 @@ def cmd_from_note_all(config: Config) -> int:
                 daily_notes_folder=config.daily_notes_folder,
             )
         except NoteReadError as e:
-            console.print(f"[red]Error reading daily note {date_str}: {e}[/]")
+            _print_error(f"[red]Error reading daily note {date_str}: {e}[/]")
             overall_failures += url_count
             notes_processed += 1
             continue
@@ -463,7 +499,7 @@ def cmd_from_note_all(config: Config) -> int:
         # Extract URLs with context
         url_contexts = extract_urls_with_context(note_content)
         if not url_contexts:
-            console.print(f"[yellow]No URLs found in {date_str} (may have been processed)[/]")
+            _print(f"[yellow]No URLs found in {date_str} (may have been processed)[/]")
             notes_processed += 1
             continue
 
@@ -471,7 +507,7 @@ def cmd_from_note_all(config: Config) -> int:
         if config.max_links:
             remaining_budget = config.max_links - processed_count
             if len(url_contexts) > remaining_budget:
-                console.print(f"[yellow]Limiting to {remaining_budget} URLs (max_links budget)[/]")
+                _print(f"[yellow]Limiting to {remaining_budget} URLs (max_links budget)[/]")
                 url_contexts = url_contexts[:remaining_budget]
 
         # Process this note's URLs
@@ -487,9 +523,9 @@ def cmd_from_note_all(config: Config) -> int:
             overall_failures += len(url_contexts)
 
     # Final summary
-    console.print("\n" + "=" * 50)
-    console.print(f"[bold]Completed processing {notes_processed} daily notes[/]")
-    console.print(f"[bold]Total URLs processed: {processed_count}[/]")
+    _print("\n" + "=" * 50)
+    _print(f"[bold]Completed processing {notes_processed} daily notes[/]")
+    _print(f"[bold]Total URLs processed: {processed_count}[/]")
 
     if overall_failures > 0:
         return EXIT_ERROR
@@ -509,7 +545,7 @@ def cmd_list(config: Config) -> int:
     # Vault path must be set (validated in load_config)
     assert config.vault_path is not None
 
-    console.print("[bold]Scanning daily notes for URLs...[/]")
+    _print("[bold]Scanning daily notes for URLs...[/]")
 
     # Find all daily notes with URLs
     notes_with_urls = find_daily_notes_with_urls(
@@ -518,7 +554,7 @@ def cmd_list(config: Config) -> int:
     )
 
     if not notes_with_urls:
-        console.print("[yellow]No daily notes with URLs found.[/]")
+        _print("[yellow]No daily notes with URLs found.[/]")
         return EXIT_SUCCESS
 
     # Display results in a table
@@ -531,9 +567,9 @@ def cmd_list(config: Config) -> int:
         table.add_row(date_str, str(url_count))
         total_urls += url_count
 
-    console.print(table)
-    console.print()
-    console.print(f"[bold]Total:[/] {len(notes_with_urls)} notes with {total_urls} URLs")
+    _print(table)
+    _print()
+    _print(f"[bold]Total:[/] {len(notes_with_urls)} notes with {total_urls} URLs")
 
     return EXIT_SUCCESS
 
@@ -557,7 +593,7 @@ def cmd_status(config: Config) -> int:
     )
     status = rate_limiter.get_status()
 
-    console.print("[bold]Gemini API Rate Limit Status[/]\n")
+    _print("[bold]Gemini API Rate Limit Status[/]\n")
 
     # Display rate limit information in a table
     table = Table(title="Current Usage")
@@ -585,16 +621,16 @@ def cmd_status(config: Config) -> int:
         str(status["daily"]["remaining"]),
     )
 
-    console.print(table)
-    console.print()
+    _print(table)
+    _print()
 
     # Warnings if approaching limits
     if status["daily"]["remaining"] < 50:
-        console.print(
+        _print(
             f"[yellow]⚠ Warning: Only {status['daily']['remaining']} daily requests remaining![/]"
         )
     if status["daily"]["remaining"] == 0:
-        console.print("[red]✗ Daily limit reached. Try again tomorrow.[/]")
+        _print_error("[red]✗ Daily limit reached. Try again tomorrow.[/]")
 
     return EXIT_SUCCESS
 
@@ -610,11 +646,11 @@ def cmd_urls(config: Config, urls: list[str]) -> int:
     Returns:
         Exit code.
     """
-    console.print(f"[bold]Processing {len(urls)} URLs[/]")
+    _print(f"[bold]Processing {len(urls)} URLs[/]")
 
     # Apply max_links limit
     if config.max_links and len(urls) > config.max_links:
-        console.print(f"[yellow]Limiting to {config.max_links} URLs (from {len(urls)})[/]")
+        _print(f"[yellow]Limiting to {config.max_links} URLs (from {len(urls)})[/]")
         urls = urls[: config.max_links]
 
     # Convert to UrlWithContext (no user tags for direct URL input)
@@ -653,9 +689,9 @@ def _process_urls_with_metadata(
     )
 
     if config.mock_mode:
-        console.print("[yellow]Running in mock mode (no API calls)[/]")
+        _print("[yellow]Running in mock mode (no API calls)[/]")
     if config.dry_run:
-        console.print("[yellow]Running in dry-run mode (no changes)[/]")
+        _print("[yellow]Running in dry-run mode (no changes)[/]")
 
     # Process with progress bar
     results: list[tuple[bool, str]] = []
@@ -686,7 +722,7 @@ def _process_urls_with_metadata(
     # Only if we have a source note and are not in dry-run mode
     if daily_note_filename and urls_to_delete and not config.dry_run:
         assert config.vault_path is not None
-        console.print(
+        _print(
             f"[cyan]Cleaning up {len(urls_to_delete)} processed URLs from daily note...[/]"
         )
         for url in urls_to_delete:
@@ -727,15 +763,15 @@ def _print_results(results: list[tuple[bool, str]]) -> None:
         status = "[green]✓[/]" if success else "[red]✗[/]"
         table.add_row(status, message)
 
-    console.print(table)
+    _print(table)
 
     # Print summary
     total = len(results)
     successes = sum(1 for success, _ in results if success)
     failures = total - successes
 
-    console.print()
-    console.print(f"[bold]Summary:[/] {successes} succeeded, {failures} failed out of {total}")
+    _print()
+    _print(f"[bold]Summary:[/] {successes} succeeded, {failures} failed out of {total}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -748,8 +784,13 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Exit code.
     """
+    global _quiet_mode
+
     parser = create_parser()
     args = parser.parse_args(argv)
+
+    # Set quiet mode from args
+    _quiet_mode = getattr(args, "quiet", False)
 
     # Show help if no command specified
     if not args.command:
@@ -791,19 +832,19 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "status":
             return cmd_status(config)
         else:
-            console.print(f"[red]Unknown command: {args.command}[/]")
+            _print_error(f"[red]Unknown command: {args.command}[/]")
             return EXIT_ERROR
 
     except ConfigError as e:
-        console.print(f"[red]Configuration error: {e}[/]")
+        _print_error(f"[red]Configuration error: {e}[/]")
         return EXIT_CONFIG_ERROR
 
     except SummarizerError as e:
-        console.print(f"[red]Error: {e}[/]")
+        _print_error(f"[red]Error: {e}[/]")
         return EXIT_ERROR
 
     except KeyboardInterrupt:
-        console.print("\n[yellow]Interrupted by user[/]")
+        _print_error("\n[yellow]Interrupted by user[/]")
         return EXIT_ERROR
 
 

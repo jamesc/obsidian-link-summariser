@@ -576,3 +576,106 @@ class TestExtractPageMetadata:
         assert metadata.description is None
         assert metadata.domain == "example.com"
         assert len(metadata.content) > 0
+
+
+class TestFetchContentRetry:
+    """Tests for fetch_content retry behavior."""
+
+    def test_retry_on_connection_error(self, mocker: "pytest.MockerFixture") -> None:
+        """Should retry on connection errors."""
+        import requests
+
+        from summarize_links.extract import fetch_content
+
+        # Mock session.get to fail twice then succeed
+        mock_session = mocker.MagicMock()
+        mock_response = mocker.MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {"Content-Type": "text/html"}
+        mock_response.text = "<html><body>Success</body></html>"
+
+        # First two calls raise ConnectionError, third succeeds
+        mock_session.get.side_effect = [
+            requests.exceptions.ConnectionError("Network error"),
+            requests.exceptions.ConnectionError("Network error"),
+            mock_response,
+        ]
+
+        mocker.patch(
+            "summarize_links.extract._create_session", return_value=mock_session
+        )
+
+        content, content_type = fetch_content("https://example.com")
+        assert content == "<html><body>Success</body></html>"
+        assert mock_session.get.call_count == 3
+
+    def test_no_retry_on_client_error(self, mocker: "pytest.MockerFixture") -> None:
+        """Should NOT retry on 4xx client errors."""
+        import requests
+
+        from summarize_links.exceptions import ContentFetchError
+        from summarize_links.extract import fetch_content
+
+        mock_session = mocker.MagicMock()
+        mock_response = mocker.MagicMock()
+        mock_response.status_code = 404
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            response=mock_response
+        )
+
+        mock_session.get.return_value = mock_response
+
+        mocker.patch(
+            "summarize_links.extract._create_session", return_value=mock_session
+        )
+
+        with pytest.raises(ContentFetchError) as exc_info:
+            fetch_content("https://example.com/missing")
+
+        assert "404" in str(exc_info.value)
+        # Should only try once - no retries for 4xx
+        assert mock_session.get.call_count == 1
+
+    def test_retry_on_server_error(self, mocker: "pytest.MockerFixture") -> None:
+        """Should retry on 5xx server errors."""
+        from summarize_links.extract import fetch_content
+
+        mock_session = mocker.MagicMock()
+        mock_response_500 = mocker.MagicMock()
+        mock_response_500.status_code = 500
+
+        mock_response_ok = mocker.MagicMock()
+        mock_response_ok.status_code = 200
+        mock_response_ok.headers = {"Content-Type": "text/html"}
+        mock_response_ok.text = "<html><body>Success</body></html>"
+
+        # First call returns 500, second succeeds
+        mock_session.get.side_effect = [mock_response_500, mock_response_ok]
+
+        mocker.patch(
+            "summarize_links.extract._create_session", return_value=mock_session
+        )
+
+        content, content_type = fetch_content("https://example.com")
+        assert content == "<html><body>Success</body></html>"
+        assert mock_session.get.call_count == 2
+
+    def test_exhausted_retries_raises_error(self, mocker: "pytest.MockerFixture") -> None:
+        """Should raise ContentFetchError after all retries exhausted."""
+        import requests
+
+        from summarize_links.exceptions import ContentFetchError
+        from summarize_links.extract import HTTP_RETRY_ATTEMPTS, fetch_content
+
+        mock_session = mocker.MagicMock()
+        mock_session.get.side_effect = requests.exceptions.ConnectionError("Network down")
+
+        mocker.patch(
+            "summarize_links.extract._create_session", return_value=mock_session
+        )
+
+        with pytest.raises(ContentFetchError) as exc_info:
+            fetch_content("https://example.com")
+
+        assert "Failed after" in str(exc_info.value)
+        assert mock_session.get.call_count == HTTP_RETRY_ATTEMPTS
