@@ -874,51 +874,66 @@ class TestNonContentFiltering:
 
     def test_identifies_nav_class(self) -> None:
         """Should identify elements with nav class as non-content."""
+        from bs4 import Tag
+
         from summarize_links.extract import _is_non_content_element
 
         html = '<div class="nav-menu">Navigation</div>'
         soup = BeautifulSoup(html, "lxml")
         element = soup.find("div")
+        assert isinstance(element, Tag)
 
         assert _is_non_content_element(element) is True
 
     def test_identifies_sidebar_id(self) -> None:
         """Should identify elements with sidebar id as non-content."""
+        from bs4 import Tag
+
         from summarize_links.extract import _is_non_content_element
 
         html = '<aside id="sidebar">Sidebar content</aside>'
         soup = BeautifulSoup(html, "lxml")
         element = soup.find("aside")
+        assert isinstance(element, Tag)
 
         assert _is_non_content_element(element) is True
 
     def test_identifies_footer_class(self) -> None:
         """Should identify elements with footer class as non-content."""
+        from bs4 import Tag
+
         from summarize_links.extract import _is_non_content_element
 
         html = '<div class="footer-links">Footer</div>'
         soup = BeautifulSoup(html, "lxml")
         element = soup.find("div")
+        assert isinstance(element, Tag)
 
         assert _is_non_content_element(element) is True
 
     def test_allows_content_elements(self) -> None:
         """Should allow elements without non-content patterns."""
+        from bs4 import Tag
+
         from summarize_links.extract import _is_non_content_element
 
         html = '<div class="article-body">Content</div>'
         soup = BeautifulSoup(html, "lxml")
         element = soup.find("div")
+        assert isinstance(element, Tag)
 
         assert _is_non_content_element(element) is False
 
     def test_handles_list_class_attribute(self) -> None:
         """Should handle class as list (multiple classes)."""
+        from bs4 import Tag
+
         from summarize_links.extract import _is_non_content_element
 
         html = '<div class="main-content sidebar-toggle">Content</div>'
         soup = BeautifulSoup(html, "lxml")
         element = soup.find("div")
+        assert isinstance(element, Tag)
 
         # Should detect "sidebar" pattern
         assert _is_non_content_element(element) is True
