@@ -266,6 +266,9 @@ def load_config(
 
     logger.debug(f"Loaded config: model={config.model}, out_folder={config.out_folder}")
 
+    # Validate the configuration before returning
+    config.validate()
+
     return config
 
 
