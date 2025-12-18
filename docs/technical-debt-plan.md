@@ -18,10 +18,10 @@ This document outlines technical debt and code duplication identified in the cod
 | 🟡 Medium | Inconsistent logging patterns | Medium | Medium | ✅ Done |
 | 🟢 Low | Unused `_process_urls` function | Low | Low | ✅ Done |
 | 🟢 Low | Duplicate import patterns | Low | Low | ✅ Done |
-| 🟢 Low | Hardcoded strings in prompts | Low | Low | |
+| 🟢 Low | Hardcoded strings in prompts | Low | Low | ✅ Done |
 | 🟢 Low | Magic numbers scattered in code | Low | Low | ✅ Done |
-| 🟢 Low | Missing input validation for URLs | Low | Medium | |
-| 🟢 Low | No graceful shutdown handling | Low | Low | |
+| 🟢 Low | Missing input validation for URLs | Low | Medium | ✅ Done |
+| 🟢 Low | No graceful shutdown handling | Low | Low | ✅ Done |
 | 🟢 Low | Missing py.typed marker | Low | Low | ✅ Done |
 | 🟢 Low | Documentation gaps in modules | Low | Low | ✅ (already had) |
 | 🟢 Low | Potential race condition in rate limiter | Low | Low | |
@@ -226,31 +226,19 @@ Minor - no actual bugs, just code style. The `re` module is imported in:
 
 ---
 
-### 8. Hardcoded Strings in System Prompt
+### 8. Hardcoded Strings in System Prompt ✅ COMPLETED
 
 **Location:** [gemini_client.py](../summarize_links/gemini_client.py#L28-L56)
 
 **Problem:**
-The `SUMMARY_SYSTEM_PROMPT` contains the list of valid content types directly in the string. This duplicates the `CONTENT_TYPES` constant in models.py:
+The `SUMMARY_SYSTEM_PROMPT` contains the list of valid content types directly in the string. This duplicates the `CONTENT_TYPES` constant in models.py.
 
-```python
-# In gemini_client.py - hardcoded in prompt
-"""For content_type, choose ONE of:
-- "article" (news, opinion, analysis)
-- "tutorial" (how-to, guide, walkthrough)
-..."""
-
-# In models.py - proper constant
-CONTENT_TYPES = frozenset({
-    "article", "tutorial", "documentation", ...
-})
-```
-
-If we add a new content type to `CONTENT_TYPES`, the prompt won't mention it.
-
-**Fix Plan:**
-1. Generate the content_type list in the prompt dynamically from `CONTENT_TYPES`
-2. Or accept this minor duplication as documentation for the LLM
+**Solution implemented:**
+- Created `CONTENT_TYPE_DESCRIPTIONS` dictionary in models.py mapping type to description
+- `CONTENT_TYPES` is now derived from `CONTENT_TYPE_DESCRIPTIONS.keys()`
+- Added `_build_content_type_list()` function in gemini_client.py
+- System prompt uses f-string to dynamically include the content type list
+- Adding a new content type now only requires updating `CONTENT_TYPE_DESCRIPTIONS`
 
 **Estimated effort:** 15 minutes
 **Risk:** Low (behavioral - might change AI output)
@@ -391,37 +379,33 @@ if len(urls) > 100:  # Warning threshold
 
 ---
 
-### 13. Missing Input Validation for URLs
+### 13. Missing Input Validation for URLs ✅ COMPLETED
 
-**Location:** [extract.py](../summarize_links/extract.py), [notes.py](../summarize_links/notes.py)
+**Location:** [extract.py](../summarize_links/extract.py)
 
 **Problem:**
 URLs are passed through without validation:
 - No check for valid URL scheme (http/https)
 - No check for malformed URLs
 - URLs starting with `file://` could be security risk
-- No sanitization of URLs before file path creation
 
-**Current:**
-```python
-# notes.py - URL goes directly to filename
-safe_filename = url_to_filename(url)  # What if url is "../../etc/passwd"?
-```
-
-**Fix Plan:**
-1. Add `validate_url()` function that checks:
-   - Valid scheme (http, https only)
-   - Valid domain format
-   - Reasonable URL length
-2. Call validation early in URL processing pipeline
-3. Raise `URLValidationError` for invalid URLs
+**Solution implemented:**
+- Added `URLValidationError` exception class
+- Added `validate_url()` function in extract.py that checks:
+  - URL is not empty
+  - URL length is reasonable (max 2048 characters)
+  - URL has valid scheme (http or https only)
+  - URL has a valid domain/netloc
+  - Localhost is allowed for local testing
+- `validate_url()` is called at start of `fetch_content()`
+- CLI handles `URLValidationError` gracefully (no stub note created for invalid URLs)
 
 **Estimated effort:** 45 minutes
 **Risk:** Low (may reject some edge-case valid URLs)
 
 ---
 
-### 14. No Graceful Shutdown Handling
+### 14. No Graceful Shutdown Handling ✅ COMPLETED
 
 **Location:** [cli.py](../summarize_links/cli.py)
 
@@ -431,31 +415,13 @@ When processing multiple URLs, Ctrl+C causes abrupt termination:
 - Partial results not reported
 - No cleanup of in-flight operations
 
-**Current:**
-```python
-# No signal handling
-for url in urls:
-    process(url)  # Ctrl+C here = lost progress
-```
-
-**Fix Plan:**
-1. Add signal handler for SIGINT/SIGTERM
-2. Set a shutdown flag that's checked between URL processing
-3. Report partial results on graceful shutdown
-4. Persist rate limiter state before exit
-
-```python
-import signal
-
-shutdown_requested = False
-
-def handle_shutdown(signum, frame):
-    global shutdown_requested
-    shutdown_requested = True
-    console.print("\n[yellow]Shutdown requested, finishing current URL...[/yellow]")
-
-signal.signal(signal.SIGINT, handle_shutdown)
-```
+**Solution implemented:**
+- Added `_shutdown_requested` global flag
+- Added `_handle_shutdown()` signal handler for SIGINT (Ctrl+C)
+- Signal handler is installed at start of batch processing
+- Processing loop checks `_shutdown_requested` before each URL
+- On shutdown request: finishes current URL, reports partial results, cleans up
+- Original signal handler is restored after batch processing
 
 **Estimated effort:** 45 minutes
 **Risk:** Low

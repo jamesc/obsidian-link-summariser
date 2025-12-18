@@ -23,7 +23,11 @@ from tenacity import (
 )
 
 from summarize_links.config import MAX_CONTENT_LENGTH, REQUEST_TIMEOUT
-from summarize_links.exceptions import ContentExtractionError, ContentFetchError
+from summarize_links.exceptions import (
+    ContentExtractionError,
+    ContentFetchError,
+    URLValidationError,
+)
 from summarize_links.models import PageMetadata
 
 __all__ = [
@@ -36,6 +40,8 @@ __all__ = [
     "extract_readable_content",
     "extract_page_metadata",
     "truncate_content",
+    # URL validation
+    "validate_url",
 ]
 
 # Configure module logger
@@ -149,6 +155,73 @@ NON_CONTENT_PATTERNS = [
     r"\bcookie",
     r"\bbanner\b",
 ]
+
+# ----- URL Validation Constants -----
+
+# Allowed URL schemes (security: prevent file://, javascript:, etc.)
+ALLOWED_SCHEMES = {"http", "https"}
+
+# Maximum URL length to accept (prevent memory issues with very long URLs)
+MAX_URL_LENGTH = 2048
+
+
+def validate_url(url: str) -> None:
+    """
+    Validate a URL for safety and correctness.
+
+    Checks:
+    - URL is not empty
+    - URL length is reasonable (max 2048 characters)
+    - URL has valid scheme (http or https only)
+    - URL has a valid domain/netloc
+
+    Args:
+        url: The URL to validate.
+
+    Raises:
+        URLValidationError: If the URL is invalid or unsafe.
+    """
+    if not url:
+        raise URLValidationError("URL cannot be empty")
+
+    if not isinstance(url, str):
+        raise URLValidationError(f"URL must be a string, got {type(url).__name__}")
+
+    # Check length
+    if len(url) > MAX_URL_LENGTH:
+        raise URLValidationError(
+            f"URL exceeds maximum length ({len(url)} > {MAX_URL_LENGTH} characters)"
+        )
+
+    # Parse URL
+    try:
+        parsed = urlparse(url)
+    except Exception as e:
+        raise URLValidationError(f"Failed to parse URL: {e}") from e
+
+    # Check scheme
+    scheme = parsed.scheme.lower()
+    if not scheme:
+        raise URLValidationError(
+            f"URL has no scheme (expected http or https): {url[:100]}"
+        )
+    if scheme not in ALLOWED_SCHEMES:
+        raise URLValidationError(
+            f"Invalid URL scheme '{scheme}' (only http and https allowed): {url[:100]}"
+        )
+
+    # Check domain/netloc
+    if not parsed.netloc:
+        raise URLValidationError(f"URL has no domain: {url[:100]}")
+
+    # Basic domain format check (must have at least one dot or be localhost)
+    domain = parsed.netloc.lower()
+    # Strip port if present
+    if ":" in domain:
+        domain = domain.split(":")[0]
+
+    if domain != "localhost" and "." not in domain:
+        raise URLValidationError(f"URL has invalid domain format: {domain}")
 
 
 def _create_session() -> requests.Session:
@@ -313,8 +386,12 @@ def fetch_content(url: str, timeout: int = REQUEST_TIMEOUT) -> tuple[str, str]:
         Tuple of (content, content_type) where content_type is 'html', 'markdown', or 'text'.
 
     Raises:
+        URLValidationError: If the URL is invalid or unsafe.
         ContentFetchError: If the request fails after all retries.
     """
+    # Validate URL before attempting to fetch
+    validate_url(url)
+
     logger.debug(f"Fetching URL: {url}")
 
     try:

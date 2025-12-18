@@ -8,8 +8,10 @@ from google.api_core import exceptions as google_exceptions
 from summarize_links.config import DEFAULT_MODEL
 from summarize_links.exceptions import GeminiAPIError, RateLimitError
 from summarize_links.gemini_client import (
+    SUMMARY_SYSTEM_PROMPT,
     GeminiClient,
     MockGeminiClient,
+    _build_content_type_list,
     _build_prompt,
     _extract_content_type_from_malformed_json,
     _extract_summary_from_malformed_json,
@@ -17,7 +19,7 @@ from summarize_links.gemini_client import (
     _parse_gemini_response,
     create_client,
 )
-from summarize_links.models import SummaryResult
+from summarize_links.models import CONTENT_TYPE_DESCRIPTIONS, CONTENT_TYPES, SummaryResult
 from summarize_links.rate_limiter import RateLimiter
 
 
@@ -25,6 +27,32 @@ from summarize_links.rate_limiter import RateLimiter
 def mock_rate_limiter() -> RateLimiter:
     """Create a rate limiter with high limits for testing."""
     return RateLimiter(rpm_limit=1000, tpm_limit=10000000, daily_limit=10000)
+
+
+class TestContentTypeListGeneration:
+    """Tests for dynamic content type list in system prompt."""
+
+    def test_all_content_types_in_prompt(self) -> None:
+        """System prompt should contain all content types from CONTENT_TYPES."""
+        for content_type in CONTENT_TYPES:
+            assert f'"{content_type}"' in SUMMARY_SYSTEM_PROMPT
+
+    def test_all_descriptions_in_prompt(self) -> None:
+        """System prompt should contain all descriptions from CONTENT_TYPE_DESCRIPTIONS."""
+        for description in CONTENT_TYPE_DESCRIPTIONS.values():
+            assert description in SUMMARY_SYSTEM_PROMPT
+
+    def test_build_content_type_list_format(self) -> None:
+        """_build_content_type_list should produce properly formatted list."""
+        result = _build_content_type_list()
+        # Check format: - "type" (description)
+        for content_type, description in CONTENT_TYPE_DESCRIPTIONS.items():
+            expected = f'- "{content_type}" ({description})'
+            assert expected in result
+
+    def test_content_types_synced_with_descriptions(self) -> None:
+        """CONTENT_TYPES should be derived from CONTENT_TYPE_DESCRIPTIONS keys."""
+        assert frozenset(CONTENT_TYPE_DESCRIPTIONS.keys()) == CONTENT_TYPES
 
 
 class TestBuildPrompt:

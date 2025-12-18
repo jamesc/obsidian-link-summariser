@@ -19,7 +19,7 @@ from google.api_core import exceptions as google_exceptions
 
 from summarize_links.config import DEFAULT_MODEL
 from summarize_links.exceptions import GeminiAPIError, RateLimitError
-from summarize_links.models import CONTENT_TYPES, SummaryResult
+from summarize_links.models import CONTENT_TYPE_DESCRIPTIONS, CONTENT_TYPES, SummaryResult
 from summarize_links.rate_limiter import RateLimiter, get_rate_limiter
 
 __all__ = [
@@ -41,8 +41,23 @@ BASE_RETRY_DELAY = 2.0  # Base delay for exponential backoff (seconds)
 MIN_RATE_LIMIT_WAIT = 10.0  # Minimum wait when rate limited (seconds)
 MAX_RETRY_DELAY = 120.0  # Maximum delay cap (seconds)
 
+
+def _build_content_type_list() -> str:
+    """
+    Build the content type list for the system prompt from CONTENT_TYPE_DESCRIPTIONS.
+
+    Returns:
+        Formatted string listing all content types with descriptions.
+    """
+    lines = []
+    for content_type, description in CONTENT_TYPE_DESCRIPTIONS.items():
+        lines.append(f'- "{content_type}" ({description})')
+    return "\n".join(lines)
+
+
 # System prompt for summarization with structured output
-SUMMARY_SYSTEM_PROMPT = """You are a summarization assistant. Your task is to create
+# Content types are generated dynamically from CONTENT_TYPE_DESCRIPTIONS
+SUMMARY_SYSTEM_PROMPT = f"""You are a summarization assistant. Your task is to create
 concise, informative summaries of web page content for a personal knowledge base.
 
 Guidelines for the summary:
@@ -55,11 +70,11 @@ Guidelines for the summary:
 - Use a neutral, informative tone
 
 You MUST respond with valid JSON in this exact format:
-{
+{{
   "summary": "Your markdown-formatted summary here",
   "suggested_tags": ["tag1", "tag2", "tag3"],
   "content_type": "article"
-}
+}}
 
 For suggested_tags:
 - Provide 3-5 relevant topic tags
@@ -68,16 +83,7 @@ For suggested_tags:
 - Avoid generic tags like "article" or "blog"
 
 For content_type, choose ONE of:
-- "article" (news, opinion, analysis)
-- "tutorial" (how-to, guide, walkthrough)
-- "documentation" (API docs, reference material)
-- "research" (academic papers, studies)
-- "blog" (personal posts, informal writing)
-- "news" (current events, announcements)
-- "video" (video content transcripts)
-- "tool" (software, service, product pages)
-- "reference" (lists, comparisons, resources)
-- "other" (if none of the above fit)"""
+{_build_content_type_list()}"""
 
 
 class SummarizerProtocol(Protocol):

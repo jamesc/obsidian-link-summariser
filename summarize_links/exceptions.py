@@ -10,6 +10,7 @@ __all__ = [
     "SummarizerError",
     "ConfigError",
     "URLExtractionError",
+    "URLValidationError",
     "ContentFetchError",
     "ContentExtractionError",
     "GeminiAPIError",
@@ -33,6 +34,12 @@ class ConfigError(SummarizerError):
 
 class URLExtractionError(SummarizerError):
     """Raised when URL extraction from a note fails."""
+
+    pass
+
+
+class URLValidationError(SummarizerError):
+    """Raised when a URL fails validation (invalid scheme, malformed, etc.)."""
 
     pass
 

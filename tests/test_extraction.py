@@ -3,7 +3,7 @@
 import pytest
 from bs4 import BeautifulSoup
 
-from summarize_links.exceptions import ContentExtractionError
+from summarize_links.exceptions import ContentExtractionError, URLValidationError
 from summarize_links.extract import (
     _clean_text,
     _extract_article_content,
@@ -17,6 +17,7 @@ from summarize_links.extract import (
     extract_page_metadata,
     extract_readable_content,
     truncate_content,
+    validate_url,
 )
 
 
@@ -679,3 +680,73 @@ class TestFetchContentRetry:
 
         assert "Failed after" in str(exc_info.value)
         assert mock_session.get.call_count == HTTP_RETRY_ATTEMPTS
+
+
+class TestValidateUrl:
+    """Tests for URL validation."""
+
+    def test_valid_http_url(self) -> None:
+        """Should accept valid http URLs."""
+        validate_url("http://example.com/page")  # Should not raise
+
+    def test_valid_https_url(self) -> None:
+        """Should accept valid https URLs."""
+        validate_url("https://example.com/page?query=1#anchor")  # Should not raise
+
+    def test_empty_url_rejected(self) -> None:
+        """Should reject empty URLs."""
+        with pytest.raises(URLValidationError, match="cannot be empty"):
+            validate_url("")
+
+    def test_none_url_rejected(self) -> None:
+        """Should reject None (fails empty check)."""
+        with pytest.raises(URLValidationError, match="cannot be empty"):
+            validate_url(None)  # type: ignore
+
+    def test_file_scheme_rejected(self) -> None:
+        """Should reject file:// URLs (security risk)."""
+        with pytest.raises(URLValidationError, match="Invalid URL scheme"):
+            validate_url("file:///etc/passwd")
+
+    def test_javascript_scheme_rejected(self) -> None:
+        """Should reject javascript: URLs."""
+        with pytest.raises(URLValidationError, match="Invalid URL scheme"):
+            validate_url("javascript:alert(1)")
+
+    def test_ftp_scheme_rejected(self) -> None:
+        """Should reject ftp:// URLs."""
+        with pytest.raises(URLValidationError, match="Invalid URL scheme"):
+            validate_url("ftp://example.com/file.txt")
+
+    def test_missing_scheme_rejected(self) -> None:
+        """Should reject URLs without scheme."""
+        with pytest.raises(URLValidationError, match="no scheme"):
+            validate_url("example.com/page")
+
+    def test_missing_domain_rejected(self) -> None:
+        """Should reject URLs without domain."""
+        with pytest.raises(URLValidationError, match="no domain"):
+            validate_url("https:///path/to/page")
+
+    def test_invalid_domain_rejected(self) -> None:
+        """Should reject URLs with invalid domain format."""
+        with pytest.raises(URLValidationError, match="invalid domain"):
+            validate_url("https://nodots/page")
+
+    def test_localhost_allowed(self) -> None:
+        """Should accept localhost URLs."""
+        validate_url("http://localhost:8080/page")  # Should not raise
+
+    def test_very_long_url_rejected(self) -> None:
+        """Should reject URLs exceeding max length."""
+        long_url = "https://example.com/" + "a" * 3000
+        with pytest.raises(URLValidationError, match="exceeds maximum length"):
+            validate_url(long_url)
+
+    def test_url_with_port_accepted(self) -> None:
+        """Should accept URLs with port numbers."""
+        validate_url("https://example.com:8443/page")  # Should not raise
+
+    def test_unicode_domain_accepted(self) -> None:
+        """Should accept URLs with unicode domains."""
+        validate_url("https://例え.jp/page")  # Should not raise

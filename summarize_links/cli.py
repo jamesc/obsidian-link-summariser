@@ -7,6 +7,7 @@ handling argument parsing, command dispatch, and output formatting.
 
 import argparse
 import logging
+import signal
 import sys
 from datetime import datetime
 from typing import Any
@@ -25,6 +26,7 @@ from summarize_links.exceptions import (
     NoteReadError,
     RateLimitError,
     SummarizerError,
+    URLValidationError,
 )
 from summarize_links.extract import fetch_and_extract_metadata
 from summarize_links.gemini_client import SummarizerProtocol, create_client
@@ -50,6 +52,25 @@ console = Console()
 
 # Global quiet mode flag (set by --quiet argument)
 _quiet_mode = False
+
+# Global shutdown flag for graceful interruption
+_shutdown_requested = False
+
+
+def _handle_shutdown(signum: int, frame: object) -> None:
+    """
+    Handle shutdown signal (Ctrl+C / SIGINT).
+
+    Sets a flag that is checked between URL processing to allow
+    graceful completion of current work and partial result reporting.
+
+    Args:
+        signum: Signal number.
+        frame: Current stack frame (unused).
+    """
+    global _shutdown_requested
+    _shutdown_requested = True
+    _print("\n[yellow]⚠ Shutdown requested, finishing current URL...[/]")
 
 
 def _print(message: Any = "", style: str | None = None, **kwargs: object) -> None:
@@ -312,6 +333,11 @@ def _process_url_with_metadata(
         # Don't delete for mock mode - those summaries will be regenerated later
         should_delete = not config.mock_mode
         return True, f"Created: {slug}.md", should_delete
+
+    except URLValidationError as e:
+        logger.warning("Invalid URL %s: %s", url, e)
+        # Don't create stub notes for invalid URLs - they can never succeed
+        return False, f"Invalid URL: {url}", False
 
     except ContentFetchError as e:
         logger.warning("Failed to fetch %s: %s", url, e)
@@ -668,6 +694,44 @@ def _process_urls_with_metadata(
     """
     Process a list of URLs with full metadata extraction.
 
+    Supports graceful shutdown - if Ctrl+C is pressed, finishes the current URL
+    and reports partial results.
+
+    Args:
+        url_contexts: URLs with context (user tags, surrounding text).
+        config: Application configuration.
+        daily_note_filename: Optional filename of source daily note for back-linking.
+        source_date: Optional date from the source daily note (for filename).
+
+    Returns:
+        Exit code.
+    """
+    global _shutdown_requested
+
+    # Reset shutdown flag at start of batch
+    _shutdown_requested = False
+
+    # Install signal handler for graceful shutdown
+    original_handler = signal.signal(signal.SIGINT, _handle_shutdown)
+
+    try:
+        return _process_urls_batch(
+            url_contexts, config, daily_note_filename, source_date
+        )
+    finally:
+        # Restore original signal handler
+        signal.signal(signal.SIGINT, original_handler)
+
+
+def _process_urls_batch(
+    url_contexts: list[UrlWithContext],
+    config: Config,
+    daily_note_filename: str | None = None,
+    source_date: datetime | None = None,
+) -> int:
+    """
+    Internal batch processing implementation.
+
     Args:
         url_contexts: URLs with context (user tags, surrounding text).
         config: Application configuration.
@@ -696,6 +760,7 @@ def _process_urls_with_metadata(
     # Process with progress bar
     results: list[tuple[bool, str]] = []
     urls_to_delete: list[str] = []  # Track URLs that were successfully processed
+    interrupted = False
 
     with Progress(
         SpinnerColumn(),
@@ -706,6 +771,13 @@ def _process_urls_with_metadata(
         task = progress.add_task("[cyan]Processing...", total=len(url_contexts))
 
         for url_context in url_contexts:
+            # Check for shutdown request before processing each URL
+            if _shutdown_requested:
+                interrupted = True
+                remaining = len(url_contexts) - len(results)
+                _print(f"[yellow]Stopping early. {remaining} URLs not processed.[/]")
+                break
+
             success, message, should_delete = _process_url_with_metadata(
                 url_context, config, client, progress, task, daily_note_filename, source_date
             )
@@ -738,10 +810,17 @@ def _process_urls_with_metadata(
             except Exception as e:
                 logger.warning(f"Failed to remove URL line from daily note: {e}")
 
-    # Print results table
-    _print_results(results)
+    # Print results table (even for partial results)
+    if results:
+        _print_results(results)
+
+        # Print summary
+        if interrupted:
+            _print("[yellow]Processing was interrupted.[/]")
 
     # Return appropriate exit code
+    if not results:
+        return EXIT_ERROR
     failures = sum(1 for success, _ in results if not success)
     if failures == len(results):
         return EXIT_ERROR

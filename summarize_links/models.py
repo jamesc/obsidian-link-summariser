@@ -16,6 +16,7 @@ __all__ = [
     "SummaryResult",
     # Constants
     "CONTENT_TYPES",
+    "CONTENT_TYPE_DESCRIPTIONS",
     # Tag utilities
     "normalize_tag",
     "merge_tags",
@@ -91,21 +92,23 @@ class SummaryResult:
     content_type: str = "article"
 
 
-# Valid content types for classification
-CONTENT_TYPES = frozenset(
-    {
-        "article",
-        "tutorial",
-        "documentation",
-        "news",
-        "video",
-        "tool",
-        "reference",
-        "blog",
-        "research",
-        "other",
-    }
-)
+# Valid content types for classification with descriptions
+# The descriptions are used in the Gemini prompt to explain each type
+CONTENT_TYPE_DESCRIPTIONS: dict[str, str] = {
+    "article": "news, opinion, analysis",
+    "tutorial": "how-to, guide, walkthrough",
+    "documentation": "API docs, reference material",
+    "news": "current events, announcements",
+    "video": "video content transcripts",
+    "tool": "software, service, product pages",
+    "reference": "lists, comparisons, resources",
+    "blog": "personal posts, informal writing",
+    "research": "academic papers, studies",
+    "other": "if none of the above fit",
+}
+
+# Frozenset of valid content type keys for validation
+CONTENT_TYPES = frozenset(CONTENT_TYPE_DESCRIPTIONS.keys())
 
 
 def normalize_tag(tag: str) -> str:
