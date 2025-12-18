@@ -10,12 +10,16 @@ import yaml
 from summarize_links.config import (
     DEFAULT_MAX_LINKS,
     DEFAULT_MODEL,
+    DEFAULT_MODEL_LIMITS,
     DEFAULT_OUT_FOLDER,
+    FALLBACK_MODEL_LIMITS,
     Config,
+    get_model_rate_limits,
     load_config,
     load_yaml_config,
 )
 from summarize_links.exceptions import ConfigError
+from summarize_links.rate_limiter import ModelRateLimits
 
 
 class TestConfig:
@@ -375,3 +379,133 @@ class TestDailyNotesFolder:
         config = load_config(vault_path=tmp_path)
 
         assert config.daily_notes_folder == ""
+
+
+class TestGetModelRateLimits:
+    """Tests for get_model_rate_limits function."""
+
+    def test_known_model_defaults(self) -> None:
+        """Should return correct limits for known models."""
+        limits = get_model_rate_limits("gemini-2.5-flash")
+
+        expected = DEFAULT_MODEL_LIMITS["gemini-2.5-flash"]
+        assert limits.rpm_limit == expected["rpm_limit"]
+        assert limits.tpm_limit == expected["tpm_limit"]
+        assert limits.daily_limit == expected["daily_limit"]
+
+    def test_unknown_model_fallback(self) -> None:
+        """Should return fallback limits for unknown models."""
+        limits = get_model_rate_limits("unknown-model-xyz")
+
+        assert limits.rpm_limit == FALLBACK_MODEL_LIMITS["rpm_limit"]
+        assert limits.tpm_limit == FALLBACK_MODEL_LIMITS["tpm_limit"]
+        assert limits.daily_limit == FALLBACK_MODEL_LIMITS["daily_limit"]
+
+    def test_yaml_model_limits_override(self) -> None:
+        """YAML config model limits should override defaults."""
+        yaml_limits = {
+            "gemini-2.5-flash": {
+                "rpm_limit": 100,
+                "tpm_limit": 500000,
+                "daily_limit": 1000,
+            }
+        }
+
+        limits = get_model_rate_limits("gemini-2.5-flash", yaml_model_limits=yaml_limits)
+
+        assert limits.rpm_limit == 100
+        assert limits.tpm_limit == 500000
+        assert limits.daily_limit == 1000
+
+    def test_yaml_model_limits_new_model(self) -> None:
+        """YAML config can define limits for custom models."""
+        yaml_limits = {
+            "my-custom-model": {
+                "rpm_limit": 50,
+                "tpm_limit": 250000,
+                "daily_limit": 200,
+            }
+        }
+
+        limits = get_model_rate_limits("my-custom-model", yaml_model_limits=yaml_limits)
+
+        assert limits.rpm_limit == 50
+        assert limits.tpm_limit == 250000
+        assert limits.daily_limit == 200
+
+    def test_returns_model_rate_limits_instance(self) -> None:
+        """Should return ModelRateLimits dataclass instance."""
+        limits = get_model_rate_limits("gemini-2.5-flash")
+
+        assert isinstance(limits, ModelRateLimits)
+
+
+class TestModelLimitsConfig:
+    """Tests for model_limits in YAML config."""
+
+    def test_model_limits_from_yaml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Should load model_limits from YAML config."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        config_content = {
+            "model_limits": {
+                "gemini-2.5-flash": {
+                    "rpm_limit": 20,
+                    "tpm_limit": 500000,
+                    "daily_limit": 1000,
+                },
+                "gemini-2.5-pro": {
+                    "rpm_limit": 10,
+                    "tpm_limit": 250000,
+                    "daily_limit": 50,
+                },
+            }
+        }
+        config_file = tmp_path / ".summarizer-config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump(config_content, f)
+
+        config = load_config(vault_path=tmp_path)
+
+        assert config.model_limits is not None
+        assert config.model_limits["gemini-2.5-flash"]["rpm_limit"] == 20
+        assert config.model_limits["gemini-2.5-flash"]["daily_limit"] == 1000
+        assert config.model_limits["gemini-2.5-pro"]["rpm_limit"] == 10
+
+    def test_model_limits_default_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """model_limits should be None if not in YAML config."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        config = load_config(vault_path=tmp_path)
+
+        assert config.model_limits is None
+
+    def test_model_limits_integrates_with_get_model_rate_limits(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Config model_limits should work with get_model_rate_limits."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        config_content = {
+            "model_limits": {
+                "gemini-2.5-flash": {
+                    "rpm_limit": 100,
+                    "tpm_limit": 1000000,
+                    "daily_limit": 5000,
+                },
+            }
+        }
+        config_file = tmp_path / ".summarizer-config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump(config_content, f)
+
+        config = load_config(vault_path=tmp_path)
+
+        # Use the loaded model_limits
+        limits = get_model_rate_limits("gemini-2.5-flash", yaml_model_limits=config.model_limits)
+
+        assert limits.rpm_limit == 100
+        assert limits.tpm_limit == 1000000
+        assert limits.daily_limit == 5000

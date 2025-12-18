@@ -17,10 +17,10 @@ from typing import Any, Protocol
 import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
 
-from summarize_links.config import DEFAULT_MODEL
+from summarize_links.config import DEFAULT_MODEL, get_model_rate_limits
 from summarize_links.exceptions import GeminiAPIError, RateLimitError
 from summarize_links.models import CONTENT_TYPE_DESCRIPTIONS, CONTENT_TYPES, SummaryResult
-from summarize_links.rate_limiter import RateLimiter, get_rate_limiter
+from summarize_links.rate_limiter import ModelRateLimits, RateLimiter
 
 __all__ = [
     # Protocol for dependency injection
@@ -346,7 +346,7 @@ class GeminiClient:
 
     Handles API authentication, request formatting, and response parsing
     with automatic retry logic for rate limits and transient errors.
-    Includes rate limiting to stay within Gemini API quotas.
+    Includes per-model rate limiting to stay within Gemini API quotas.
     """
 
     def __init__(
@@ -355,6 +355,8 @@ class GeminiClient:
         model: str = DEFAULT_MODEL,
         rate_limiter: RateLimiter | None = None,
         state_path: Path | None = None,
+        model_limits: ModelRateLimits | None = None,
+        yaml_model_limits: dict[str, dict[str, int]] | None = None,
         rpm_limit: int | None = None,
         tpm_limit: int | None = None,
         daily_limit: int | None = None,
@@ -365,22 +367,49 @@ class GeminiClient:
         Args:
             api_key: Google AI Studio API key.
             model: Gemini model name to use.
-            rate_limiter: Optional rate limiter instance. If None, uses global limiter.
+            rate_limiter: Optional rate limiter instance. If None, creates a new one.
             state_path: Optional path for persisting rate limit state.
-            rpm_limit: Requests per minute limit (uses default if None).
-            tpm_limit: Tokens per minute limit (uses default if None).
-            daily_limit: Requests per day limit (uses default if None).
+            model_limits: Explicit rate limits for the model. If None, uses get_model_rate_limits.
+            yaml_model_limits: Per-model limits from YAML config (passed to get_model_rate_limits).
+            rpm_limit: Legacy: Requests per minute limit (ignored if model_limits provided).
+            tpm_limit: Legacy: Tokens per minute limit (ignored if model_limits provided).
+            daily_limit: Legacy: Requests per day limit (ignored if model_limits provided).
         """
         self._api_key = api_key
         self._model_name = model
         self._model: Any = None
-        self._rate_limiter = rate_limiter or get_rate_limiter(
-            state_path=state_path,
-            rpm_limit=rpm_limit,
-            tpm_limit=tpm_limit,
-            daily_limit=daily_limit,
+
+        # Get model-specific rate limits
+        if model_limits is not None:
+            limits = model_limits
+        elif rpm_limit is not None or tpm_limit is not None or daily_limit is not None:
+            # Legacy: create limits from individual parameters
+            limits = ModelRateLimits(
+                rpm_limit=rpm_limit if rpm_limit is not None else 5,
+                tpm_limit=tpm_limit if tpm_limit is not None else 250000,
+                daily_limit=daily_limit if daily_limit is not None else 20,
+            )
+        else:
+            # Use model-specific defaults
+            limits = get_model_rate_limits(model, yaml_model_limits)
+
+        # Use provided rate limiter or create one with model-specific limits
+        if rate_limiter is not None:
+            self._rate_limiter = rate_limiter
+        else:
+            self._rate_limiter = RateLimiter(
+                model=model,
+                limits=limits,
+                state_path=state_path,
+            )
+
+        logger.debug(
+            "Initialized GeminiClient with model: %s (RPM=%d, TPM=%d, Daily=%d)",
+            model,
+            self._rate_limiter.rpm_limit,
+            self._rate_limiter.tpm_limit,
+            self._rate_limiter.daily_limit,
         )
-        logger.debug("Initialized GeminiClient with model: %s", model)
 
     def _get_model(self) -> Any:
         """
@@ -744,6 +773,8 @@ def create_client(
     model: str = DEFAULT_MODEL,
     mock_mode: bool = False,
     state_path: Path | None = None,
+    model_limits: ModelRateLimits | None = None,
+    yaml_model_limits: dict[str, dict[str, int]] | None = None,
     rpm_limit: int | None = None,
     tpm_limit: int | None = None,
     daily_limit: int | None = None,
@@ -756,9 +787,11 @@ def create_client(
         model: Model name to use.
         mock_mode: If True, return MockGeminiClient.
         state_path: Optional path for persisting rate limit state.
-        rpm_limit: Requests per minute limit (uses default if None).
-        tpm_limit: Tokens per minute limit (uses default if None).
-        daily_limit: Requests per day limit (uses default if None).
+        model_limits: Explicit rate limits for the model.
+        yaml_model_limits: Per-model limits from YAML config.
+        rpm_limit: Legacy: Requests per minute limit (uses default if None).
+        tpm_limit: Legacy: Tokens per minute limit (uses default if None).
+        daily_limit: Legacy: Requests per day limit (uses default if None).
 
     Returns:
         Configured client instance.
@@ -778,6 +811,8 @@ def create_client(
         api_key=api_key,
         model=model,
         state_path=state_path,
+        model_limits=model_limits,
+        yaml_model_limits=yaml_model_limits,
         rpm_limit=rpm_limit,
         tpm_limit=tpm_limit,
         daily_limit=daily_limit,

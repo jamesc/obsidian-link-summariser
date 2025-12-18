@@ -928,3 +928,152 @@ Added `--quiet` / `-q` flag to suppress non-error console output:
 
 **Technical Debt Plan Updates:**
 Marked Issues #5, #10, #11 as ✅ Done in `docs/technical-debt-plan.md`
+
+---
+
+## 2025-12-18: Per-Model Rate Limits with Safety Margin
+
+**Goal:** Implement per-model rate limiting with different limits for each Gemini model and a 10% safety margin to avoid hitting hard API limits.
+
+**Implementation Plan:** See [per-model-rate-limits-plan.md](per-model-rate-limits-plan.md)
+
+**Changes:**
+
+### New Data Structures (`summarize_links/rate_limiter.py`)
+
+- **`ModelRateLimits` dataclass** (frozen/immutable):
+  - `rpm_limit`: Requests per minute
+  - `tpm_limit`: Tokens per minute
+  - `daily_limit`: Requests per day
+  - `with_safety_margin()` method: Returns new limits at 90% of original
+
+- **`SAFETY_MARGIN = 0.9`** constant for 10% buffer below actual API limits
+
+- **Updated `RateLimitState`**:
+  - Added `daily_requests_by_model: dict[str, int]` for per-model tracking
+  - Added `get_daily_requests(model)` method
+  - Added `increment_daily_requests(model)` method
+  - Legacy `daily_requests` field maintained for backward compatibility
+
+### Rate Limiter Updates (`summarize_links/rate_limiter.py`)
+
+- **`RateLimiter` now uses `ModelRateLimits`**:
+  - Constructor takes `model: str` and `limits: ModelRateLimits`
+  - Safety margin automatically applied (controllable via `_apply_safety_margin`)
+  - Properties `rpm_limit`, `tpm_limit`, `daily_limit` return effective limits
+
+- **Per-model daily tracking**:
+  - `record_request()` increments per-model counter
+  - `check_limits()` uses per-model daily count
+  - `get_remaining_daily()` returns remaining for current model
+  - `get_status()` includes `model` and `daily_by_model` fields
+
+- **`switch_model(model, limits)`** method:
+  - Changes active model and applies new limits
+  - RPM sliding window shared (per-minute is global)
+  - Daily limits tracked separately per model
+
+### Default Model Limits (`summarize_links/config.py`)
+
+Added `DEFAULT_MODEL_LIMITS` with actual API limits:
+| Model | RPM | TPM | Daily |
+|-------|-----|-----|-------|
+| gemini-2.5-flash | 10 | 250,000 | 500 |
+| gemini-2.5-pro | 5 | 250,000 | 25 |
+| gemini-2.0-flash | 10 | 250,000 | 500 |
+| gemini-1.5-flash | 15 | 1,000,000 | 1,500 |
+| gemini-1.5-pro | 2 | 32,000 | 50 |
+
+Added `FALLBACK_MODEL_LIMITS` for unknown models (conservative):
+- RPM: 2, TPM: 32,000, Daily: 20
+
+Added `get_model_rate_limits(model, yaml_model_limits)` function:
+- Checks YAML config first (for custom overrides)
+- Falls back to `DEFAULT_MODEL_LIMITS`
+- Falls back to `FALLBACK_MODEL_LIMITS` for unknown models
+- Returns `ModelRateLimits` instance
+
+### YAML Configuration Support (`summarize_links/config.py`)
+
+Added `model_limits` field to `Config` dataclass for custom per-model limits:
+
+```yaml
+# .summarizer-config.yaml
+model_limits:
+  gemini-2.5-flash:
+    rpm_limit: 20
+    tpm_limit: 500000
+    daily_limit: 1000
+  my-custom-model:
+    rpm_limit: 5
+    tpm_limit: 100000
+    daily_limit: 50
+```
+
+### Client Integration (`summarize_links/gemini_client.py`)
+
+- **`GeminiClient`** updated:
+  - Accepts `model_limits: ModelRateLimits` parameter
+  - Accepts `yaml_model_limits: dict` parameter for config override
+  - Creates model-specific `RateLimiter` instance
+  - Falls back to `get_model_rate_limits()` if no explicit limits
+
+- **`create_client()`** factory updated:
+  - Accepts and passes through `model_limits` and `yaml_model_limits`
+
+### Persistent State Format
+
+Updated `.summarizer-rate-limit.json`:
+```json
+{
+  "date": "2025-12-18",
+  "daily_requests": 18,
+  "daily_requests_by_model": {
+    "gemini-2.5-flash": 15,
+    "gemini-2.5-pro": 3
+  }
+}
+```
+
+### Backward Compatibility
+
+- Old state files without `daily_requests_by_model` work correctly
+- Legacy `daily_requests` field maintained for total count
+- Individual `rpm_limit/tpm_limit/daily_limit` parameters still work
+
+### Tests Added
+
+**`tests/test_rate_limiter.py`**:
+- `TestModelRateLimits` (3 tests): Safety margin, minimum values, immutability
+- `TestRateLimitState` expanded (6 tests): Per-model tracking, backward compat
+- `TestRateLimiter` updated (12 tests): Safety margin, per-model daily
+- `TestModelSwitching` (4 tests): Model switching, RPM preservation, daily tracking
+- `TestPersistentState` expanded (6 tests): Per-model persistence, old format compat
+- `TestGlobalRateLimiter` expanded (4 tests): Model and limit parameters
+
+**`tests/test_config.py`**:
+- `TestGetModelRateLimits` (5 tests): Known models, unknown, YAML override
+- `TestModelLimitsConfig` (3 tests): YAML loading, integration
+
+**`tests/test_gemini.py`**:
+- Updated `mock_rate_limiter` fixture to use `ModelRateLimits`
+
+**Tests:** All 395 tests pass
+
+**Safety Margin Benefits:**
+- 10 RPM limit → 9 effective RPM
+- 500 daily → 450 effective daily
+- Provides buffer to avoid hitting hard API limits
+- Reduces 429 rate limit errors
+
+**Example Usage:**
+```bash
+# Using gemini-2.5-flash (effective: 9 RPM, 450 daily)
+summarize-links --model gemini-2.5-flash from-note
+
+# Using gemini-2.5-pro (effective: 4 RPM, 22 daily)
+summarize-links --model gemini-2.5-pro from-note
+
+# Check status (shows per-model usage)
+summarize-links status
+```

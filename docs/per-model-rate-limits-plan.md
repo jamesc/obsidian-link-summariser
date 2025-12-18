@@ -2,7 +2,7 @@
 
 **Created**: 2025-12-18
 **Branch**: `feature/per-model-rate-limits`
-**Status**: Planned
+**Status**: ✅ Completed
 
 ## Overview
 
@@ -123,31 +123,31 @@ Updated `.summarizer-rate-limit.json`:
 
 ## Implementation Steps
 
-1. [ ] Update `rate_limiter.py`:
+1. [x] Update `rate_limiter.py`:
    - Add `ModelRateLimits` dataclass
    - Add `SAFETY_MARGIN = 0.9` constant
    - Update `RateLimitState` for per-model tracking
    - Update `RateLimiter` to accept model and apply safety margin
    - Add `switch_model()` method
 
-2. [ ] Update `config.py`:
+2. [x] Update `config.py`:
    - Add `DEFAULT_MODEL_LIMITS` dictionary
    - Add `get_model_rate_limits()` function
    - Support model limits from YAML config
 
-3. [ ] Update `gemini_client.py`:
+3. [x] Update `gemini_client.py`:
    - Pass model to rate limiter initialization
    - Update client to use model-specific limits
 
-4. [ ] Update tests:
+4. [x] Update tests:
    - Test per-model daily limit tracking
    - Test safety margin application
    - Test model switching
    - Test backward compatibility with old state files
 
-5. [ ] Run tests and validate
+5. [x] Run tests and validate
 
-6. [ ] Document changes in `tasks.md`
+6. [x] Document changes in `tasks.md`
 
 ## Safety Margin Details
 
@@ -164,9 +164,9 @@ The 10% safety margin means:
 
 ## Success Criteria
 
-- [ ] Per-model daily limits work correctly
-- [ ] Safety margin applied to all limits (90% of actual)
-- [ ] Model switching updates active limits
-- [ ] State persisted and loaded correctly per-model
-- [ ] All existing tests pass
-- [ ] New tests for per-model functionality pass
+- [x] Per-model daily limits work correctly
+- [x] Safety margin applied to all limits (90% of actual)
+- [x] Model switching updates active limits
+- [x] State persisted and loaded correctly per-model
+- [x] All existing tests pass
+- [x] New tests for per-model functionality pass
