@@ -202,9 +202,7 @@ def validate_url(url: str) -> None:
     # Check scheme
     scheme = parsed.scheme.lower()
     if not scheme:
-        raise URLValidationError(
-            f"URL has no scheme (expected http or https): {url[:100]}"
-        )
+        raise URLValidationError(f"URL has no scheme (expected http or https): {url[:100]}")
     if scheme not in ALLOWED_SCHEMES:
         raise URLValidationError(
             f"Invalid URL scheme '{scheme}' (only http and https allowed): {url[:100]}"

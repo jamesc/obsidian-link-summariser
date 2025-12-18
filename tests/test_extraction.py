@@ -2,6 +2,7 @@
 
 import pytest
 from bs4 import BeautifulSoup
+from pytest_mock import MockerFixture
 
 from summarize_links.exceptions import ContentExtractionError, URLValidationError
 from summarize_links.extract import (
@@ -582,7 +583,7 @@ class TestExtractPageMetadata:
 class TestFetchContentRetry:
     """Tests for fetch_content retry behavior."""
 
-    def test_retry_on_connection_error(self, mocker: "pytest.MockerFixture") -> None:
+    def test_retry_on_connection_error(self, mocker: MockerFixture) -> None:
         """Should retry on connection errors."""
         import requests
 
@@ -602,15 +603,13 @@ class TestFetchContentRetry:
             mock_response,
         ]
 
-        mocker.patch(
-            "summarize_links.extract._create_session", return_value=mock_session
-        )
+        mocker.patch("summarize_links.extract._create_session", return_value=mock_session)
 
         content, content_type = fetch_content("https://example.com")
         assert content == "<html><body>Success</body></html>"
         assert mock_session.get.call_count == 3
 
-    def test_no_retry_on_client_error(self, mocker: "pytest.MockerFixture") -> None:
+    def test_no_retry_on_client_error(self, mocker: MockerFixture) -> None:
         """Should NOT retry on 4xx client errors."""
         import requests
 
@@ -626,9 +625,7 @@ class TestFetchContentRetry:
 
         mock_session.get.return_value = mock_response
 
-        mocker.patch(
-            "summarize_links.extract._create_session", return_value=mock_session
-        )
+        mocker.patch("summarize_links.extract._create_session", return_value=mock_session)
 
         with pytest.raises(ContentFetchError) as exc_info:
             fetch_content("https://example.com/missing")
@@ -637,7 +634,7 @@ class TestFetchContentRetry:
         # Should only try once - no retries for 4xx
         assert mock_session.get.call_count == 1
 
-    def test_retry_on_server_error(self, mocker: "pytest.MockerFixture") -> None:
+    def test_retry_on_server_error(self, mocker: MockerFixture) -> None:
         """Should retry on 5xx server errors."""
         from summarize_links.extract import fetch_content
 
@@ -653,15 +650,13 @@ class TestFetchContentRetry:
         # First call returns 500, second succeeds
         mock_session.get.side_effect = [mock_response_500, mock_response_ok]
 
-        mocker.patch(
-            "summarize_links.extract._create_session", return_value=mock_session
-        )
+        mocker.patch("summarize_links.extract._create_session", return_value=mock_session)
 
         content, content_type = fetch_content("https://example.com")
         assert content == "<html><body>Success</body></html>"
         assert mock_session.get.call_count == 2
 
-    def test_exhausted_retries_raises_error(self, mocker: "pytest.MockerFixture") -> None:
+    def test_exhausted_retries_raises_error(self, mocker: MockerFixture) -> None:
         """Should raise ContentFetchError after all retries exhausted."""
         import requests
 
@@ -671,9 +666,7 @@ class TestFetchContentRetry:
         mock_session = mocker.MagicMock()
         mock_session.get.side_effect = requests.exceptions.ConnectionError("Network down")
 
-        mocker.patch(
-            "summarize_links.extract._create_session", return_value=mock_session
-        )
+        mocker.patch("summarize_links.extract._create_session", return_value=mock_session)
 
         with pytest.raises(ContentFetchError) as exc_info:
             fetch_content("https://example.com")

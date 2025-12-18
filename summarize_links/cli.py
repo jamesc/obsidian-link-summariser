@@ -73,7 +73,7 @@ def _handle_shutdown(signum: int, frame: object) -> None:
     _print("\n[yellow]⚠ Shutdown requested, finishing current URL...[/]")
 
 
-def _print(message: Any = "", style: str | None = None, **kwargs: object) -> None:
+def _print(message: Any = "", style: str | None = None, **kwargs: Any) -> None:
     """
     Print to console if not in quiet mode.
 
@@ -97,6 +97,7 @@ def _print_error(message: str) -> None:
         message: Error message to print (Rich markup supported).
     """
     console.print(message)
+
 
 # Exit codes
 EXIT_SUCCESS = 0
@@ -481,9 +482,7 @@ def cmd_from_note_all(config: Config) -> int:
     notes_with_urls = list(reversed(notes_with_urls))
 
     total_urls = sum(count for _, count in notes_with_urls)
-    _print(
-        f"[green]Found {len(notes_with_urls)} daily notes with {total_urls} total URLs[/]"
-    )
+    _print(f"[green]Found {len(notes_with_urls)} daily notes with {total_urls} total URLs[/]")
 
     # Track overall progress
     processed_count = 0
@@ -715,9 +714,7 @@ def _process_urls_with_metadata(
     original_handler = signal.signal(signal.SIGINT, _handle_shutdown)
 
     try:
-        return _process_urls_batch(
-            url_contexts, config, daily_note_filename, source_date
-        )
+        return _process_urls_batch(url_contexts, config, daily_note_filename, source_date)
     finally:
         # Restore original signal handler
         signal.signal(signal.SIGINT, original_handler)
@@ -794,9 +791,7 @@ def _process_urls_batch(
     # Only if we have a source note and are not in dry-run mode
     if daily_note_filename and urls_to_delete and not config.dry_run:
         assert config.vault_path is not None
-        _print(
-            f"[cyan]Cleaning up {len(urls_to_delete)} processed URLs from daily note...[/]"
-        )
+        _print(f"[cyan]Cleaning up {len(urls_to_delete)} processed URLs from daily note...[/]")
         for url in urls_to_delete:
             try:
                 removed = remove_url_line_from_note(
