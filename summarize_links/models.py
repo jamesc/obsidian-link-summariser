@@ -7,6 +7,8 @@ components: URL extraction, web scraping, AI summarization, and note writing.
 
 from dataclasses import dataclass, field
 
+from summarize_links.config import DEFAULT_MAX_TAGS
+
 
 @dataclass
 class UrlWithContext:
@@ -134,7 +136,7 @@ def merge_tags(
     article_tags: list[str],
     ai_tags: list[str],
     default_tags: list[str] | None = None,
-    max_tags: int = 10,
+    max_tags: int = DEFAULT_MAX_TAGS,
 ) -> list[str]:
     """
     Merge tags from multiple sources with deduplication.

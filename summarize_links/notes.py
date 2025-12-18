@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-from summarize_links.config import MAX_SLUG_LENGTH
+from summarize_links.config import DEFAULT_MAX_TAGS, MAX_SLUG_LENGTH
 from summarize_links.exceptions import NoteReadError, NoteWriteError, URLExtractionError
 from summarize_links.models import PageMetadata, SummaryResult, UrlWithContext, merge_tags
 
@@ -603,7 +603,7 @@ def build_frontmatter(
     source_note: str | None = None,
     status: str = "success",
     default_tags: list[str] | None = None,
-    max_tags: int = 10,
+    max_tags: int = DEFAULT_MAX_TAGS,
 ) -> str:
     """
     Build YAML frontmatter for a summary note.
@@ -774,7 +774,7 @@ def write_summary_note_with_metadata(
     source_note: str | None = None,
     overwrite: bool = False,
     default_tags: list[str] | None = None,
-    max_tags: int = 10,
+    max_tags: int = DEFAULT_MAX_TAGS,
     status: str = "success",
 ) -> Path:
     """
