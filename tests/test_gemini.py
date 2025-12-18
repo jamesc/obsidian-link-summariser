@@ -657,3 +657,168 @@ class TestMalformedJsonExtraction:
         assert isinstance(result, SummaryResult)
         # Should successfully parse or extract something meaningful
         assert len(result.content) > 10
+
+
+class TestRateLimitWaitCalculation:
+    """Tests for rate limit wait time calculation."""
+
+    @pytest.fixture(autouse=True)
+    def setup_rate_limiter(self, mock_rate_limiter: RateLimiter) -> None:
+        """Inject mock rate limiter for all tests in this class."""
+        self._rate_limiter = mock_rate_limiter
+
+    def test_extracts_retry_after_from_error_message(self) -> None:
+        """Should extract Retry-After value from error message."""
+        from summarize_links.gemini_client import GeminiClient
+
+        client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
+
+        # Simulate an error message containing retry delay
+        error = google_exceptions.ResourceExhausted(  # type: ignore[no-untyped-call]
+            "Resource exhausted. Retry after 30 seconds."
+        )
+
+        wait_time = client._calculate_rate_limit_wait(0, error)  # noqa: SLF001
+
+        # Should respect the retry-after with a small buffer
+        assert wait_time >= 30
+        assert wait_time <= 35  # 30 + 1s buffer + some tolerance
+
+    def test_respects_minimum_rate_limit_wait(self) -> None:
+        """Should enforce minimum wait time for rate limits."""
+        from summarize_links.gemini_client import MIN_RATE_LIMIT_WAIT, GeminiClient
+
+        client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
+
+        # Error without explicit retry-after
+        error = google_exceptions.ResourceExhausted("Rate limit exceeded")  # type: ignore[no-untyped-call]
+
+        wait_time = client._calculate_rate_limit_wait(0, error)  # noqa: SLF001
+
+        # Should be at least the minimum
+        assert wait_time >= MIN_RATE_LIMIT_WAIT
+
+    def test_caps_wait_at_max_delay(self) -> None:
+        """Should cap wait time at maximum delay."""
+        from summarize_links.gemini_client import MAX_RETRY_DELAY, GeminiClient
+
+        client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
+
+        # Simulate very long retry-after
+        error = google_exceptions.ResourceExhausted(  # type: ignore[no-untyped-call]
+            "Retry after 999999 seconds"
+        )
+
+        wait_time = client._calculate_rate_limit_wait(0, error)  # noqa: SLF001
+
+        # Should be capped at max
+        assert wait_time <= MAX_RETRY_DELAY
+
+
+class TestTokenUsageExtraction:
+    """Tests for token usage extraction from API responses."""
+
+    @pytest.fixture(autouse=True)
+    def setup_rate_limiter(self, mock_rate_limiter: RateLimiter) -> None:
+        """Inject mock rate limiter for all tests in this class."""
+        self._rate_limiter = mock_rate_limiter
+
+    @patch("summarize_links.gemini_client.genai")
+    def test_uses_actual_token_count_from_response(self, mock_genai: MagicMock) -> None:
+        """Should use actual token count when available in response."""
+        mock_model = MagicMock()
+        mock_response = MagicMock()
+        mock_response.parts = [MagicMock()]
+        mock_response.text = "Summary text"
+
+        # Add usage metadata
+        mock_usage = MagicMock()
+        mock_usage.total_token_count = 500
+        mock_response.usage_metadata = mock_usage
+
+        mock_model.generate_content.return_value = mock_response
+        mock_genai.GenerativeModel.return_value = mock_model
+
+        client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
+        client.summarize("Content", "https://example.com")
+
+        # Rate limiter should have recorded 500 tokens
+        status = self._rate_limiter.get_status()
+        # The token count should reflect the actual usage
+        assert status["tpm"]["current"] >= 500
+
+    @patch("summarize_links.gemini_client.genai")
+    def test_falls_back_to_estimate_when_metadata_unavailable(
+        self, mock_genai: MagicMock
+    ) -> None:
+        """Should fall back to estimate when usage_metadata is None."""
+        mock_model = MagicMock()
+        mock_response = MagicMock()
+        mock_response.parts = [MagicMock()]
+        mock_response.text = "Summary text"
+        mock_response.usage_metadata = None  # No metadata
+
+        mock_model.generate_content.return_value = mock_response
+        mock_genai.GenerativeModel.return_value = mock_model
+
+        client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
+
+        # Should not raise
+        result = client.summarize("Short content", "https://example.com")
+
+        assert result == "Summary text"
+
+
+class TestRetryOnGenericAPIError:
+    """Tests for retry behavior on generic API errors."""
+
+    @pytest.fixture(autouse=True)
+    def setup_rate_limiter(self, mock_rate_limiter: RateLimiter) -> None:
+        """Inject mock rate limiter for all tests in this class."""
+        self._rate_limiter = mock_rate_limiter
+
+    @patch("summarize_links.gemini_client.genai")
+    def test_retry_on_generic_api_error(self, mock_genai: MagicMock) -> None:
+        """Should retry on generic GoogleAPICallError."""
+        mock_model = MagicMock()
+        mock_response = MagicMock()
+        mock_response.parts = [MagicMock()]
+        mock_response.text = "Success after retry"
+
+        # First call fails with generic error, second succeeds
+        mock_model.generate_content.side_effect = [
+            google_exceptions.GoogleAPICallError("Transient error"),  # type: ignore[no-untyped-call]
+            mock_response,
+        ]
+        mock_genai.GenerativeModel.return_value = mock_model
+
+        client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
+
+        with patch("summarize_links.gemini_client.time.sleep"):
+            result = client.summarize("Content", "https://example.com")
+
+        assert result == "Success after retry"
+        assert mock_model.generate_content.call_count == 2
+
+    @patch("summarize_links.gemini_client.genai")
+    def test_raises_after_all_retries_exhausted_generic_error(
+        self, mock_genai: MagicMock
+    ) -> None:
+        """Should raise GeminiAPIError after retries exhausted for generic errors."""
+        from summarize_links.gemini_client import MAX_RETRIES
+
+        mock_model = MagicMock()
+        mock_model.generate_content.side_effect = google_exceptions.GoogleAPICallError(  # type: ignore[no-untyped-call]
+            "Persistent error"
+        )
+        mock_genai.GenerativeModel.return_value = mock_model
+
+        client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
+
+        with (
+            patch("summarize_links.gemini_client.time.sleep"),
+            pytest.raises(GeminiAPIError, match="API error after retries"),
+        ):
+            client.summarize("Content", "https://example.com")
+
+        assert mock_model.generate_content.call_count == MAX_RETRIES
