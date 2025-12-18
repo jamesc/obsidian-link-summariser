@@ -6,31 +6,31 @@ This document outlines technical debt and code duplication identified in the cod
 
 ## Summary
 
-| Priority | Issue | Effort | Impact |
-|----------|-------|--------|--------|
-| 🔴 High | Duplicate `_process_url` and `_process_url_with_metadata` functions | Medium | High |
-| 🔴 High | Duplicate `_process_urls` and `_process_urls_with_metadata` functions | Medium | High |
-| 🟡 Medium | Duplicate `mock_vault` fixture in test_cli.py | Low | Medium |
-| 🟡 Medium | Repeated error handling pattern in cli.py | Medium | Medium |
-| 🟡 Medium | Inconsistent function signatures for writing notes | Low | Medium |
-| � Medium | Global singleton state in rate_limiter.py | Medium | Medium |
-| 🟡 Medium | No retry strategy beyond Gemini retries | Medium | Medium |
-| 🟡 Medium | Inconsistent logging patterns | Medium | Medium |
-| 🟢 Low | Unused `_process_urls` function | Low | Low |
-| 🟢 Low | Duplicate import patterns | Low | Low |
-| 🟢 Low | Hardcoded strings in prompts | Low | Low |
-| 🟢 Low | Magic numbers scattered in code | Low | Low |
-| 🟢 Low | Missing input validation for URLs | Low | Medium |
-| 🟢 Low | No graceful shutdown handling | Low | Low |
-| 🟢 Low | Missing py.typed marker | Low | Low |
-| 🟢 Low | Documentation gaps in modules | Low | Low |
-| 🟢 Low | Potential race condition in rate limiter | Low | Low |
+| Priority | Issue | Effort | Impact | Status |
+|----------|-------|--------|--------|--------|
+| 🔴 High | Duplicate `_process_url` and `_process_url_with_metadata` functions | Medium | High | ✅ Done |
+| 🔴 High | Duplicate `_process_urls` and `_process_urls_with_metadata` functions | Medium | High | ✅ Done |
+| 🟡 Medium | Duplicate `mock_vault` fixture in test_cli.py | Low | Medium | ✅ Done |
+| 🟡 Medium | Repeated error handling pattern in cli.py | Medium | Medium | N/A (resolved by #1) |
+| 🟡 Medium | Inconsistent function signatures for writing notes | Low | Medium | |
+| 🟡 Medium | Global singleton state in rate_limiter.py | Medium | Medium | |
+| 🟡 Medium | No retry strategy beyond Gemini retries | Medium | Medium | |
+| 🟡 Medium | Inconsistent logging patterns | Medium | Medium | |
+| 🟢 Low | Unused `_process_urls` function | Low | Low | ✅ Done |
+| 🟢 Low | Duplicate import patterns | Low | Low | ✅ Done |
+| 🟢 Low | Hardcoded strings in prompts | Low | Low | |
+| 🟢 Low | Magic numbers scattered in code | Low | Low | ✅ Done |
+| 🟢 Low | Missing input validation for URLs | Low | Medium | |
+| 🟢 Low | No graceful shutdown handling | Low | Low | |
+| 🟢 Low | Missing py.typed marker | Low | Low | ✅ Done |
+| 🟢 Low | Documentation gaps in modules | Low | Low | ✅ (already had) |
+| 🟢 Low | Potential race condition in rate limiter | Low | Low | |
 
 ---
 
 ## 🔴 High Priority Issues
 
-### 1. Duplicate `_process_url` and `_process_url_with_metadata` Functions
+### 1. Duplicate `_process_url` and `_process_url_with_metadata` Functions ✅ COMPLETED
 
 **Location:** [cli.py](../summarize_links/cli.py#L77-L230)
 
@@ -59,7 +59,7 @@ Both functions:
 
 ---
 
-### 2. Duplicate `_process_urls` and `_process_urls_with_metadata` Functions
+### 2. Duplicate `_process_urls` and `_process_urls_with_metadata` Functions ✅ COMPLETED
 
 **Location:** [cli.py](../summarize_links/cli.py#L487-L595)
 
@@ -90,11 +90,11 @@ Both have identical:
 
 ## 🟡 Medium Priority Issues
 
-### 3. Duplicate `mock_vault` Fixture in test_cli.py
+### 3. Duplicate `mock_vault` Fixture in test_cli.py ✅ COMPLETED
 
 **Location:**
 - [conftest.py](../tests/conftest.py#L47-L67) - Main fixture
-- [test_cli.py](../tests/test_cli.py#L400-L405) - Duplicate fixture in TestUrlLineDeletion
+- [test_cli.py](../tests/test_cli.py#L400-L405) - Duplicate fixture in TestUrlLineDeletion (REMOVED)
 
 **Problem:**
 `TestUrlLineDeletion` defines its own `mock_vault` fixture that shadows the global one from conftest.py. The local version is simpler (just vault + Summaries folder) while the global one has more structure.
@@ -191,7 +191,7 @@ def write_summary_note_with_metadata(
 
 ## 🟢 Low Priority Issues
 
-### 6. Unused `_process_urls` Function
+### 6. Unused `_process_urls` Function ✅ COMPLETED
 
 **Location:** [cli.py](../summarize_links/cli.py#L487-L532)
 
@@ -206,7 +206,7 @@ Part of issue #2 - remove entirely.
 
 ---
 
-### 7. Duplicate Import of `re` Module
+### 7. Duplicate Import of `re` Module ✅ COMPLETED
 
 **Location:** Multiple files import `re` but some imports could be consolidated.
 
@@ -375,7 +375,7 @@ logger.debug("Using parser: %s", parser_name)
 
 ---
 
-### 12. Magic Numbers Scattered in Code
+### 12. Magic Numbers Scattered in Code ✅ COMPLETED
 
 **Location:** Multiple files
 
@@ -485,7 +485,7 @@ signal.signal(signal.SIGINT, handle_shutdown)
 
 ---
 
-### 15. Missing py.typed Marker
+### 15. Missing py.typed Marker ✅ COMPLETED
 
 **Location:** [summarize_links/](../summarize_links/)
 
@@ -592,7 +592,7 @@ def _save_state(self) -> None:
 
 ## Deep Code Analysis - Additional Issues
 
-### 18. Mutable Default Arguments in Dataclasses
+### 18. Mutable Default Arguments in Dataclasses ✅ COMPLETED
 
 **Location:** [rate_limiter.py](../summarize_links/rate_limiter.py#L63-L71)
 
@@ -867,7 +867,7 @@ raise GeminiAPIError("Response blocked or empty")
 
 ---
 
-### 26. Config Validation Happens Too Late
+### 26. Config Validation Happens Too Late ✅ COMPLETED
 
 **Location:** [config.py](../summarize_links/config.py#L98-L118)
 
