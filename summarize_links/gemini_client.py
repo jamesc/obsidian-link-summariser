@@ -651,7 +651,14 @@ class GeminiClient:
                     logger.error("Invalid request to Gemini API: %s", e)
                     raise GeminiAPIError(f"Invalid request: {e}") from e
 
-                elif "permission" in error_str or "403" in str(e) or "401" in str(e):
+                elif (
+                    "permission denied" in error_str
+                    or "access denied" in error_str
+                    or "unauthorized" in error_str
+                    or "forbidden" in error_str
+                    or "403" in str(e)
+                    or "401" in str(e)
+                ):
                     # Auth error - don't retry
                     logger.error("Permission denied for Gemini API: %s", e)
                     raise GeminiAPIError(f"Permission denied: {e}") from e
