@@ -14,8 +14,8 @@ import time
 from pathlib import Path
 from typing import Any, Protocol
 
-import google.generativeai as genai
-from google.api_core import exceptions as google_exceptions
+from google import genai
+from google.genai import errors, types
 
 from summarize_links.config import DEFAULT_MODEL, get_model_rate_limits
 from summarize_links.exceptions import GeminiAPIError, RateLimitError
@@ -430,7 +430,7 @@ class GeminiClient:
         """
         self._api_key = api_key
         self._model_name = model
-        self._model: Any = None
+        self._client: Any = None
 
         # Get model-specific rate limits
         if model_limits is not None:
@@ -464,21 +464,17 @@ class GeminiClient:
             self._rate_limiter.daily_limit,
         )
 
-    def _get_model(self) -> Any:
+    def _get_client(self) -> Any:
         """
-        Get or create the generative model instance.
+        Get or create the client instance.
 
         Returns:
-            Configured GenerativeModel instance.
+            Configured Client instance.
         """
-        if self._model is None:
-            genai.configure(api_key=self._api_key)  # type: ignore[attr-defined]
-            self._model = genai.GenerativeModel(  # type: ignore[attr-defined]
-                model_name=self._model_name,
-                system_instruction=SUMMARY_SYSTEM_PROMPT,
-            )
-            logger.debug("Created GenerativeModel instance")
-        return self._model
+        if self._client is None:
+            self._client = genai.Client(api_key=self._api_key)
+            logger.debug("Created Client instance")
+        return self._client
 
     def _calculate_rate_limit_wait(self, attempt: int, error: Exception) -> float:
         """
@@ -491,7 +487,7 @@ class GeminiClient:
 
         Args:
             attempt: Current retry attempt (0-indexed).
-            error: The ResourceExhausted exception from the API.
+            error: The rate limit exception from the API.
 
         Returns:
             Number of seconds to wait before retrying.
@@ -560,7 +556,7 @@ class GeminiClient:
             GeminiAPIError: When API returns an error.
         """
         prompt = _build_prompt(content, url, title)
-        model = self._get_model()
+        client = self._get_client()
 
         # Estimate tokens for rate limiting
         estimated_tokens = self._rate_limiter.estimate_tokens(content + prompt)
@@ -577,7 +573,13 @@ class GeminiClient:
                     attempt + 1,
                     MAX_RETRIES,
                 )
-                response = model.generate_content(prompt)
+                response = client.models.generate_content(
+                    model=self._model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SUMMARY_SYSTEM_PROMPT,
+                    ),
+                )
 
                 # Check for blocked content
                 if not response.parts:
@@ -604,63 +606,73 @@ class GeminiClient:
                 logger.info("Successfully generated summary (%d chars)", len(summary))
                 return summary
 
-            except google_exceptions.ResourceExhausted as e:
-                # Rate limit from API - calculate smart wait time
-                last_exception = e
-                wait_time = self._calculate_rate_limit_wait(attempt, e)
+            except errors.ClientError as e:
+                # Check for specific error types based on error message/status
+                error_str = str(e).lower()
 
-                logger.warning(
-                    "API rate limited (attempt %d/%d). Waiting %.1fs before retry...",
-                    attempt + 1,
-                    MAX_RETRIES,
-                    wait_time,
-                )
+                # Check if it's a rate limit error (429, quota, rate limit)
+                if "429" in str(e) or "quota" in error_str or "rate" in error_str:
+                    # Rate limit from API - calculate smart wait time
+                    last_exception = e
+                    wait_time = self._calculate_rate_limit_wait(attempt, e)
 
-                # Show rate limit status for debugging
-                status = self._rate_limiter.get_status()
-                logger.debug(
-                    "Rate limit status: RPM=%d/%d, TPM=%d/%d, Daily=%d/%d",
-                    status["rpm"]["current"],
-                    status["rpm"]["limit"],
-                    status["tpm"]["current"],
-                    status["tpm"]["limit"],
-                    status["daily"]["current"],
-                    status["daily"]["limit"],
-                )
+                    logger.warning(
+                        "API rate limited (attempt %d/%d). Waiting %.1fs before retry...",
+                        attempt + 1,
+                        MAX_RETRIES,
+                        wait_time,
+                    )
 
-                time.sleep(wait_time)
+                    # Show rate limit status for debugging
+                    status = self._rate_limiter.get_status()
+                    logger.debug(
+                        "Rate limit status: RPM=%d/%d, TPM=%d/%d, Daily=%d/%d",
+                        status["rpm"]["current"],
+                        status["rpm"]["limit"],
+                        status["tpm"]["current"],
+                        status["tpm"]["limit"],
+                        status["daily"]["current"],
+                        status["daily"]["limit"],
+                    )
 
-                # After waiting, also check via rate limiter to be safe
-                self._rate_limiter.wait_if_needed(estimated_tokens)
+                    time.sleep(wait_time)
 
-            except google_exceptions.InvalidArgument as e:
-                # Bad request - don't retry
-                logger.error("Invalid request to Gemini API: %s", e)
-                raise GeminiAPIError(f"Invalid request: {e}") from e
+                    # After waiting, also check via rate limiter to be safe
+                    self._rate_limiter.wait_if_needed(estimated_tokens)
 
-            except google_exceptions.PermissionDenied as e:
-                # Auth error - don't retry
-                logger.error("Permission denied for Gemini API: %s", e)
-                raise GeminiAPIError(f"Permission denied: {e}") from e
+                elif "invalid" in error_str or "400" in str(e):
+                    # Bad request - don't retry
+                    logger.error("Invalid request to Gemini API: %s", e)
+                    raise GeminiAPIError(f"Invalid request: {e}") from e
 
-            except google_exceptions.GoogleAPICallError as e:
-                # Other API errors - retry with exponential backoff
-                last_exception = e
-                wait_time = BASE_RETRY_DELAY * (2**attempt)
-                wait_time = min(wait_time, MAX_RETRY_DELAY)
+                elif "permission" in error_str or "403" in str(e) or "401" in str(e):
+                    # Auth error - don't retry
+                    logger.error("Permission denied for Gemini API: %s", e)
+                    raise GeminiAPIError(f"Permission denied: {e}") from e
 
-                logger.warning(
-                    "API error (attempt %d/%d): %s. Retrying in %.1fs...",
-                    attempt + 1,
-                    MAX_RETRIES,
-                    e,
-                    wait_time,
-                )
-                time.sleep(wait_time)
+                else:
+                    # Other API errors - retry with exponential backoff
+                    last_exception = e
+                    wait_time = BASE_RETRY_DELAY * (2**attempt)
+                    wait_time = min(wait_time, MAX_RETRY_DELAY)
+
+                    logger.warning(
+                        "API error (attempt %d/%d): %s. Retrying in %.1fs...",
+                        attempt + 1,
+                        MAX_RETRIES,
+                        e,
+                        wait_time,
+                    )
+                    time.sleep(wait_time)
 
         # All retries exhausted
         logger.error("All retries exhausted for Gemini API call")
-        if isinstance(last_exception, google_exceptions.ResourceExhausted):
+        # Check if last exception was rate limit related
+        if last_exception and (
+            "429" in str(last_exception)
+            or "quota" in str(last_exception).lower()
+            or "rate" in str(last_exception).lower()
+        ):
             raise RateLimitError("Rate limit exceeded after retries") from last_exception
         raise GeminiAPIError(f"API error after retries: {last_exception}") from last_exception
 

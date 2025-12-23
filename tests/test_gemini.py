@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from google.api_core import exceptions as google_exceptions
+from google.genai import errors
 
 from summarize_links.config import DEFAULT_MODEL
 from summarize_links.exceptions import GeminiAPIError, RateLimitError
@@ -150,15 +150,16 @@ class TestGeminiClient:
         """Inject mock rate limiter for all tests in this class."""
         self._rate_limiter = mock_rate_limiter
 
-    @patch("summarize_links.gemini_client.genai")
-    def test_successful_summarization(self, mock_genai: MagicMock) -> None:
+    @patch("summarize_links.gemini_client.genai.Client")
+    def test_successful_summarization(self, mock_client_class: MagicMock) -> None:
         """Should return summary on successful API call."""
-        mock_model = MagicMock()
         mock_response = MagicMock()
         mock_response.parts = [MagicMock()]
         mock_response.text = "Generated summary"
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_class.return_value = mock_client
 
         client = GeminiClient(
             api_key="test-key", model="gemini-2.0-flash", rate_limiter=self._rate_limiter
@@ -166,24 +167,27 @@ class TestGeminiClient:
         result = client.summarize("Test content", "https://example.com", "Title")
 
         assert result == "Generated summary"
-        mock_genai.configure.assert_called_once_with(api_key="test-key")
-        mock_model.generate_content.assert_called_once()
+        mock_client_class.assert_called_once_with(api_key="test-key")
+        mock_client.models.generate_content.assert_called_once()
 
-    @patch("summarize_links.gemini_client.genai")
-    def test_retry_on_rate_limit(self, mock_genai: MagicMock) -> None:
+    @patch("summarize_links.gemini_client.genai.Client")
+    def test_retry_on_rate_limit(self, mock_client_class: MagicMock) -> None:
         """Should retry on rate limit error."""
-        mock_model = MagicMock()
         mock_response = MagicMock()
         mock_response.parts = [MagicMock()]
         mock_response.text = "Generated summary"
 
         # Fail twice, then succeed
-        mock_model.generate_content.side_effect = [
-            google_exceptions.ResourceExhausted("Rate limit"),  # type: ignore[no-untyped-call]
-            google_exceptions.ResourceExhausted("Rate limit"),  # type: ignore[no-untyped-call]
+        # Create a proper ClientError with required parameters
+        rate_limit_error = errors.ClientError(429, {"error": {"message": "Rate limit exceeded"}})
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = [
+            rate_limit_error,
+            rate_limit_error,
             mock_response,
         ]
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client_class.return_value = mock_client
 
         # Create a mock time that advances when sleep is called
         current_time = [1000.0]  # Use list to allow mutation in nested function
@@ -205,16 +209,16 @@ class TestGeminiClient:
             result = client.summarize("Content", "https://example.com")
 
         assert result == "Generated summary"
-        assert mock_model.generate_content.call_count == 3
+        assert mock_client.models.generate_content.call_count == 3
 
-    @patch("summarize_links.gemini_client.genai")
-    def test_rate_limit_error_after_retries(self, mock_genai: MagicMock) -> None:
+    @patch("summarize_links.gemini_client.genai.Client")
+    def test_rate_limit_error_after_retries(self, mock_client_class: MagicMock) -> None:
         """Should raise RateLimitError after all retries exhausted."""
-        mock_model = MagicMock()
-        mock_model.generate_content.side_effect = google_exceptions.ResourceExhausted(  # type: ignore[no-untyped-call]
-            "Rate limit"
-        )
-        mock_genai.GenerativeModel.return_value = mock_model
+        rate_limit_error = errors.ClientError(429, {"error": {"message": "Rate limit exceeded"}})
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = rate_limit_error
+        mock_client_class.return_value = mock_client
 
         # Create a mock time that advances when sleep is called
         current_time = [1000.0]
@@ -236,14 +240,14 @@ class TestGeminiClient:
         ):
             client.summarize("Content", "https://example.com")
 
-    @patch("summarize_links.gemini_client.genai")
-    def test_invalid_argument_error(self, mock_genai: MagicMock) -> None:
+    @patch("summarize_links.gemini_client.genai.Client")
+    def test_invalid_argument_error(self, mock_client_class: MagicMock) -> None:
         """Should raise GeminiAPIError on invalid argument without retry."""
-        mock_model = MagicMock()
-        mock_model.generate_content.side_effect = google_exceptions.InvalidArgument(  # type: ignore[no-untyped-call]
-            "Bad request"
-        )
-        mock_genai.GenerativeModel.return_value = mock_model
+        invalid_error = errors.ClientError(400, {"error": {"message": "Invalid request"}})
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = invalid_error
+        mock_client_class.return_value = mock_client
 
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
@@ -251,16 +255,16 @@ class TestGeminiClient:
             client.summarize("Content", "https://example.com")
 
         # Should not retry
-        assert mock_model.generate_content.call_count == 1
+        assert mock_client.models.generate_content.call_count == 1
 
-    @patch("summarize_links.gemini_client.genai")
-    def test_permission_denied_error(self, mock_genai: MagicMock) -> None:
+    @patch("summarize_links.gemini_client.genai.Client")
+    def test_permission_denied_error(self, mock_client_class: MagicMock) -> None:
         """Should raise GeminiAPIError on permission denied without retry."""
-        mock_model = MagicMock()
-        mock_model.generate_content.side_effect = google_exceptions.PermissionDenied(  # type: ignore[no-untyped-call]
-            "Access denied"
-        )
-        mock_genai.GenerativeModel.return_value = mock_model
+        permission_error = errors.ClientError(403, {"error": {"message": "Access denied"}})
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = permission_error
+        mock_client_class.return_value = mock_client
 
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
@@ -268,45 +272,47 @@ class TestGeminiClient:
             client.summarize("Content", "https://example.com")
 
         # Should not retry
-        assert mock_model.generate_content.call_count == 1
+        assert mock_client.models.generate_content.call_count == 1
 
-    @patch("summarize_links.gemini_client.genai")
-    def test_empty_response_error(self, mock_genai: MagicMock) -> None:
+    @patch("summarize_links.gemini_client.genai.Client")
+    def test_empty_response_error(self, mock_client_class: MagicMock) -> None:
         """Should raise error when response has no parts."""
-        mock_model = MagicMock()
         mock_response = MagicMock()
         mock_response.parts = []  # Empty - content blocked
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_class.return_value = mock_client
 
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
         with pytest.raises(GeminiAPIError, match="blocked or empty"):
             client.summarize("Content", "https://example.com")
 
-    @patch("summarize_links.gemini_client.genai")
-    def test_model_lazy_initialization(self, mock_genai: MagicMock) -> None:
-        """Should initialize model lazily on first call."""
-        mock_model = MagicMock()
+    @patch("summarize_links.gemini_client.genai.Client")
+    def test_model_lazy_initialization(self, mock_client_class: MagicMock) -> None:
+        """Should initialize client lazily on first call."""
         mock_response = MagicMock()
         mock_response.parts = [MagicMock()]
         mock_response.text = "Summary"
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_class.return_value = mock_client
 
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
-        # No model created yet
-        mock_genai.configure.assert_not_called()
+        # No client created yet
+        mock_client_class.assert_not_called()
 
-        # First call creates model
+        # First call creates client
         client.summarize("Content", "https://example.com")
-        mock_genai.configure.assert_called_once()
-        assert mock_genai.GenerativeModel.call_count == 1
+        mock_client_class.assert_called_once()
+        assert mock_client_class.call_count == 1
 
-        # Second call reuses model
+        # Second call reuses client
         client.summarize("More content", "https://other.com")
-        assert mock_genai.GenerativeModel.call_count == 1
+        assert mock_client_class.call_count == 1
 
 
 class TestCreateClient:
@@ -499,17 +505,18 @@ class TestGeminiClientWithMetadata:
         """Inject mock rate limiter for all tests in this class."""
         self._rate_limiter = mock_rate_limiter
 
-    @patch("summarize_links.gemini_client.genai")
-    def test_parses_json_response(self, mock_genai: MagicMock) -> None:
+    @patch("summarize_links.gemini_client.genai.Client")
+    def test_parses_json_response(self, mock_client_class: MagicMock) -> None:
         """Should parse JSON response into SummaryResult."""
-        mock_model = MagicMock()
         mock_response = MagicMock()
         mock_response.parts = [MagicMock()]
         mock_response.text = (
             '{"summary": "AI Summary", "suggested_tags": ["ai"], "content_type": "article"}'
         )
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_class.return_value = mock_client
 
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
         result = client.summarize_with_metadata("Content", "https://example.com", "Title")
@@ -519,15 +526,16 @@ class TestGeminiClientWithMetadata:
         assert result.suggested_tags == ["ai"]
         assert result.content_type == "article"
 
-    @patch("summarize_links.gemini_client.genai")
-    def test_handles_non_json_response(self, mock_genai: MagicMock) -> None:
+    @patch("summarize_links.gemini_client.genai.Client")
+    def test_handles_non_json_response(self, mock_client_class: MagicMock) -> None:
         """Should handle non-JSON response gracefully."""
-        mock_model = MagicMock()
         mock_response = MagicMock()
         mock_response.parts = [MagicMock()]
         mock_response.text = "Plain text summary without JSON"
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_class.return_value = mock_client
 
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
         result = client.summarize_with_metadata("Content", "https://example.com")
@@ -676,8 +684,8 @@ class TestRateLimitWaitCalculation:
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
         # Simulate an error message containing retry delay
-        error = google_exceptions.ResourceExhausted(  # type: ignore[no-untyped-call]
-            "Resource exhausted. Retry after 30 seconds."
+        error = errors.ClientError(
+            429, {"error": {"message": "Resource exhausted. Retry after 30 seconds."}}
         )
 
         wait_time = client._calculate_rate_limit_wait(0, error)  # noqa: SLF001
@@ -693,7 +701,7 @@ class TestRateLimitWaitCalculation:
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
         # Error without explicit retry-after
-        error = google_exceptions.ResourceExhausted("Rate limit exceeded")  # type: ignore[no-untyped-call]
+        error = errors.ClientError(429, {"error": {"message": "Rate limit exceeded"}})
 
         wait_time = client._calculate_rate_limit_wait(0, error)  # noqa: SLF001
 
@@ -707,8 +715,8 @@ class TestRateLimitWaitCalculation:
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
         # Simulate very long retry-after
-        error = google_exceptions.ResourceExhausted(  # type: ignore[no-untyped-call]
-            "Retry after 999999 seconds"
+        error = errors.ClientError(
+            429, {"error": {"message": "Retry after 999999 seconds"}}
         )
 
         wait_time = client._calculate_rate_limit_wait(0, error)  # noqa: SLF001
@@ -749,17 +757,19 @@ class TestTokenUsageExtraction:
         # The token count should reflect the actual usage
         assert status["tpm"]["current"] >= 500
 
-    @patch("summarize_links.gemini_client.genai")
-    def test_falls_back_to_estimate_when_metadata_unavailable(self, mock_genai: MagicMock) -> None:
+    @patch("summarize_links.gemini_client.genai.Client")
+    def test_falls_back_to_estimate_when_metadata_unavailable(
+        self, mock_client_class: MagicMock
+    ) -> None:
         """Should fall back to estimate when usage_metadata is None."""
-        mock_model = MagicMock()
         mock_response = MagicMock()
         mock_response.parts = [MagicMock()]
         mock_response.text = "Summary text"
         mock_response.usage_metadata = None  # No metadata
 
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_class.return_value = mock_client
 
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
@@ -777,20 +787,22 @@ class TestRetryOnGenericAPIError:
         """Inject mock rate limiter for all tests in this class."""
         self._rate_limiter = mock_rate_limiter
 
-    @patch("summarize_links.gemini_client.genai")
-    def test_retry_on_generic_api_error(self, mock_genai: MagicMock) -> None:
-        """Should retry on generic GoogleAPICallError."""
-        mock_model = MagicMock()
+    @patch("summarize_links.gemini_client.genai.Client")
+    def test_retry_on_generic_api_error(self, mock_client_class: MagicMock) -> None:
+        """Should retry on generic ClientError."""
         mock_response = MagicMock()
         mock_response.parts = [MagicMock()]
         mock_response.text = "Success after retry"
 
         # First call fails with generic error, second succeeds
-        mock_model.generate_content.side_effect = [
-            google_exceptions.GoogleAPICallError("Transient error"),  # type: ignore[no-untyped-call]
+        generic_error = errors.ClientError(500, {"error": {"message": "Transient error"}})
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = [
+            generic_error,
             mock_response,
         ]
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client_class.return_value = mock_client
 
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
@@ -798,18 +810,20 @@ class TestRetryOnGenericAPIError:
             result = client.summarize("Content", "https://example.com")
 
         assert result == "Success after retry"
-        assert mock_model.generate_content.call_count == 2
+        assert mock_client.models.generate_content.call_count == 2
 
-    @patch("summarize_links.gemini_client.genai")
-    def test_raises_after_all_retries_exhausted_generic_error(self, mock_genai: MagicMock) -> None:
+    @patch("summarize_links.gemini_client.genai.Client")
+    def test_raises_after_all_retries_exhausted_generic_error(
+        self, mock_client_class: MagicMock
+    ) -> None:
         """Should raise GeminiAPIError after retries exhausted for generic errors."""
         from summarize_links.gemini_client import MAX_RETRIES
 
-        mock_model = MagicMock()
-        mock_model.generate_content.side_effect = google_exceptions.GoogleAPICallError(  # type: ignore[no-untyped-call]
-            "Persistent error"
-        )
-        mock_genai.GenerativeModel.return_value = mock_model
+        generic_error = errors.ClientError(500, {"error": {"message": "Persistent error"}})
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = generic_error
+        mock_client_class.return_value = mock_client
 
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
@@ -819,7 +833,7 @@ class TestRetryOnGenericAPIError:
         ):
             client.summarize("Content", "https://example.com")
 
-        assert mock_model.generate_content.call_count == MAX_RETRIES
+        assert mock_client.models.generate_content.call_count == MAX_RETRIES
 
 
 class TestGarbledContentDetection:
