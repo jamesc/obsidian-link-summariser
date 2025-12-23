@@ -611,7 +611,11 @@ class GeminiClient:
                 error_str = str(e).lower()
 
                 # Check if it's a rate limit error (429, quota, rate limit)
-                if "429" in str(e) or "quota" in error_str or "rate" in error_str:
+                if (
+                    "429" in str(e)
+                    or "quota" in error_str
+                    or re.search(r"\brate[-_\s]*limit\b", error_str)
+                ):
                     # Rate limit from API - calculate smart wait time
                     last_exception = e
                     wait_time = self._calculate_rate_limit_wait(attempt, e)
