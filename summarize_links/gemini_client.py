@@ -640,7 +640,13 @@ class GeminiClient:
                     # After waiting, also check via rate limiter to be safe
                     self._rate_limiter.wait_if_needed(estimated_tokens)
 
-                elif "invalid" in error_str or "400" in str(e):
+                elif "400" in str(e) or (
+                    "invalid" in error_str
+                    and any(
+                        term in error_str
+                        for term in ("request", "argument", "arguments", "input")
+                    )
+                ):
                     # Bad request - don't retry
                     logger.error("Invalid request to Gemini API: %s", e)
                     raise GeminiAPIError(f"Invalid request: {e}") from e
