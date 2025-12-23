@@ -715,9 +715,7 @@ class TestRateLimitWaitCalculation:
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
         # Simulate very long retry-after
-        error = errors.ClientError(
-            429, {"error": {"message": "Retry after 999999 seconds"}}
-        )
+        error = errors.ClientError(429, {"error": {"message": "Retry after 999999 seconds"}})
 
         wait_time = client._calculate_rate_limit_wait(0, error)  # noqa: SLF001
 
