@@ -36,6 +36,7 @@ __all__ = [
     "write_stub_note",
     "summary_exists",
     "get_summary_filepath",
+    "get_existing_summary_date",
     "scan_summaries",
     # Utilities
     "build_frontmatter",
@@ -584,6 +585,56 @@ def summary_exists(
         pass  # If we can't read it, assume it exists
 
     return True
+
+
+def get_existing_summary_date(
+    vault_path: Path,
+    out_folder: str,
+    url: str,
+) -> datetime | None:
+    """
+    Get the date from an existing summary file by searching for it.
+
+    This searches for existing summary files for the given URL across all dates
+    and returns the date of the first one found. This is used to preserve the
+    original date when re-summarizing.
+
+    Args:
+        vault_path: Path to the Obsidian vault root.
+        out_folder: Folder name for summaries.
+        url: URL to search for.
+
+    Returns:
+        The date of the existing summary if found, None otherwise.
+    """
+    summaries_path = vault_path / out_folder
+
+    if not summaries_path.exists():
+        return None
+
+    # Get the slug for this URL
+    slug = slug_from_url(url)
+
+    # Search for files matching the pattern {date}-{slug}.md
+    pattern = f"*-{slug}.md"
+    matching_files = list(summaries_path.glob(pattern))
+
+    if not matching_files:
+        return None
+
+    # If multiple files found, use the first one (oldest)
+    # Extract date from filename (format: YYYY-MM-DD-{slug}.md)
+    filepath = matching_files[0]
+    filename = filepath.stem  # Remove .md extension
+
+    # Extract date part (first 10 characters: YYYY-MM-DD)
+    date_str = filename[:10]
+
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        logger.warning(f"Could not parse date from filename: {filepath.name}")
+        return None
 
 
 def _escape_yaml_string(value: str) -> str:

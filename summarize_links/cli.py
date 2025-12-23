@@ -35,6 +35,7 @@ from summarize_links.notes import (
     add_summary_link_to_daily_note,
     extract_urls_with_context,
     find_daily_notes_with_urls,
+    get_existing_summary_date,
     read_daily_note,
     remove_url_line_from_note,
     scan_summaries,
@@ -275,10 +276,25 @@ def _process_url_with_metadata(
     url = url_context.url
     slug = slug_from_url(url)
 
+    # Check if summary already exists and get its date if it does
+    # This allows us to preserve the original date when re-summarizing
+    existing_date = get_existing_summary_date(config.vault_path, config.out_folder, url)
+
+    # If an existing summary was found, use its date instead of source_date
+    # This preserves the original date when re-summarizing
+    if existing_date:
+        summary_date = existing_date
+        logger.debug(f"Using existing summary date: {existing_date.strftime('%Y-%m-%d')}")
+    elif source_date:
+        summary_date = source_date
+    else:
+        # No existing date and no source date - use current date
+        summary_date = datetime.now()
+
     # Check if summary already exists (skip check if force is enabled)
     # summary_exists returns False for mocked/error stubs, so they get reprocessed
     existing_summary_complete = summary_exists(
-        config.vault_path, config.out_folder, url, source_date
+        config.vault_path, config.out_folder, url, summary_date
     )
     if not config.force and existing_summary_complete:
         return True, f"Skipped (exists): {slug}", False
@@ -311,6 +327,7 @@ def _process_url_with_metadata(
 
         # Write the summary note with rich frontmatter
         # Use needs_overwrite to ensure mocked/error stubs get replaced
+        # Use summary_date to preserve original date when re-summarizing
         summary_path = write_summary_note_with_metadata(
             vault_path=config.vault_path,
             out_folder=config.out_folder,
@@ -318,7 +335,7 @@ def _process_url_with_metadata(
             summary_result=summary_result,
             page_metadata=page_metadata,
             user_tags=url_context.tags,
-            date=source_date,
+            date=summary_date,
             source_note=daily_note_filename,
             default_tags=config.default_tags,
             overwrite=needs_overwrite,
@@ -356,7 +373,7 @@ def _process_url_with_metadata(
                 out_folder=config.out_folder,
                 url=url,
                 reason=f"Failed to fetch: {e}",
-                date=source_date,
+                date=summary_date,
             )
         return False, f"Fetch error: {url}", False
 
@@ -368,7 +385,7 @@ def _process_url_with_metadata(
                 out_folder=config.out_folder,
                 url=url,
                 reason=f"Failed to extract content: {e}",
-                date=source_date,
+                date=summary_date,
             )
         return False, f"Extraction error: {url}", False
 
@@ -380,7 +397,7 @@ def _process_url_with_metadata(
                 out_folder=config.out_folder,
                 url=url,
                 reason="Rate limited - try again later",
-                date=source_date,
+                date=summary_date,
             )
         return False, f"[Rate limited] {url}", False
 
@@ -392,7 +409,7 @@ def _process_url_with_metadata(
                 out_folder=config.out_folder,
                 url=url,
                 reason=f"API error: {e}",
-                date=source_date,
+                date=summary_date,
             )
         return False, f"API error: {url}", False
 
