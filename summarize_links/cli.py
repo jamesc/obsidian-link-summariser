@@ -37,6 +37,7 @@ from summarize_links.notes import (
     find_daily_notes_with_urls,
     read_daily_note,
     remove_url_line_from_note,
+    scan_summaries,
     slug_from_url,
     summary_exists,
     write_stub_note,
@@ -227,6 +228,13 @@ Examples:
         "status",
         help="Show rate limit status",
         description="Show current Gemini API rate limit usage and remaining quota.",
+    )
+
+    # summaries command
+    subparsers.add_parser(
+        "summaries",
+        help="Report on summary status",
+        description="Scan all summaries and report on their status (success, mocked, errors).",
     )
 
     return parser
@@ -660,6 +668,127 @@ def cmd_status(config: Config) -> int:
     return EXIT_SUCCESS
 
 
+def cmd_summaries(config: Config) -> int:
+    """
+    Report on summary status.
+
+    Scans all summaries and displays statistics including
+    successful, mocked, and error summaries.
+
+    Args:
+        config: Application configuration.
+
+    Returns:
+        Exit code.
+    """
+    # Vault path must be set (validated in load_config)
+    assert config.vault_path is not None
+
+    _print("[bold]Scanning summaries...[/]\n")
+
+    # Scan all summaries
+    stats = scan_summaries(
+        vault_path=config.vault_path,
+        out_folder=config.out_folder,
+    )
+
+    if stats["total"] == 0:
+        _print("[yellow]No summaries found.[/]")
+        _print(f"Summaries folder: {config.vault_path / config.out_folder}")
+        return EXIT_SUCCESS
+
+    # Display overall statistics
+    _print("[bold]Summary Statistics[/]\n")
+
+    summary_table = Table(title="Overall Status")
+    summary_table.add_column("Category", style="cyan")
+    summary_table.add_column("Count", style="white", justify="right")
+    summary_table.add_column("Percentage", style="green", justify="right")
+
+    total = stats["total"]
+    summary_table.add_row(
+        "Total Summaries",
+        str(total),
+        "100%",
+    )
+    summary_table.add_row(
+        "✓ Successful",
+        str(stats["success"]),
+        f"{stats['success'] * 100 // total}%" if total > 0 else "0%",
+    )
+    summary_table.add_row(
+        "⚠ Mocked (needs real API)",
+        str(stats["mocked"]),
+        f"{stats['mocked'] * 100 // total}%" if total > 0 else "0%",
+    )
+    summary_table.add_row(
+        "✗ Errors (failed)",
+        str(stats["error"]),
+        f"{stats['error'] * 100 // total}%" if total > 0 else "0%",
+    )
+    if stats["unknown"] > 0:
+        summary_table.add_row(
+            "? Unknown",
+            str(stats["unknown"]),
+            f"{stats['unknown'] * 100 // total}%" if total > 0 else "0%",
+        )
+
+    _print(summary_table)
+    _print()
+
+    # Display date range
+    if stats["oldest_date"] and stats["newest_date"]:
+        _print(f"[cyan]Date range:[/] {stats['oldest_date']} to {stats['newest_date']}")
+        _print()
+
+    # Display mocked summaries if any
+    if stats["mocked"] > 0:
+        _print("[yellow]⚠ Mocked Summaries (run without --mock to regenerate):[/]")
+        mocked_table = Table(show_header=True)
+        mocked_table.add_column("File", style="cyan")
+        mocked_table.add_column("Date", style="white")
+
+        for filename, date in stats["mocked_summaries"][:10]:  # Show first 10
+            mocked_table.add_row(filename, date)
+
+        if len(stats["mocked_summaries"]) > 10:
+            mocked_table.add_row(
+                f"... and {len(stats['mocked_summaries']) - 10} more",
+                "",
+            )
+
+        _print(mocked_table)
+        _print()
+
+    # Display error summaries if any
+    if stats["error"] > 0:
+        _print("[red]✗ Error Summaries (run with --force to retry):[/]")
+        error_table = Table(show_header=True)
+        error_table.add_column("File", style="cyan")
+        error_table.add_column("Reason", style="yellow")
+
+        for filename, reason in stats["error_summaries"]:  # Show all errors
+            error_table.add_row(filename, reason)
+
+        _print(error_table)
+        _print()
+
+    # Helpful tips
+    if stats["mocked"] > 0 or stats["error"] > 0:
+        _print("[bold]Tips:[/]")
+        if stats["mocked"] > 0:
+            _print(
+                "  • Run [cyan]summarize-links from-note --all --force[/] "
+                "to regenerate mocked summaries"
+            )
+        if stats["error"] > 0:
+            _print(
+                "  • Run [cyan]summarize-links from-note --all --force[/] to retry failed summaries"
+            )
+
+    return EXIT_SUCCESS
+
+
 def cmd_urls(config: Config, urls: list[str]) -> int:
     """
     Process specified URLs.
@@ -905,6 +1034,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_list(config)
         elif args.command == "status":
             return cmd_status(config)
+        elif args.command == "summaries":
+            return cmd_summaries(config)
         else:
             _print_error(f"[red]Unknown command: {args.command}[/]")
             return EXIT_ERROR

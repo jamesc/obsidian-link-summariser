@@ -78,6 +78,9 @@ summarize-links from-note --vault ~/Notes --verbose
 
 # Check rate limit status
 summarize-links status --vault ~/Notes
+
+# Check summary statistics
+summarize-links summaries --vault ~/Notes
 ```
 
 ### Command Reference
@@ -104,6 +107,9 @@ Commands:
     URLS...         One or more URLs to summarize
 
   list              List all daily notes that have URLs
+
+  summaries         Report on summary status
+                    Shows statistics and identifies mocked/error summaries
 
   status            Show current Gemini API rate limit usage
 ```

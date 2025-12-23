@@ -1186,3 +1186,103 @@ Created `fix_garbled_summaries.py` script to:
 - Update status to `status: error` for retry
 - Provides clear summary of fixed files
 - Can be run after updates to catch historical issues
+
+---
+
+## 2025-12-23: Add 'summaries' command to report on summary status
+
+**Goal:** Add a CLI command to scan all summary notes and provide statistics about their status (successful, mocked, errors).
+
+**Changes:**
+
+### New Function: `scan_summaries()` in `summarize_links/notes.py`
+- Scans all `.md` files in the summaries folder
+- Extracts status from frontmatter (`success`, `mocked`, `error`)
+- Collects statistics:
+  - Total summaries count
+  - Count by status (success/mocked/error/unknown)
+  - Date range (oldest to newest)
+  - Lists of problematic summaries (errors and mocked)
+- Helper functions added:
+  - `_extract_frontmatter_field()` - Extract YAML field values
+  - `_extract_error_reason()` - Detect error type from stub notes
+
+### New TypedDict: `SummaryStats` in `summarize_links/notes.py`
+- Strongly typed return value for `scan_summaries()`
+- Fields: total, success, mocked, error, unknown, oldest_date, newest_date, error_summaries, mocked_summaries
+
+### New CLI Command: `summarize-links summaries`
+- Added `summaries` subcommand to argument parser
+- Created `cmd_summaries()` function that:
+  - Calls `scan_summaries()` with current config
+  - Displays overall statistics in a Rich table
+  - Shows date range
+  - Lists mocked summaries (needing real API calls)
+  - Lists error summaries (failed processing)
+  - Provides helpful tips for regenerating/retrying
+- Updated command dispatcher in `main()` to handle `summaries` command
+
+**Usage:**
+```bash
+summarize-links summaries
+```
+
+**Output Example:**
+```
+Scanning summaries...
+
+Summary Statistics
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━┓
+┃ Category                  ┃ Count ┃ Percentage ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━┩
+│ Total Summaries           │   150 │       100% │
+│ ✓ Successful              │   130 │        86% │
+│ ⚠ Mocked (needs real API) │    15 │        10% │
+│ ✗ Errors (failed)         │     5 │         3% │
+└───────────────────────────┴───────┴────────────┘
+
+Date range: 2025-01-01 to 2025-12-23
+
+⚠ Mocked Summaries (run without --mock to regenerate):
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┓
+┃ File                        ┃ Date       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━┩
+│ 2025-12-15-example.md       │ 2025-12-15 │
+│ 2025-12-16-tutorial.md      │ 2025-12-16 │
+└─────────────────────────────┴────────────┘
+
+✗ Error Summaries (run with --force to retry):
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ File                       ┃ Reason         ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2025-12-10-broken.md       │ Fetch failed   │
+│ 2025-12-12-rate.md         │ Rate limited   │
+└────────────────────────────┴────────────────┘
+
+Tips:
+  • Run summarize-links from-note --all --force to regenerate mocked summaries
+  • Run summarize-links from-note --all --force to retry failed summaries
+```
+
+**Behavior:**
+- Shows statistics for all summaries in the configured out_folder
+- Displays first 10 mocked/error summaries (shows "... and N more" if more exist)
+- Provides actionable tips for fixing problematic summaries
+- Empty folder handling (shows "No summaries found" message)
+- Works with any configured summaries folder
+
+**Tests:** Added 7 new tests in `tests/test_summaries_command.py`:
+- `test_scan_summaries_empty_folder` - Handles missing folder
+- `test_scan_summaries_with_success` - Counts successful summaries
+- `test_scan_summaries_with_mocked` - Identifies mocked summaries
+- `test_scan_summaries_with_errors` - Identifies error summaries
+- `test_scan_summaries_mixed` - Mixed status summaries
+- `test_scan_summaries_date_range` - Date range detection
+- `test_scan_summaries_ignores_non_markdown` - Only counts .md files
+
+**Tests:** All 416 tests pass
+
+**Static Analysis:** All checks pass
+- `ruff check .` ✓
+- `ruff format .` ✓
+- `mypy .` ✓

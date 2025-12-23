@@ -13,6 +13,7 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import TypedDict
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from summarize_links.config import DEFAULT_MAX_TAGS, MAX_SLUG_LENGTH
@@ -35,6 +36,7 @@ __all__ = [
     "write_stub_note",
     "summary_exists",
     "get_summary_filepath",
+    "scan_summaries",
     # Utilities
     "build_frontmatter",
     "generate_slug",
@@ -49,6 +51,21 @@ logger = logging.getLogger(__name__)
 # ----- URL Extraction Patterns -----
 # Pattern to match Markdown links: [text](url)
 MARKDOWN_LINK_PATTERN = r"\[([^\]]+)\]\((https?://[^)]+)\)"
+
+
+class SummaryStats(TypedDict):
+    """Statistics from scanning summary notes."""
+
+    total: int
+    success: int
+    mocked: int
+    error: int
+    unknown: int
+    oldest_date: str | None
+    newest_date: str | None
+    error_summaries: list[tuple[str, str]]
+    mocked_summaries: list[tuple[str, str]]
+
 
 # Pattern to match bare URLs (not inside Markdown link syntax)
 # Matches http:// or https:// followed by non-whitespace, non-bracket characters
@@ -1108,3 +1125,171 @@ def remove_url_line_from_note(
 
     except OSError as e:
         raise NoteWriteError(f"Failed to update daily note {daily_note_path}: {e}") from e
+
+
+def scan_summaries(
+    vault_path: Path,
+    out_folder: str,
+) -> SummaryStats:
+    """
+    Scan all summary notes and collect status information.
+
+    Examines all .md files in the summaries folder and extracts their
+    status from frontmatter. Returns statistics and lists of problematic
+    summaries that may need attention.
+
+    Args:
+        vault_path: Path to the Obsidian vault root.
+        out_folder: Folder name for summaries (relative to vault).
+
+    Returns:
+        Dictionary containing:
+        - total: Total number of summaries
+        - success: Number of successful summaries
+        - mocked: Number of mocked summaries (need real summarization)
+        - error: Number of error/stub summaries (failed processing)
+        - unknown: Number without clear status
+        - oldest_date: Oldest summary date (YYYY-MM-DD)
+        - newest_date: Newest summary date (YYYY-MM-DD)
+        - error_summaries: List of (filename, reason) for error summaries
+        - mocked_summaries: List of (filename, date) for mocked summaries
+    """
+    summaries_path = vault_path / out_folder
+
+    if not summaries_path.exists():
+        logger.warning(f"Summaries folder not found: {summaries_path}")
+        return {
+            "total": 0,
+            "success": 0,
+            "mocked": 0,
+            "error": 0,
+            "unknown": 0,
+            "oldest_date": None,
+            "newest_date": None,
+            "error_summaries": [],
+            "mocked_summaries": [],
+        }
+
+    total = 0
+    success_count = 0
+    mocked_count = 0
+    error_count = 0
+    unknown_count = 0
+    error_summaries: list[tuple[str, str]] = []
+    mocked_summaries: list[tuple[str, str]] = []
+    dates: list[str] = []
+
+    # Scan all markdown files
+    for filepath in summaries_path.glob("*.md"):
+        total += 1
+
+        try:
+            content = filepath.read_text(encoding="utf-8")
+
+            # Extract status from frontmatter
+            status = _extract_frontmatter_field(content, "status")
+            date = _extract_frontmatter_field(content, "date")
+
+            if date:
+                dates.append(date)
+
+            # Categorize by status
+            if status == "success":
+                success_count += 1
+            elif status == "mocked":
+                mocked_count += 1
+                mocked_summaries.append((filepath.name, date or "unknown"))
+            elif status == "error":
+                error_count += 1
+                # Extract error reason if available
+                reason = _extract_error_reason(content)
+                error_summaries.append((filepath.name, reason))
+            else:
+                unknown_count += 1
+                logger.debug(f"Unknown status for {filepath.name}: {status}")
+
+        except OSError as e:
+            logger.warning(f"Failed to read summary {filepath}: {e}")
+            unknown_count += 1
+
+    # Determine date range
+    oldest_date = min(dates) if dates else None
+    newest_date = max(dates) if dates else None
+
+    logger.info(
+        f"Scanned {total} summaries: "
+        f"{success_count} success, {mocked_count} mocked, "
+        f"{error_count} error, {unknown_count} unknown"
+    )
+
+    return {
+        "total": total,
+        "success": success_count,
+        "mocked": mocked_count,
+        "error": error_count,
+        "unknown": unknown_count,
+        "oldest_date": oldest_date,
+        "newest_date": newest_date,
+        "error_summaries": error_summaries,
+        "mocked_summaries": mocked_summaries,
+    }
+
+
+def _extract_frontmatter_field(content: str, field: str) -> str | None:
+    """
+    Extract a field value from YAML frontmatter.
+
+    Args:
+        content: Note content with frontmatter.
+        field: Field name to extract.
+
+    Returns:
+        Field value as string, or None if not found.
+    """
+    if not content.startswith("---"):
+        return None
+
+    # Find end of frontmatter
+    end_idx = content.find("---", 3)
+    if end_idx == -1:
+        return None
+
+    frontmatter = content[3:end_idx]
+
+    # Simple field extraction (works for single-line values)
+    # Format: "field: value" or "field: 'value'" or 'field: "value"'
+    pattern = rf"^{re.escape(field)}:\s*(.+)$"
+    match = re.search(pattern, frontmatter, re.MULTILINE)
+
+    if match:
+        value = match.group(1).strip()
+        # Remove quotes if present
+        value = value.strip('"').strip("'")
+        return value
+
+    return None
+
+
+def _extract_error_reason(content: str) -> str:
+    """
+    Extract error reason from a stub note.
+
+    Looks for the error description in the note content.
+
+    Args:
+        content: Note content.
+
+    Returns:
+        Error reason string, or "Unknown error" if not found.
+    """
+    # Look for common error patterns
+    if "Failed to fetch" in content:
+        return "Fetch failed"
+    elif "Failed to extract content" in content:
+        return "Extraction failed"
+    elif "Rate limited" in content:
+        return "Rate limited"
+    elif "API error" in content:
+        return "API error"
+    else:
+        return "Unknown error"
