@@ -647,8 +647,7 @@ class GeminiClient:
                 elif "400" in str(e) or (
                     "invalid" in error_str
                     and any(
-                        term in error_str
-                        for term in ("request", "argument", "arguments", "input")
+                        term in error_str for term in ("request", "argument", "arguments", "input")
                     )
                 ):
                     # Bad request - don't retry
