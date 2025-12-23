@@ -245,6 +245,37 @@ def _extract_content_type_from_malformed_json(text: str) -> str:
     return "article"
 
 
+def _is_garbled_summary(summary_text: str) -> bool:
+    """
+    Detect if a summary indicates the content was garbled or corrupted.
+
+    Checks for common patterns in AI responses that indicate the source
+    content was unreadable (base64, encrypted, corrupted, etc.).
+
+    Args:
+        summary_text: The summary content to check.
+
+    Returns:
+        True if the summary indicates garbled/corrupted content.
+    """
+    indicators = [
+        "corrupted or encrypted",
+        "garbled characters",
+        "appears to be encrypted",
+        "appears to be corrupted",
+        "consists of garbled",
+        "not possible to extract",
+        "meaningless characters",
+        "random characters",
+        "base64 encoded",
+        "binary data",
+        "unreadable content",
+    ]
+
+    summary_lower = summary_text.lower()
+    return any(indicator in summary_lower for indicator in indicators)
+
+
 def _parse_gemini_response(response_text: str) -> SummaryResult:
     """
     Parse Gemini's JSON response into a SummaryResult.
@@ -253,12 +284,16 @@ def _parse_gemini_response(response_text: str) -> SummaryResult:
     - Clean JSON
     - JSON wrapped in markdown code blocks
     - Malformed responses (attempts field extraction, falls back to plain text)
+    - Detects garbled/corrupted content responses and raises an error
 
     Args:
         response_text: Raw response from Gemini API.
 
     Returns:
         Parsed SummaryResult object.
+
+    Raises:
+        GeminiAPIError: If the response indicates garbled/corrupted content.
     """
     text = response_text.strip()
     original_text = text  # Keep original for fallback extraction
@@ -306,11 +341,20 @@ def _parse_gemini_response(response_text: str) -> SummaryResult:
             logger.debug(f"Unknown content_type '{content_type}', defaulting to 'article'")
             content_type = "article"
 
-        return SummaryResult(
+        result = SummaryResult(
             content=summary,
             suggested_tags=suggested_tags,
             content_type=content_type,
         )
+
+        # Check if the summary indicates garbled/corrupted content
+        if _is_garbled_summary(result.content):
+            raise GeminiAPIError(
+                "Summary indicates the content appears corrupted or garbled. "
+                "This may indicate an extraction issue."
+            )
+
+        return result
 
     except json.JSONDecodeError as e:
         # JSON parsing failed - try to extract fields from malformed JSON
@@ -333,11 +377,20 @@ def _parse_gemini_response(response_text: str) -> SummaryResult:
 
         # Complete fallback: use raw text as summary
         logger.warning("Could not extract fields from malformed JSON. Using raw text.")
-        return SummaryResult(
+        result = SummaryResult(
             content=response_text,
             suggested_tags=[],
             content_type="article",
         )
+
+    # Check if the summary indicates garbled/corrupted content
+    if _is_garbled_summary(result.content):
+        raise GeminiAPIError(
+            "Summary indicates the content appears corrupted or garbled. "
+            "This may indicate an extraction issue."
+        )
+
+    return result
 
 
 class GeminiClient:

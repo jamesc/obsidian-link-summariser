@@ -16,6 +16,7 @@ from summarize_links.gemini_client import (
     _extract_content_type_from_malformed_json,
     _extract_summary_from_malformed_json,
     _extract_tags_from_malformed_json,
+    _is_garbled_summary,
     _parse_gemini_response,
     create_client,
 )
@@ -819,3 +820,67 @@ class TestRetryOnGenericAPIError:
             client.summarize("Content", "https://example.com")
 
         assert mock_model.generate_content.call_count == MAX_RETRIES
+
+
+class TestGarbledContentDetection:
+    """Tests for detecting garbled/corrupted content in summaries."""
+
+    def test_detects_corrupted_or_encrypted(self) -> None:
+        """Should detect 'corrupted or encrypted' in summary."""
+        text = "The provided web page content appears to be corrupted or encrypted."
+        assert _is_garbled_summary(text) is True
+
+    def test_detects_garbled_characters(self) -> None:
+        """Should detect 'garbled characters' in summary."""
+        text = "This text consists of garbled characters that cannot be read."
+        assert _is_garbled_summary(text) is True
+
+    def test_detects_not_possible_to_extract(self) -> None:
+        """Should detect 'not possible to extract' in summary."""
+        text = "It is not possible to extract any meaningful information from this content."
+        assert _is_garbled_summary(text) is True
+
+    def test_detects_base64_encoded(self) -> None:
+        """Should detect 'base64 encoded' in summary."""
+        text = "The content appears to be base64 encoded data."
+        assert _is_garbled_summary(text) is True
+
+    def test_case_insensitive(self) -> None:
+        """Should detect indicators in any case."""
+        text = "THE CONTENT APPEARS TO BE CORRUPTED OR ENCRYPTED"
+        assert _is_garbled_summary(text) is True
+
+    def test_normal_summary_not_detected(self) -> None:
+        """Should not flag normal summaries."""
+        text = """# Summary of Article
+
+        This is a normal article about encryption technologies in modern computing.
+        The article discusses how encryption protects data."""
+        assert _is_garbled_summary(text) is False
+
+    def test_parse_response_raises_on_garbled_content(self) -> None:
+        """Should raise GeminiAPIError when summary indicates garbled content."""
+        summary = (
+            "The provided web page content appears to be corrupted or encrypted, "
+            "consisting of garbled characters."
+        )
+        json_response = f"""{{
+            "summary": "{summary}",
+            "suggested_tags": ["error"],
+            "content_type": "article"
+        }}"""
+
+        with pytest.raises(GeminiAPIError, match="corrupted or garbled"):
+            _parse_gemini_response(json_response)
+
+    def test_parse_response_passes_normal_content(self) -> None:
+        """Should successfully parse normal content."""
+        json_response = """{
+            "summary": "This is a normal summary about encryption technologies.",
+            "suggested_tags": ["security", "encryption"],
+            "content_type": "article"
+        }"""
+
+        result = _parse_gemini_response(json_response)
+        assert "normal summary" in result.content
+        assert result.suggested_tags == ["security", "encryption"]

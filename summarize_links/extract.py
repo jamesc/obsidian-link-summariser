@@ -511,6 +511,44 @@ def _find_largest_text_block(soup: BeautifulSoup) -> str:
     return ""
 
 
+def _is_content_garbled(text: str, threshold: float = 0.3) -> bool:
+    """
+    Check if text content appears to be garbled or corrupted.
+
+    Detects base64, binary data, or high ratio of non-printable/unusual characters.
+
+    Args:
+        text: Text content to check.
+        threshold: Maximum ratio of unusual characters allowed (default 0.3).
+
+    Returns:
+        True if content appears garbled.
+    """
+    if not text or len(text) < 100:
+        return False
+
+    # Take a sample (first 2000 chars should be representative)
+    sample = text[:2000]
+
+    # Check if content looks like base64 (long sequences of alphanumeric + / + =)
+    # Base64 has very long unbroken sequences
+    is_base64_like = bool(re.search(r"[A-Za-z0-9+/]{100,}={0,2}", sample))
+    if is_base64_like:
+        return True
+
+    # Count unusual characters
+    unusual_count = 0
+    for char in sample:
+        # Count non-ASCII, non-printable, or rare Unicode characters
+        if ord(char) > 127 or (ord(char) < 32 and char not in "\n\r\t"):
+            unusual_count += 1
+
+    ratio = unusual_count / len(sample)
+
+    # Consider it garbled if high ratio of unusual characters
+    return ratio > threshold
+
+
 def extract_readable_content(html: str) -> tuple[str, str | None]:
     """
     Extract readable text content from HTML.
@@ -578,6 +616,10 @@ def _extract_with_parser(html: str, parser: str) -> tuple[str | None, str | None
         if content:
             # Found article content - clean and return it
             content = _clean_text(content)
+            # Check if content appears garbled/corrupted
+            if _is_content_garbled(content):
+                logger.warning(f"Content appears garbled with {parser} parser")
+                return None, title
             logger.info(f"Extracted {len(content)} chars from article (parser={parser})")
             return content, title
 
@@ -608,6 +650,10 @@ def _extract_with_parser(html: str, parser: str) -> tuple[str | None, str | None
 
         if content:
             content = _clean_text(content)
+            # Check if content appears garbled/corrupted
+            if _is_content_garbled(content):
+                logger.warning(f"Content appears garbled with {parser} parser")
+                return None, title
             logger.info(f"Extracted {len(content)} chars from text block (parser={parser})")
             return content, title
 

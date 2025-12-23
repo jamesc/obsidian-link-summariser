@@ -1075,3 +1075,114 @@ summarize-links --model gemini-2.5-pro from-note
 # Check status (shows per-model usage)
 summarize-links status
 ```
+
+---
+
+## 2025-12-23: Fix garbled content detection and error handling
+
+**Goal:** Fix issue where summaries indicating "corrupted or encrypted, consisting of garbled characters" were being marked as `status: success` when they should be `status: error`.
+
+**Problem:**
+When processing URLs, every summary showed "The provided web page content appears to be corrupted or encrypted, consisting of garbled characters", but these were marked as successful summaries. This prevented proper error handling and retry logic.
+
+**Root Causes:**
+1. No detection of garbled content responses from Gemini
+2. No validation of extracted content quality before sending to API
+3. Incorrect status marking for these failures
+
+**Solution:** Implemented three-layer defense system
+
+### 1. Gemini Response Detection (`summarize_links/gemini_client.py`)
+
+Added `_is_garbled_summary()` function that detects common indicators in AI responses:
+- "corrupted or encrypted"
+- "garbled characters"
+- "appears to be encrypted/corrupted"
+- "not possible to extract"
+- "meaningless/random characters"
+- "base64 encoded"
+- "binary data"
+- "unreadable content"
+
+Updated `_parse_gemini_response()` to check summary content:
+- Raises `GeminiAPIError` if garbled content detected
+- Applied to both successful JSON parsing and fallback paths
+- Prevents marking corrupted summaries as successful
+
+### 2. Early Content Validation (`summarize_links/extract.py`)
+
+Added `_is_content_garbled()` function that detects:
+- **High ratio of non-ASCII characters** (>30% threshold)
+  - Counts characters outside ASCII range (>127)
+  - Counts non-printable characters (<32, except newlines/tabs)
+- **Base64-like patterns**
+  - Long sequences (100+) of alphanumeric + `/` + `+` characters
+  - Indicates encoded data rather than readable text
+
+Integrated into `_extract_with_parser()`:
+- Checks content after `_clean_text()` and before returning
+- Rejects garbled content early, saving API calls
+- Provides clearer error messages about content quality
+
+### 3. Proper Error Handling
+
+Updated CLI error handling in `summarize_links/cli.py`:
+- Garbled content raises `GeminiAPIError`
+- Creates stub note with `status: error`
+- Error stubs can be retried later
+- Clear error messages about extraction issues
+
+**Behavior After Fix:**
+
+1. **During extraction**: 
+   - If web page content appears garbled (base64, high non-ASCII ratio)
+   - Extraction fails with `ContentExtractionError`
+   - Clear error message about garbled content
+
+2. **During summarization**:
+   - If Gemini's response indicates garbled content
+   - Summarization fails with `GeminiAPIError`
+   - Error note created with proper status
+
+3. **Error handling**:
+   - Failed summaries marked as `status: error`
+   - Stub notes created for retry
+   - URLs not deleted from daily notes (can retry later)
+
+**Tests Added:**
+
+**`tests/test_gemini.py`** - `TestGarbledContentDetection` (8 tests):
+- `test_detects_corrupted_or_encrypted` - Main error message pattern
+- `test_detects_garbled_characters` - Alternate phrasing
+- `test_detects_not_possible_to_extract` - Extraction failure message
+- `test_detects_base64_encoded` - Encoding detection
+- `test_case_insensitive` - Case variations
+- `test_normal_summary_not_detected` - No false positives
+- `test_parse_response_raises_on_garbled_content` - Integration test
+- `test_parse_response_passes_normal_content` - Normal path works
+
+**`tests/test_extraction.py`** - `TestGarbledContentDetection` (6 tests):
+- `test_detects_high_ratio_non_ascii` - Character ratio detection
+- `test_detects_base64_like_content` - Base64 pattern detection
+- `test_allows_normal_text` - Normal content passes
+- `test_allows_moderate_unicode` - Unicode support
+- `test_short_text_not_checked` - Skip short samples
+- `test_threshold_parameter` - Configurable threshold
+
+**Tests:** All 409 tests pass
+
+**Static Analysis:** All checks pass
+- `ruff check .` ✓
+- `ruff format .` ✓
+- `mypy .` ✓
+
+**Next Steps:**
+The underlying cause of *why* content is garbled (bot detection, encoding issues, JavaScript rendering) requires separate investigation. However, these issues are now properly detected and reported rather than silently marked as successful.
+
+**Utility Script:**
+Created `fix_garbled_summaries.py` script to:
+- Scan existing summaries marked as `status: success`
+- Detect garbled content using `_is_garbled_summary()`
+- Update status to `status: error` for retry
+- Provides clear summary of fixed files
+- Can be run after updates to catch historical issues

@@ -15,6 +15,7 @@ from summarize_links.extract import (
     _extract_site_name,
     _extract_title,
     _find_largest_text_block,
+    _is_content_garbled,
     extract_page_metadata,
     extract_readable_content,
     truncate_content,
@@ -1038,3 +1039,55 @@ meaningful and useful for summarization purposes.
         # Should be truncated to max length + truncation message
         assert len(content) < 60000
         assert "[Content truncated...]" in content
+
+
+class TestGarbledContentDetection:
+    """Tests for detecting garbled/corrupted content during extraction."""
+
+    def test_detects_high_ratio_non_ascii(self) -> None:
+        """Should detect content with high ratio of non-ASCII characters."""
+        # Create text with 50% non-ASCII characters
+        garbled = "abc" + "".join(chr(i) for i in range(200, 300)) * 10
+        assert _is_content_garbled(garbled) is True
+
+    def test_detects_base64_like_content(self) -> None:
+        """Should detect content that looks like base64 encoding."""
+        # Create a long base64-like string (continuous alphanumeric)
+        base64_like = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/" * 3
+        assert _is_content_garbled(base64_like) is True
+
+    def test_allows_normal_text(self) -> None:
+        """Should not flag normal text content."""
+        normal = (
+            """This is a normal article with regular text content.
+        It contains multiple sentences and paragraphs.
+        The content is readable and makes sense.
+        """
+            * 5
+        )
+        assert _is_content_garbled(normal) is False
+
+    def test_allows_moderate_unicode(self) -> None:
+        """Should allow text with moderate amounts of Unicode."""
+        text_with_unicode = (
+            """This article discusses café culture in München.
+        It mentions the naïve approach to résumé writing.
+        The Zürich office has a unique approach to business.
+        """
+            * 10
+        )
+        assert _is_content_garbled(text_with_unicode) is False
+
+    def test_short_text_not_checked(self) -> None:
+        """Should not flag short text (< 100 chars) even if garbled."""
+        short_garbled = "".join(chr(i) for i in range(200, 250))
+        assert _is_content_garbled(short_garbled) is False
+
+    def test_threshold_parameter(self) -> None:
+        """Should respect custom threshold parameter."""
+        # Content with 15% non-ASCII (using spaces to break up any base64-like pattern)
+        mixed = ("This is normal text. " * 8) + "".join(chr(i) for i in range(200, 230))
+        # Default threshold (0.3) should pass (15% unusual)
+        assert _is_content_garbled(mixed, threshold=0.3) is False
+        # Lower threshold (0.1) should fail (15% > 10%)
+        assert _is_content_garbled(mixed, threshold=0.1) is True
