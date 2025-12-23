@@ -681,12 +681,16 @@ class GeminiClient:
         # All retries exhausted
         logger.error("All retries exhausted for Gemini API call")
         # Check if last exception was rate limit related
-        if last_exception and (
-            "429" in str(last_exception)
-            or "quota" in str(last_exception).lower()
-            or "rate" in str(last_exception).lower()
-        ):
-            raise RateLimitError("Rate limit exceeded after retries") from last_exception
+        if last_exception:
+            message = str(last_exception)
+            message_lower = message.lower()
+            if (
+                "429" in message
+                or "quota" in message_lower
+                or "rate limit" in message_lower
+                or "rate_limit" in message_lower
+            ):
+                raise RateLimitError("Rate limit exceeded after retries") from last_exception
         raise GeminiAPIError(f"API error after retries: {last_exception}") from last_exception
 
     def summarize_with_metadata(
