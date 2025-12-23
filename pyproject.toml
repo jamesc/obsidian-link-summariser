@@ -11,7 +11,8 @@ authors = [
 keywords = ["obsidian", "gemini", "ai", "summarizer", "cli"]
 
 dependencies = [
-    "google-generativeai>=0.8.0",
+    "google-genai>=0.1.0",
+    "pydantic>=2.0",
     "requests>=2.32",
     "beautifulsoup4>=4.12",
     "lxml>=5.3",

@@ -9,14 +9,12 @@ of creating a new file with today's date.
 from datetime import datetime
 from pathlib import Path
 
-import pytest
-
+from summarize_links.models import PageMetadata, SummaryResult
 from summarize_links.notes import (
     get_existing_summary_date,
     get_summary_filepath,
     write_summary_note_with_metadata,
 )
-from summarize_links.models import PageMetadata, SummaryResult
 
 
 class TestGetExistingSummaryDate:
@@ -31,7 +29,6 @@ class TestGetExistingSummaryDate:
 
         # Create an existing summary with a specific date
         url = "https://example.com/article"
-        existing_date = datetime(2024, 1, 15)
         existing_file = summaries_path / "2024-01-15-article.md"
         existing_file.write_text(
             """---
