@@ -6,7 +6,7 @@ and summarization functionality with various response formats.
 """
 
 import json
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 import requests
@@ -103,15 +103,18 @@ class TestOllamaClient:
         """Test successful summarization."""
         # Mock server and model checks
         mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = {
-            "models": [{"name": "llama3"}]
-        }
+        mock_get.return_value.json.return_value = {"models": [{"name": "llama3"}]}
 
         # Mock API response
         mock_post.return_value.status_code = 200
+        response_json = {
+            "summary": "Test summary",
+            "suggested_tags": ["test"],
+            "content_type": "article",
+        }
         mock_post.return_value.json.return_value = {
             "model": "llama3",
-            "response": '{"summary": "Test summary", "suggested_tags": ["test"], "content_type": "article"}',
+            "response": json.dumps(response_json),
             "done": True,
         }
 
@@ -128,9 +131,7 @@ class TestOllamaClient:
         """Test summarization with timeout."""
         # Mock server and model checks
         mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = {
-            "models": [{"name": "llama3"}]
-        }
+        mock_get.return_value.json.return_value = {"models": [{"name": "llama3"}]}
 
         # Mock timeout
         mock_post.side_effect = requests.exceptions.Timeout("Timeout")
@@ -145,9 +146,7 @@ class TestOllamaClient:
         """Test summarization with empty response."""
         # Mock server and model checks
         mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = {
-            "models": [{"name": "llama3"}]
-        }
+        mock_get.return_value.json.return_value = {"models": [{"name": "llama3"}]}
 
         # Mock empty response
         mock_post.return_value.status_code = 200
@@ -167,9 +166,7 @@ class TestOllamaClient:
         """Test summarization with structured metadata."""
         # Mock server and model checks
         mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = {
-            "models": [{"name": "llama3"}]
-        }
+        mock_get.return_value.json.return_value = {"models": [{"name": "llama3"}]}
 
         # Mock API response with structured JSON
         response_json = {
@@ -185,9 +182,7 @@ class TestOllamaClient:
         }
 
         client = OllamaClient(model="llama3")
-        result = client.summarize_with_metadata(
-            "Test content", "https://example.com", "Test Title"
-        )
+        result = client.summarize_with_metadata("Test content", "https://example.com", "Test Title")
 
         assert isinstance(result, SummaryResult)
         assert result.content == "# Test Summary\n\nThis is a test."
@@ -209,13 +204,13 @@ class TestParseOllamaResponse:
 
     def test_parse_json_in_markdown(self):
         """Test parsing JSON wrapped in markdown code block."""
-        response = '''```json
+        response = """```json
 {
   "summary": "Test summary",
   "suggested_tags": ["test"],
   "content_type": "blog"
 }
-```'''
+```"""
         result = _parse_ollama_response(response)
 
         assert result.content == "Test summary"

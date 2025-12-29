@@ -9,7 +9,6 @@ Uses the same interface as GeminiClient for seamless provider switching.
 
 import json
 import logging
-from typing import Any
 
 import requests
 
@@ -190,8 +189,7 @@ class OllamaClient:
 
         except requests.exceptions.RequestException as e:
             raise OllamaServerError(
-                f"Failed to connect to Ollama server at {self._endpoint}.\n"
-                f"Details: {e}"
+                f"Failed to connect to Ollama server at {self._endpoint}.\nDetails: {e}"
             ) from e
 
     def _check_model_installed(self) -> None:
@@ -224,10 +222,11 @@ class OllamaClient:
 
             # Check if our model is in the list
             if self._model not in installed_models:
+                available = ", ".join(installed_models) if installed_models else "none"
                 raise ModelNotInstalledError(
                     f"Model '{self._model}' is not installed.\n"
                     f"To install: ollama pull {self._model}\n\n"
-                    f"Available models: {', '.join(installed_models) if installed_models else 'none'}"
+                    f"Available models: {available}"
                 )
 
             self._model_checked = True

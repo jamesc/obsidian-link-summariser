@@ -1125,7 +1125,7 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_ERROR
 
     except ModelNotInstalledError as e:
-        _print_error(f"[red]Ollama model not installed![/]")
+        _print_error("[red]Ollama model not installed![/]")
         _print_error(f"\n[red]Error:[/] {e}")
         return EXIT_ERROR
 
