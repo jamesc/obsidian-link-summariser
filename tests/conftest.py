@@ -7,8 +7,15 @@ including temporary vault directories and sample content.
 
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def mock_load_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock load_dotenv globally to prevent .env file from interfering with tests."""
+    monkeypatch.setattr("summarize_links.config.load_dotenv", Mock())
 
 
 @pytest.fixture
