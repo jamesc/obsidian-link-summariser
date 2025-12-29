@@ -85,11 +85,19 @@ class SummaryResult:
         content: Markdown-formatted summary text.
         suggested_tags: AI-suggested topic tags (3-5 typically).
         content_type: Classification of content type.
+        usage_details: Token usage details (input, output, total).
+        system_prompt: The system instructions/prompt (for tracing).
+        raw_prompt: The raw user prompt sent to the LLM (for tracing).
+        raw_response: The raw response from the LLM (for tracing).
     """
 
     content: str
     suggested_tags: list[str] = field(default_factory=list)
     content_type: str = "article"
+    usage_details: dict[str, int] | None = None
+    system_prompt: str | None = None
+    raw_prompt: str | None = None
+    raw_response: str | None = None
 
 
 # Valid content types for classification with descriptions

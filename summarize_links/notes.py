@@ -550,7 +550,8 @@ def summary_exists(
     """
     Check if a successful summary note already exists for a URL.
 
-    Returns False for error/stub notes (status: error) so they can be retried.
+    Returns False for error/stub notes (summary_status: *_error or summary_status: error)
+    and mocked summaries so they can be retried.
 
     Args:
         vault_path: Path to the Obsidian vault root.
@@ -575,11 +576,24 @@ def summary_exists(
             end_idx = content.find("---", 3)
             if end_idx != -1:
                 frontmatter = content[3:end_idx]
-                if "status: error" in frontmatter:
-                    logger.debug(f"Found error stub, will retry: {filepath.name}")
+                # Check for new format: summary_status: <error_type>
+                if "summary_status:" in frontmatter:
+                    for line in frontmatter.split("\n"):
+                        if line.strip().startswith("summary_status:"):
+                            status_value = line.split(":", 1)[1].strip()
+                            if "error" in status_value or status_value == "mocked":
+                                logger.debug(
+                                    f"Found {status_value} status, will retry: {filepath.name}"
+                                )
+                                return False
+                # Check for legacy format: status: error / status: mocked
+                elif "status: error" in frontmatter:
+                    logger.debug(f"Found error stub (legacy format), will retry: {filepath.name}")
                     return False
-                if "status: mocked" in frontmatter:
-                    logger.debug(f"Found mocked summary, will retry: {filepath.name}")
+                elif "status: mocked" in frontmatter:
+                    logger.debug(
+                        f"Found mocked summary (legacy format), will retry: {filepath.name}"
+                    )
                     return False
     except OSError:
         pass  # If we can't read it, assume it exists
@@ -799,7 +813,7 @@ def write_summary_note(
     date: datetime | None = None,
     source_note: str | None = None,
     overwrite: bool = False,
-    status: str = "success",
+    summary_status: str = "success",
 ) -> Path:
     """
     Write a summary note with minimal frontmatter.
@@ -819,7 +833,7 @@ def write_summary_note(
         date: Date for the summary (defaults to today).
         source_note: Name of the source daily note (for backlink).
         overwrite: If True, overwrite existing file; if False, skip.
-        status: Status of the summary ("success" or "error").
+        summary_status: Summary status (e.g., "success", "fetch_error", "extraction_error").
 
     Returns:
         Path to the written file.
@@ -855,7 +869,7 @@ def write_summary_note(
         "---",
         f"source: {url}",
         f"date: {date_str}",
-        f"status: {status}",
+        f"summary_status: {summary_status}",
     ]
 
     if source_note:
@@ -972,12 +986,13 @@ def write_stub_note(
     reason: str,
     date: datetime | None = None,
     source_note: str | None = None,
+    error_type: str = "error",
 ) -> Path:
     """
     Write a stub note for a URL that couldn't be processed.
 
     Used when rate limiting or errors prevent full summarization.
-    These notes are marked with status: error so they can be retried.
+    These notes are marked with summary_status: <error_type> so they can be retried.
 
     Args:
         vault_path: Path to the Obsidian vault root.
@@ -986,6 +1001,7 @@ def write_stub_note(
         reason: Reason the URL couldn't be processed.
         date: Date for the summary.
         source_note: Name of the source daily note.
+        error_type: Type of error (e.g., "fetch_error", "extraction_error", "api_error").
 
     Returns:
         Path to the written stub file.
@@ -1011,7 +1027,7 @@ def write_stub_note(
         date=date,
         source_note=source_note,
         overwrite=True,  # Always overwrite stubs
-        status="error",  # Mark as error so it can be retried
+        summary_status=error_type,  # Mark with error type so it can be retried
     )
 
 

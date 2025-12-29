@@ -36,7 +36,7 @@ A lightweight Python CLI tool that reads URLs from Obsidian daily notes, fetches
 git clone https://github.com/jamesc/obsidian-link-summariser.git
 cd obsidian-link-summariser
 
-# Install dependencies with uv
+# Install dependencies with uv (includes Langfuse for tracing/evaluation)
 uv sync
 
 # Copy and configure environment variables

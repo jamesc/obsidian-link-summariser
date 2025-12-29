@@ -5,11 +5,17 @@ This module provides common fixtures used across all test modules,
 including temporary vault directories and sample content.
 """
 
+from __future__ import annotations
+
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
 import pytest
+
+if TYPE_CHECKING:
+    from summarize_links.config import Config
 
 
 @pytest.fixture(autouse=True)
@@ -151,3 +157,30 @@ This article discusses important information about the topic at hand.
 def fixed_date() -> datetime:
     """Fixed datetime for deterministic tests."""
     return datetime(2025, 12, 16, 10, 30, 0)
+
+
+@pytest.fixture
+def mock_config(tmp_path: Path) -> Config:
+    """
+    Create a mock Config object with test values.
+
+    Returns:
+        Config object suitable for testing.
+    """
+    from summarize_links.config import Config
+
+    return Config(
+        gemini_api_key="test-api-key",
+        model="gemini-2.5-flash",
+        vault_path=tmp_path,
+        out_folder="Summaries",
+        max_links=10,
+        mock_mode=False,
+        dry_run=False,
+        verbose=False,
+        force=False,
+        langfuse_enabled=False,
+        langfuse_public_key="",
+        langfuse_secret_key="",
+        langfuse_base_url="https://cloud.langfuse.com",
+    )

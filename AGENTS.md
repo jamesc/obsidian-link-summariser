@@ -35,6 +35,8 @@
 
 - **Document your actions**: On completing a task, write a summary to docs/tasks.md
 
+- **Check for up to date usage of library API methods**: When using third-party libraries, ensure you're using the latest recommended methods and patterns from their documentation. Check during creating an initial implementation and during code reviews.
+
 - **Custom exceptions**: Create specific exception classes for clearer error handling
   - `URLExtractionError`, `GeminiAPIError`, `NoteWriteError`, etc.
   - Catch and handle appropriately at CLI level

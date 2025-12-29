@@ -169,7 +169,7 @@ class TestOllamaClient:
         mock_get.return_value.status_code = 200
         mock_get.return_value.json.return_value = {"models": [{"name": "llama3"}]}
 
-        # Mock API response with structured JSON
+        # Mock API response with structured JSON and token usage
         response_json = {
             "summary": "# Test Summary\n\nThis is a test.",
             "suggested_tags": ["test", "example"],
@@ -180,6 +180,8 @@ class TestOllamaClient:
             "model": "llama3",
             "response": json.dumps(response_json),
             "done": True,
+            "prompt_eval_count": 150,
+            "eval_count": 75,
         }
 
         client = OllamaClient(model="llama3")
@@ -189,6 +191,7 @@ class TestOllamaClient:
         assert result.content == "# Test Summary\n\nThis is a test."
         assert result.suggested_tags == ["test", "example"]
         assert result.content_type == "tutorial"
+        assert result.usage_details == {"input": 150, "output": 75, "total": 225}
 
 
 class TestParseOllamaResponse:

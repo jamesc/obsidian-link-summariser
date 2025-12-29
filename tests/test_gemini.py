@@ -513,6 +513,9 @@ class TestGeminiClientWithMetadata:
         mock_response.text = (
             '{"summary": "AI Summary", "suggested_tags": ["ai"], "content_type": "article"}'
         )
+        mock_response.usage_metadata.prompt_token_count = 100
+        mock_response.usage_metadata.candidates_token_count = 50
+        mock_response.usage_metadata.total_token_count = 150
 
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
@@ -532,6 +535,9 @@ class TestGeminiClientWithMetadata:
         mock_response = MagicMock()
         mock_response.parts = [MagicMock()]
         mock_response.text = "Plain text summary without JSON"
+        mock_response.usage_metadata.prompt_token_count = 80
+        mock_response.usage_metadata.candidates_token_count = 30
+        mock_response.usage_metadata.total_token_count = 110
 
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response

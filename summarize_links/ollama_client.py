@@ -283,7 +283,18 @@ class OllamaClient:
             if not summary:
                 raise OllamaAPIError("Empty response from Ollama API")
 
-            logger.info("Successfully generated summary (%d chars)", len(summary))
+            # Extract token usage if available
+            prompt_tokens = data.get("prompt_eval_count", 0)
+            completion_tokens = data.get("eval_count", 0)
+            total_tokens = prompt_tokens + completion_tokens
+
+            logger.info(
+                "Successfully generated summary (%d chars, tokens: input=%d output=%d total=%d)",
+                len(summary),
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+            )
             return summary
 
         except requests.exceptions.Timeout as e:
@@ -308,6 +319,7 @@ class OllamaClient:
         - A markdown-formatted summary
         - Suggested topic tags
         - Content type classification
+        - Token usage statistics
 
         Args:
             content: The text content to summarize.
@@ -315,15 +327,87 @@ class OllamaClient:
             title: Optional page title.
 
         Returns:
-            SummaryResult with content, suggested tags, and content type.
+            SummaryResult with content, suggested tags, content type, and usage details.
 
         Raises:
             OllamaServerError: When Ollama server is not available.
             ModelNotInstalledError: When model is not installed.
             OllamaAPIError: When API returns an error.
         """
-        # Get the raw response (which should be JSON)
-        raw_response = self.summarize(content, url, title)
+        # Check server and model availability
+        self._check_server()
+        self._check_model_installed()
 
-        # Parse the JSON response into SummaryResult
-        return _parse_ollama_response(raw_response)
+        # Build the prompt
+        prompt = _build_prompt(content, url, title)
+        full_prompt = f"{SUMMARY_SYSTEM_PROMPT}\n\n{prompt}"
+
+        logger.debug("Sending request to Ollama API for metadata")
+
+        try:
+            response = requests.post(
+                f"{self._endpoint}/api/generate",
+                json={
+                    "model": self._model,
+                    "prompt": full_prompt,
+                    "stream": False,
+                    "format": "json",
+                },
+                timeout=self._timeout,
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            raw_response: str = data.get("response", "")
+
+            if not raw_response:
+                raise OllamaAPIError("Empty response from Ollama API")
+
+            # Extract token usage
+            prompt_tokens = data.get("prompt_eval_count", 0)
+            completion_tokens = data.get("eval_count", 0)
+            total_tokens = prompt_tokens + completion_tokens
+
+            usage_details = None
+            if prompt_tokens > 0 or completion_tokens > 0:
+                usage_details = {
+                    "input": prompt_tokens,
+                    "output": completion_tokens,
+                    "total": total_tokens,
+                }
+                logger.debug(
+                    "Token usage: input=%d, output=%d, total=%d",
+                    prompt_tokens,
+                    completion_tokens,
+                    total_tokens,
+                )
+
+            # Parse the JSON response into SummaryResult
+            result = _parse_ollama_response(raw_response)
+            # Add usage details to result
+            result.usage_details = usage_details
+
+            # Store system prompt, user prompt (combined), and response for tracing
+            result.system_prompt = SUMMARY_SYSTEM_PROMPT
+            result.raw_prompt = prompt  # Store user prompt separately
+            result.raw_response = raw_response
+
+            logger.info(
+                "Successfully generated summary with metadata (%d chars, %d tags)",
+                len(result.content),
+                len(result.suggested_tags),
+            )
+
+        except requests.exceptions.Timeout as e:
+            raise OllamaAPIError(
+                f"Request timed out after {self._timeout}s. "
+                "Local models can be slow; consider increasing timeout."
+            ) from e
+
+        except requests.exceptions.RequestException as e:
+            raise OllamaAPIError(f"Ollama API error: {e}") from e
+
+        except (KeyError, json.JSONDecodeError) as e:
+            raise OllamaAPIError(f"Failed to parse Ollama response: {e}") from e
+
+        return result
