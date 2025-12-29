@@ -800,7 +800,7 @@ class TestCliIntegration:
     """Integration tests for CLI functionality."""
 
     @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.create_client")
+    @patch("summarize_links.cli.create_llm_client")
     @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     @patch("summarize_links.cli.extract_urls_with_context")
@@ -813,7 +813,7 @@ class TestCliIntegration:
         mock_extract: MagicMock,
         mock_exists: MagicMock,
         mock_fetch: MagicMock,
-        mock_create_client: MagicMock,
+        mock_create_llm_client: MagicMock,
         mock_write: MagicMock,
         mock_vault: Path,
     ) -> None:
@@ -836,7 +836,7 @@ class TestCliIntegration:
 
         mock_client = MagicMock()
         mock_client.summarize_with_metadata.return_value = SummaryResult(content="## Summary")
-        mock_create_client.return_value = mock_client
+        mock_create_llm_client.return_value = mock_client
 
         # Run CLI
         result = main(["from-note", "--date", "2025-12-16"])
@@ -848,7 +848,7 @@ class TestCliIntegration:
         mock_write.assert_called_once()
 
     @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.create_client")
+    @patch("summarize_links.cli.create_llm_client")
     @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     @patch("summarize_links.cli.load_config")
@@ -857,7 +857,7 @@ class TestCliIntegration:
         mock_load_config: MagicMock,
         mock_exists: MagicMock,
         mock_fetch: MagicMock,
-        mock_create_client: MagicMock,
+        mock_create_llm_client: MagicMock,
         mock_write: MagicMock,
         mock_vault: Path,
     ) -> None:
@@ -878,7 +878,7 @@ class TestCliIntegration:
 
         mock_client = MagicMock()
         mock_client.summarize_with_metadata.return_value = SummaryResult(content="## Summary")
-        mock_create_client.return_value = mock_client
+        mock_create_llm_client.return_value = mock_client
 
         # Run CLI
         result = main(["urls", "https://example.com", "https://test.com"])
@@ -915,7 +915,7 @@ class TestUrlLineDeletion:
     @patch("summarize_links.cli.remove_url_line_from_note")
     @patch("summarize_links.cli.add_summary_link_to_daily_note")
     @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.create_client")
+    @patch("summarize_links.cli.create_llm_client")
     @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     @patch("summarize_links.cli.extract_urls_with_context")
@@ -928,7 +928,7 @@ class TestUrlLineDeletion:
         mock_extract: MagicMock,
         mock_exists: MagicMock,
         mock_fetch: MagicMock,
-        mock_create_client: MagicMock,
+        mock_create_llm_client: MagicMock,
         mock_write: MagicMock,
         mock_add_link: MagicMock,
         mock_remove_url: MagicMock,
@@ -954,7 +954,7 @@ class TestUrlLineDeletion:
 
         mock_client = MagicMock()
         mock_client.summarize_with_metadata.return_value = SummaryResult(content="## Summary")
-        mock_create_client.return_value = mock_client
+        mock_create_llm_client.return_value = mock_client
 
         # Run CLI
         result = main(["from-note", "--date", "2025-12-16"])
@@ -966,7 +966,7 @@ class TestUrlLineDeletion:
     @patch("summarize_links.cli.remove_url_line_from_note")
     @patch("summarize_links.cli.add_summary_link_to_daily_note")
     @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.create_client")
+    @patch("summarize_links.cli.create_llm_client")
     @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     @patch("summarize_links.cli.extract_urls_with_context")
@@ -979,7 +979,7 @@ class TestUrlLineDeletion:
         mock_extract: MagicMock,
         mock_exists: MagicMock,
         mock_fetch: MagicMock,
-        mock_create_client: MagicMock,
+        mock_create_llm_client: MagicMock,
         mock_write: MagicMock,
         mock_add_link: MagicMock,
         mock_remove_url: MagicMock,
@@ -1005,7 +1005,7 @@ class TestUrlLineDeletion:
 
         mock_client = MagicMock()
         mock_client.summarize_with_metadata.return_value = SummaryResult(content="## Summary")
-        mock_create_client.return_value = mock_client
+        mock_create_llm_client.return_value = mock_client
 
         # Run CLI
         result = main(["from-note", "--date", "2025-12-16"])
@@ -1019,7 +1019,7 @@ class TestUrlLineDeletion:
     @patch("summarize_links.cli.remove_url_line_from_note")
     @patch("summarize_links.cli.add_summary_link_to_daily_note")
     @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.create_client")
+    @patch("summarize_links.cli.create_llm_client")
     @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     @patch("summarize_links.cli.extract_urls_with_context")
@@ -1032,7 +1032,7 @@ class TestUrlLineDeletion:
         mock_extract: MagicMock,
         mock_exists: MagicMock,
         mock_fetch: MagicMock,
-        mock_create_client: MagicMock,
+        mock_create_llm_client: MagicMock,
         mock_write: MagicMock,
         mock_add_link: MagicMock,
         mock_remove_url: MagicMock,
@@ -1051,7 +1051,7 @@ class TestUrlLineDeletion:
         mock_extract.return_value = [UrlWithContext(url="https://example.com")]
 
         mock_client = MagicMock()
-        mock_create_client.return_value = mock_client
+        mock_create_llm_client.return_value = mock_client
 
         # Run CLI
         result = main(["from-note", "--date", "2025-12-16"])
@@ -1063,7 +1063,7 @@ class TestUrlLineDeletion:
     @patch("summarize_links.cli.remove_url_line_from_note")
     @patch("summarize_links.cli.add_summary_link_to_daily_note")
     @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.create_client")
+    @patch("summarize_links.cli.create_llm_client")
     @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     @patch("summarize_links.cli.extract_urls_with_context")
@@ -1076,7 +1076,7 @@ class TestUrlLineDeletion:
         mock_extract: MagicMock,
         mock_exists: MagicMock,
         mock_fetch: MagicMock,
-        mock_create_client: MagicMock,
+        mock_create_llm_client: MagicMock,
         mock_write: MagicMock,
         mock_add_link: MagicMock,
         mock_remove_url: MagicMock,
@@ -1095,7 +1095,7 @@ class TestUrlLineDeletion:
         mock_exists.return_value = True  # Summary already exists!
 
         mock_client = MagicMock()
-        mock_create_client.return_value = mock_client
+        mock_create_llm_client.return_value = mock_client
 
         # Run CLI
         result = main(["from-note", "--date", "2025-12-16"])
@@ -1106,7 +1106,7 @@ class TestUrlLineDeletion:
 
     @patch("summarize_links.cli.write_stub_note")
     @patch("summarize_links.cli.remove_url_line_from_note")
-    @patch("summarize_links.cli.create_client")
+    @patch("summarize_links.cli.create_llm_client")
     @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     @patch("summarize_links.cli.extract_urls_with_context")
@@ -1119,7 +1119,7 @@ class TestUrlLineDeletion:
         mock_extract: MagicMock,
         mock_exists: MagicMock,
         mock_fetch: MagicMock,
-        mock_create_client: MagicMock,
+        mock_create_llm_client: MagicMock,
         mock_remove_url: MagicMock,
         mock_stub: MagicMock,
         mock_vault: Path,
@@ -1138,7 +1138,7 @@ class TestUrlLineDeletion:
         mock_fetch.side_effect = ContentFetchError("Connection failed")
 
         mock_client = MagicMock()
-        mock_create_client.return_value = mock_client
+        mock_create_llm_client.return_value = mock_client
 
         # Run CLI
         result = main(["from-note", "--date", "2025-12-16"])
@@ -1150,7 +1150,7 @@ class TestUrlLineDeletion:
     @patch("summarize_links.cli.remove_url_line_from_note")
     @patch("summarize_links.cli.add_summary_link_to_daily_note")
     @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.create_client")
+    @patch("summarize_links.cli.create_llm_client")
     @patch("summarize_links.cli.fetch_and_extract_metadata")
     @patch("summarize_links.cli.summary_exists")
     @patch("summarize_links.cli.extract_urls_with_context")
@@ -1163,7 +1163,7 @@ class TestUrlLineDeletion:
         mock_extract: MagicMock,
         mock_exists: MagicMock,
         mock_fetch: MagicMock,
-        mock_create_client: MagicMock,
+        mock_create_llm_client: MagicMock,
         mock_write: MagicMock,
         mock_add_link: MagicMock,
         mock_remove_url: MagicMock,
@@ -1190,7 +1190,7 @@ class TestUrlLineDeletion:
 
         mock_client = MagicMock()
         mock_client.summarize_with_metadata.return_value = SummaryResult(content="## Summary")
-        mock_create_client.return_value = mock_client
+        mock_create_llm_client.return_value = mock_client
         mock_write.return_value = mock_vault / "summaries" / "example.md"
 
         # Run CLI
