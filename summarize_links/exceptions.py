@@ -17,6 +17,9 @@ __all__ = [
     "RateLimitError",
     "NoteReadError",
     "NoteWriteError",
+    "OllamaServerError",
+    "OllamaAPIError",
+    "ModelNotInstalledError",
 ]
 
 
@@ -76,5 +79,23 @@ class NoteReadError(SummarizerError):
 
 class NoteWriteError(SummarizerError):
     """Raised when writing a summary note fails."""
+
+    pass
+
+
+class OllamaServerError(SummarizerError):
+    """Raised when Ollama server is not available or cannot be reached."""
+
+    pass
+
+
+class OllamaAPIError(SummarizerError):
+    """Raised when the Ollama API call fails."""
+
+    pass
+
+
+class ModelNotInstalledError(SummarizerError):
+    """Raised when required Ollama model is not installed."""
 
     pass
