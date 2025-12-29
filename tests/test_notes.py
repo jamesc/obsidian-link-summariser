@@ -849,7 +849,147 @@ class TestBuildFrontmatter:
         assert "---" in result
         assert "source: https://example.com" in result
         assert "date: 2025-12-16" in result
-        assert "status: success" in result
+        assert "summary_status: success" in result
+
+    def test_summary_status_success(self) -> None:
+        """Should include summary_status: success by default."""
+        date = datetime(2025, 12, 16)
+        result = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_status="success",
+        )
+
+        assert "summary_status: success" in result
+
+    def test_summary_status_error(self) -> None:
+        """Should include summary_status: error when specified."""
+        date = datetime(2025, 12, 16)
+        result = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_status="error",
+        )
+
+        assert "summary_status: error" in result
+
+    def test_summary_status_mocked(self) -> None:
+        """Should include summary_status: mocked when specified."""
+        date = datetime(2025, 12, 16)
+        result = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_status="mocked",
+        )
+
+        assert "summary_status: mocked" in result
+
+    def test_summary_model_included(self) -> None:
+        """Should include summary_model when provided."""
+        date = datetime(2025, 12, 16)
+        result = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_model="gemini-2.5-flash",
+        )
+
+        assert "summary_model: gemini-2.5-flash" in result
+
+    def test_summary_model_not_included_when_none(self) -> None:
+        """Should not include summary_model field when None."""
+        date = datetime(2025, 12, 16)
+        result = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_model=None,
+        )
+
+        assert "summary_model:" not in result
+
+    def test_summary_model_with_different_models(self) -> None:
+        """Should include any model name provided."""
+        date = datetime(2025, 12, 16)
+
+        # Test with Gemini model
+        result1 = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_model="gemini-1.5-pro",
+        )
+        assert "summary_model: gemini-1.5-pro" in result1
+
+        # Test with Ollama model
+        result2 = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_model="qwen3:latest",
+        )
+        assert "summary_model: qwen3:latest" in result2
+
+        # Test with another model
+        result3 = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_model="llama3.1:8b",
+        )
+        assert "summary_model: llama3.1:8b" in result3
+
+    def test_summary_date_default_to_now(self) -> None:
+        """Should include summary_date with current time when not provided."""
+        date = datetime(2025, 12, 16)
+        result = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_date=None,  # Should default to now
+        )
+
+        # Should have summary_date field
+        assert "summary_date:" in result
+        # Should be in YYYY-MM-DD HH:MM:SS format
+        # Since it defaults to now, we can't test exact value, just format
+        import re
+
+        assert re.search(r"summary_date: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", result)
+
+    def test_summary_date_with_specific_datetime(self) -> None:
+        """Should include summary_date with specific datetime when provided."""
+        date = datetime(2025, 12, 16)
+        summary_date = datetime(2025, 12, 16, 14, 30, 45)
+        result = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_date=summary_date,
+        )
+
+        assert "summary_date: 2025-12-16 14:30:45" in result
+
+    def test_summary_date_format(self) -> None:
+        """Should format summary_date as YYYY-MM-DD HH:MM:SS."""
+        date = datetime(2025, 12, 16)
+        # Single-digit month, day, hour, minute, second
+        summary_date = datetime(2025, 1, 5, 9, 5, 3)
+        result = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_date=summary_date,
+        )
+
+        # Should be zero-padded
+        assert "summary_date: 2025-01-05 09:05:03" in result
+
+    def test_summary_date_different_from_note_date(self) -> None:
+        """summary_date can be different from note date field."""
+        note_date = datetime(2025, 12, 15)
+        summary_date = datetime(2025, 12, 16, 10, 30, 0)
+        result = build_frontmatter(
+            url="https://example.com",
+            date=note_date,
+            summary_date=summary_date,
+        )
+
+        # Should have both dates
+        assert "date: 2025-12-15" in result  # Note date
+        assert "summary_date: 2025-12-16 10:30:00" in result  # Summary generation time
 
     def test_with_page_metadata(self) -> None:
         """Should include page metadata fields."""
@@ -1013,7 +1153,7 @@ class TestWriteSummaryNoteWithMetadata:
         assert "author: John Smith" in content
         assert "type: article" in content
         assert "date: 2025-12-16" in content
-        assert "status: success" in content
+        assert "summary_status: success" in content
         assert 'from: "[[2025-12-16]]"' in content
         assert "- reading" in content
         assert "- python" in content
@@ -1083,6 +1223,169 @@ class TestWriteSummaryNoteWithMetadata:
         filepath = tmp_path / "Summaries" / "2025-12-16-example-com.md"
         content = filepath.read_text()
         assert "Summary 2" in content
+
+    def test_includes_summary_status_field(self, tmp_path: Path) -> None:
+        """Should include summary_status field in written note."""
+        date = datetime(2025, 12, 16)
+        summary = SummaryResult(content="Test summary")
+
+        filepath = write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary,
+            date=date,
+            summary_status="success",
+        )
+
+        content = filepath.read_text()
+        assert "summary_status: success" in content
+
+    def test_includes_summary_status_error(self, tmp_path: Path) -> None:
+        """Should include summary_status: error when specified."""
+        date = datetime(2025, 12, 16)
+        summary = SummaryResult(content="Error case")
+
+        filepath = write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary,
+            date=date,
+            summary_status="error",
+        )
+
+        content = filepath.read_text()
+        assert "summary_status: error" in content
+
+    def test_includes_summary_status_mocked(self, tmp_path: Path) -> None:
+        """Should include summary_status: mocked when specified."""
+        date = datetime(2025, 12, 16)
+        summary = SummaryResult(content="Mocked summary")
+
+        filepath = write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary,
+            date=date,
+            summary_status="mocked",
+        )
+
+        content = filepath.read_text()
+        assert "summary_status: mocked" in content
+
+    def test_includes_summary_model_when_provided(self, tmp_path: Path) -> None:
+        """Should include summary_model field when provided."""
+        date = datetime(2025, 12, 16)
+        summary = SummaryResult(content="Test summary")
+
+        filepath = write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary,
+            date=date,
+            summary_model="gemini-2.5-flash",
+        )
+
+        content = filepath.read_text()
+        assert "summary_model: gemini-2.5-flash" in content
+
+    def test_omits_summary_model_when_none(self, tmp_path: Path) -> None:
+        """Should not include summary_model field when None."""
+        date = datetime(2025, 12, 16)
+        summary = SummaryResult(content="Test summary")
+
+        filepath = write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary,
+            date=date,
+            summary_model=None,
+        )
+
+        content = filepath.read_text()
+        assert "summary_model:" not in content
+
+    def test_includes_summary_model_ollama(self, tmp_path: Path) -> None:
+        """Should include Ollama model names."""
+        date = datetime(2025, 12, 16)
+        summary = SummaryResult(content="Test summary")
+
+        filepath = write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary,
+            date=date,
+            summary_model="qwen3:latest",
+        )
+
+        content = filepath.read_text()
+        assert "summary_model: qwen3:latest" in content
+
+    def test_includes_summary_date_field(self, tmp_path: Path) -> None:
+        """Should include summary_date field with timestamp."""
+        date = datetime(2025, 12, 16)
+        summary_date = datetime(2025, 12, 16, 14, 30, 45)
+        summary = SummaryResult(content="Test summary")
+
+        filepath = write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary,
+            date=date,
+            summary_date=summary_date,
+        )
+
+        content = filepath.read_text()
+        assert "summary_date: 2025-12-16 14:30:45" in content
+
+    def test_summary_date_defaults_to_current_time(self, tmp_path: Path) -> None:
+        """Should include summary_date with current time when not provided."""
+        date = datetime(2025, 12, 16)
+        summary = SummaryResult(content="Test summary")
+
+        filepath = write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary,
+            date=date,
+            summary_date=None,  # Should default to now
+        )
+
+        content = filepath.read_text()
+        # Should have summary_date field with proper format
+        assert "summary_date:" in content
+        import re
+
+        assert re.search(r"summary_date: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", content)
+
+    def test_all_summary_fields_together(self, tmp_path: Path) -> None:
+        """Should include all summary_ fields when provided together."""
+        date = datetime(2025, 12, 16)
+        summary_date = datetime(2025, 12, 16, 10, 30, 0)
+        summary = SummaryResult(content="Complete test")
+
+        filepath = write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary,
+            date=date,
+            summary_status="success",
+            summary_model="gemini-2.5-flash",
+            summary_date=summary_date,
+        )
+
+        content = filepath.read_text()
+        assert "summary_status: success" in content
+        assert "summary_model: gemini-2.5-flash" in content
+        assert "summary_date: 2025-12-16 10:30:00" in content
 
 
 class TestRemoveUrlLineFromNote:

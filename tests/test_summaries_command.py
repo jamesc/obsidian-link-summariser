@@ -39,7 +39,7 @@ def test_scan_summaries_with_success(tmp_path: Path) -> None:
         """---
 source: https://example.com
 date: 2024-01-01
-status: success
+summary_status: success
 ---
 
 Summary content here.
@@ -69,7 +69,7 @@ def test_scan_summaries_with_mocked(tmp_path: Path) -> None:
         """---
 source: https://example.com
 date: 2024-01-01
-status: mocked
+summary_status: mocked
 ---
 
 This is a mocked summary.
@@ -99,7 +99,7 @@ def test_scan_summaries_with_errors(tmp_path: Path) -> None:
         """---
 source: https://example.com
 date: 2024-01-01
-status: error
+summary_status: error
 ---
 
 ## Summary Unavailable
@@ -133,7 +133,7 @@ def test_scan_summaries_mixed(tmp_path: Path) -> None:
         """---
 source: https://example.com
 date: 2024-01-01
-status: success
+summary_status: success
 ---
 Summary.
 """,
@@ -145,7 +145,7 @@ Summary.
         """---
 source: https://example2.com
 date: 2024-01-02
-status: mocked
+summary_status: mocked
 ---
 Mocked.
 """,
@@ -157,7 +157,7 @@ Mocked.
         """---
 source: https://example3.com
 date: 2024-01-03
-status: error
+summary_status: error
 ---
 Error.
 """,
@@ -185,7 +185,7 @@ def test_scan_summaries_date_range(tmp_path: Path) -> None:
         """---
 source: https://example.com
 date: 2024-01-01
-status: success
+summary_status: success
 ---
 """,
         encoding="utf-8",
@@ -195,7 +195,7 @@ status: success
         """---
 source: https://example.com
 date: 2024-06-15
-status: success
+summary_status: success
 ---
 """,
         encoding="utf-8",
@@ -205,7 +205,7 @@ status: success
         """---
 source: https://example.com
 date: 2024-12-31
-status: success
+summary_status: success
 ---
 """,
         encoding="utf-8",
@@ -228,7 +228,7 @@ def test_scan_summaries_ignores_non_markdown(tmp_path: Path) -> None:
         """---
 source: https://example.com
 date: 2024-01-01
-status: success
+summary_status: success
 ---
 """,
         encoding="utf-8",

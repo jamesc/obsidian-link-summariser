@@ -7,8 +7,15 @@ including temporary vault directories and sample content.
 
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def mock_load_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock load_dotenv globally to prevent .env file from interfering with tests."""
+    monkeypatch.setattr("summarize_links.config.load_dotenv", Mock())
 
 
 @pytest.fixture
@@ -76,7 +83,7 @@ def mock_vault_with_config(mock_vault: Path) -> Path:
 out_folder: "MySummaries"
 max_links: 5
 daily_notes_folder: "Journal"
-model: "gemini-2.0-flash-exp"
+summary_model: "gemini-2.0-flash-exp"
 """
     (mock_vault / ".summarizer-config.yaml").write_text(config_content)
     return mock_vault

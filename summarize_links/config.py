@@ -49,6 +49,9 @@ __all__ = [
     "GEMINI_TPM_LIMIT",
     "GEMINI_DAILY_LIMIT",
     "DEFAULT_MODEL_LIMITS",
+    # Constants - Ollama
+    "DEFAULT_OLLAMA_ENDPOINT",
+    "OLLAMA_TIMEOUT",
     # Functions
     "get_model_rate_limits",
 ]
@@ -75,6 +78,10 @@ DEFAULT_MAX_TAGS = 10  # Maximum tags in frontmatter
 GEMINI_RPM_LIMIT = 5  # Requests per minute
 GEMINI_TPM_LIMIT = 250000  # Tokens per minute (peak)
 GEMINI_DAILY_LIMIT = 20  # Requests per day
+
+# Ollama configuration
+DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434"
+OLLAMA_TIMEOUT = 120  # Seconds (local models can be slower)
 
 # Default rate limits per model (actual API limits before safety margin)
 # These are the raw API limits - the rate limiter applies a 10% safety margin
@@ -175,8 +182,8 @@ class Config:
     environment variables and/or YAML config file.
 
     Attributes:
-        gemini_api_key: Google AI Studio API key (required for non-mock mode)
-        model: Gemini model to use for summarization
+        gemini_api_key: Google AI Studio API key (required for Gemini models)
+        model: Model to use for summarization (auto-detects provider)
         vault_path: Path to the Obsidian vault
         out_folder: Folder name for summary notes (relative to vault)
         max_links: Maximum number of URLs to process in one run
@@ -187,6 +194,7 @@ class Config:
         force: If True, overwrite existing summaries
         default_tags: Tags to add to all summary notes
         max_tags: Maximum number of tags to include in frontmatter
+        ollama_endpoint: Ollama server endpoint URL
         rpm_limit: Gemini API requests per minute limit (legacy, per-model preferred)
         tpm_limit: Gemini API tokens per minute limit (legacy, per-model preferred)
         daily_limit: Gemini API requests per day limit (legacy, per-model preferred)
@@ -205,6 +213,7 @@ class Config:
     force: bool = False
     default_tags: list[str] | None = None
     max_tags: int = DEFAULT_MAX_TAGS
+    ollama_endpoint: str = DEFAULT_OLLAMA_ENDPOINT
     rpm_limit: int = GEMINI_RPM_LIMIT
     tpm_limit: int = GEMINI_TPM_LIMIT
     daily_limit: int = GEMINI_DAILY_LIMIT
@@ -217,10 +226,15 @@ class Config:
         Raises:
             ConfigError: If required configuration is missing or invalid.
         """
-        # API key is required unless in mock mode
-        if not self.mock_mode and not self.gemini_api_key:
+        # Detect provider from model name
+        from summarize_links.llm_factory import detect_provider
+
+        provider = detect_provider(self.model)
+
+        # API key is required for Gemini models (unless in mock mode)
+        if not self.mock_mode and provider == "gemini" and not self.gemini_api_key:
             raise ConfigError(
-                "GEMINI_API_KEY environment variable is required. "
+                "GEMINI_API_KEY environment variable is required for Gemini models. "
                 "Get one at https://aistudio.google.com/apikey"
             )
 
@@ -238,7 +252,7 @@ class Config:
         if self.max_links < 1:
             raise ConfigError(f"max_links must be at least 1, got {self.max_links}")
 
-        logger.debug("Configuration validated successfully")
+        logger.debug("Configuration validated successfully (provider: %s)", provider)
 
 
 def load_yaml_config(vault_path: Path) -> dict[str, Any]:
@@ -335,13 +349,21 @@ def load_config(
         yaml_config = load_yaml_config(resolved_vault_path)
 
     # Merge: CLI args > env vars > YAML config > defaults
-    # Model
+    # Model selection with backward compatibility
+    # Priority: CLI arg > MODEL env > GEMINI_MODEL env > YAML > default
     if model:
         config.model = model
+    elif os.getenv("MODEL"):
+        config.model = os.getenv("MODEL", DEFAULT_MODEL)
     elif os.getenv("GEMINI_MODEL"):
         config.model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
+        logger.warning("GEMINI_MODEL is deprecated, use MODEL environment variable instead")
+    elif "summary_model" in yaml_config:
+        config.model = yaml_config["summary_model"]
     elif "model" in yaml_config:
+        # Backward compatibility: support old "model" field
         config.model = yaml_config["model"]
+        logger.warning("'model' in YAML config is deprecated, use 'summary_model' instead")
 
     # Output folder
     if out_folder:
@@ -370,6 +392,12 @@ def load_config(
     # Max tags (YAML only)
     if "max_tags" in yaml_config:
         config.max_tags = int(yaml_config["max_tags"])
+
+    # Ollama endpoint (env var > YAML > default)
+    if os.getenv("OLLAMA_ENDPOINT"):
+        config.ollama_endpoint = os.getenv("OLLAMA_ENDPOINT", DEFAULT_OLLAMA_ENDPOINT)
+    elif "ollama_endpoint" in yaml_config:
+        config.ollama_endpoint = yaml_config["ollama_endpoint"]
 
     # Per-model rate limits (YAML only)
     if "model_limits" in yaml_config:

@@ -23,13 +23,17 @@ from summarize_links.exceptions import (
     ContentExtractionError,
     ContentFetchError,
     GeminiAPIError,
+    ModelNotInstalledError,
     NoteReadError,
+    OllamaAPIError,
+    OllamaServerError,
     RateLimitError,
     SummarizerError,
     URLValidationError,
 )
 from summarize_links.extract import fetch_and_extract_metadata
-from summarize_links.gemini_client import SummarizerProtocol, create_client
+from summarize_links.gemini_client import SummarizerProtocol
+from summarize_links.llm_factory import create_llm_client, detect_provider
 from summarize_links.models import UrlWithContext
 from summarize_links.notes import (
     add_summary_link_to_daily_note,
@@ -323,7 +327,7 @@ def _process_url_with_metadata(
         )
 
         # Determine status based on mock mode
-        status = "mocked" if config.mock_mode else "success"
+        summary_status = "mocked" if config.mock_mode else "success"
 
         # Write the summary note with rich frontmatter
         # Use needs_overwrite to ensure mocked/error stubs get replaced
@@ -339,7 +343,9 @@ def _process_url_with_metadata(
             source_note=daily_note_filename,
             default_tags=config.default_tags,
             overwrite=needs_overwrite,
-            status=status,
+            summary_status=summary_status,
+            summary_model=config.model,
+            summary_date=datetime.now(),
         )
 
         # Add link to daily note if we have the source note filename
@@ -400,6 +406,42 @@ def _process_url_with_metadata(
                 date=summary_date,
             )
         return False, f"[Rate limited] {url}", False
+
+    except OllamaServerError as e:
+        logger.error("Ollama server error for %s: %s", url, e)
+        if not config.dry_run:
+            write_stub_note(
+                vault_path=config.vault_path,
+                out_folder=config.out_folder,
+                url=url,
+                reason=f"Ollama server unavailable: {e}",
+                date=summary_date,
+            )
+        return False, f"Ollama server error: {url}", False
+
+    except ModelNotInstalledError as e:
+        logger.error("Model not installed for %s: %s", url, e)
+        if not config.dry_run:
+            write_stub_note(
+                vault_path=config.vault_path,
+                out_folder=config.out_folder,
+                url=url,
+                reason=f"Model not installed: {e}",
+                date=summary_date,
+            )
+        return False, f"Model not installed: {url}", False
+
+    except OllamaAPIError as e:
+        logger.error("Ollama API error for %s: %s", url, e)
+        if not config.dry_run:
+            write_stub_note(
+                vault_path=config.vault_path,
+                out_folder=config.out_folder,
+                url=url,
+                reason=f"Ollama API error: {e}",
+                date=summary_date,
+            )
+        return False, f"Ollama API error: {url}", False
 
     except GeminiAPIError as e:
         logger.error("Gemini API error for %s: %s", url, e)
@@ -626,7 +668,7 @@ def cmd_list(config: Config) -> int:
 
 def cmd_status(config: Config) -> int:
     """
-    Show current rate limit status.
+    Show current provider and rate limit status.
 
     Args:
         config: Application configuration.
@@ -634,6 +676,20 @@ def cmd_status(config: Config) -> int:
     Returns:
         Exit code.
     """
+    # Detect provider from model name
+    provider = detect_provider(config.model)
+
+    _print("[bold]LLM Provider Status[/]\n")
+    _print(f"[bold]Provider:[/] {provider.upper()}")
+    _print(f"[bold]Model:[/] {config.model}\n")
+
+    if provider == "ollama":
+        _print(f"[bold]Endpoint:[/] {config.ollama_endpoint}")
+        _print("[cyan]✓ No rate limiting for local models[/]")
+        _print()
+        return EXIT_SUCCESS
+
+    # For Gemini, show rate limit information
     # Initialize rate limiter with vault path and configured limits
     rate_limiter = get_rate_limiter(
         state_path=config.vault_path,
@@ -884,10 +940,11 @@ def _process_urls_batch(
     Returns:
         Exit code.
     """
-    # Create the Gemini client
-    client = create_client(
-        api_key=config.gemini_api_key,
+    # Create the LLM client (auto-detects provider from model name)
+    client = create_llm_client(
         model=config.model,
+        gemini_api_key=config.gemini_api_key,
+        ollama_endpoint=config.ollama_endpoint,
         mock_mode=config.mock_mode,
         state_path=config.vault_path,
         rpm_limit=config.rpm_limit,
@@ -1060,6 +1117,19 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as e:
         _print_error(f"[red]Configuration error: {e}[/]")
         return EXIT_CONFIG_ERROR
+
+    except OllamaServerError as e:
+        _print_error("[red]Ollama server not available![/]")
+        _print_error("[yellow]To start Ollama:[/]")
+        _print_error("  • Start the Ollama app, or")
+        _print_error("  • Run: ollama serve")
+        _print_error(f"\n[red]Error:[/] {e}")
+        return EXIT_ERROR
+
+    except ModelNotInstalledError as e:
+        _print_error("[red]Ollama model not installed![/]")
+        _print_error(f"\n[red]Error:[/] {e}")
+        return EXIT_ERROR
 
     except SummarizerError as e:
         _print_error(f"[red]Error: {e}[/]")

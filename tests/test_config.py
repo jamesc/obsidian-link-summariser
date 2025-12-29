@@ -144,7 +144,7 @@ class TestLoadConfig:
         monkeypatch.setenv("GEMINI_MODEL", "env-model")
 
         # Create YAML config
-        config_content = {"model": "yaml-model", "out_folder": "YamlFolder"}
+        config_content = {"model": "gemini-1.5-pro", "out_folder": "YamlFolder"}
         config_file = tmp_path / ".summarizer-config.yaml"
         with open(config_file, "w") as f:
             yaml.dump(config_content, f)
@@ -152,29 +152,29 @@ class TestLoadConfig:
         # Load with CLI overrides
         config = load_config(
             vault_path=tmp_path,
-            model="cli-model",
+            model="gemini-2.0-flash",
             out_folder="CLIFolder",
             max_links=3,
         )
 
-        assert config.model == "cli-model"
+        assert config.model == "gemini-2.0-flash"
         assert config.out_folder == "CLIFolder"
         assert config.max_links == 3
 
     def test_env_vars_override_yaml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Env vars should override YAML config."""
         monkeypatch.setenv("GEMINI_API_KEY", "env-key")
-        monkeypatch.setenv("GEMINI_MODEL", "env-model")
+        monkeypatch.setenv("GEMINI_MODEL", "gemini-1.5-flash")
 
         # Create YAML config
-        config_content = {"model": "yaml-model"}
+        config_content = {"model": "gemini-1.5-pro"}
         config_file = tmp_path / ".summarizer-config.yaml"
         with open(config_file, "w") as f:
             yaml.dump(config_content, f)
 
         config = load_config(vault_path=tmp_path)
 
-        assert config.model == "env-model"
+        assert config.model == "gemini-1.5-flash"
         assert config.gemini_api_key == "env-key"
 
     def test_yaml_config_used_as_fallback(
