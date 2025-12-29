@@ -912,8 +912,8 @@ def write_summary_note_with_metadata(
         overwrite: If True, overwrite existing file.
         default_tags: Tags to always include.
         max_tags: Maximum number of tags.
-        status: Status to write in frontmatter ('success', 'mocked', 'error').
-        model: Model used to generate the summary.
+        summary_status: Status to write in frontmatter ('success', 'mocked', 'error').
+        summary_model: Model used to generate the summary.
 
     Returns:
         Path to the written file.
