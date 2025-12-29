@@ -233,10 +233,7 @@ class OllamaClient:
             logger.debug("Model '%s' is installed", self._model)
 
         except requests.exceptions.RequestException as e:
-            if not isinstance(e, requests.exceptions.HTTPError):
-                raise OllamaServerError(f"Failed to check installed models: {e}") from e
-            raise
-
+            raise OllamaServerError(f"Failed to check installed models: {e}") from e
     def summarize(self, content: str, url: str, title: str | None = None) -> str:
         """
         Summarize content using the Ollama API.
