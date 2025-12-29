@@ -41,10 +41,12 @@ class TestDetectProvider:
         # Even if someone weirdly adds a colon, gemini- prefix wins
         assert detect_provider("gemini-1.5:custom") == "gemini"
 
-    def test_detect_gemini_default(self) -> None:
-        """Test detection of Gemini models (default for unknown models)."""
-        assert detect_provider("unknown-model") == "gemini"
-        assert detect_provider("some-other-model") == "gemini"
+    def test_detect_unknown_model_raises_error(self) -> None:
+        """Test that unknown models raise ConfigError."""
+        with pytest.raises(ConfigError, match="Unable to determine provider"):
+            detect_provider("unknown-model")
+        with pytest.raises(ConfigError, match="Unable to determine provider"):
+            detect_provider("some-other-model")
 
     def test_all_ollama_prefixes_detected(self) -> None:
         """Test that all known Ollama prefixes are detected."""

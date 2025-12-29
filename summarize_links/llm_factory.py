@@ -54,14 +54,19 @@ def detect_provider(model: str) -> str:
     1. Models starting with "gemini-" → Gemini
     2. Models with ":" character (Ollama tag notation, e.g., "llama3:latest") → Ollama
     3. Known Ollama model name prefixes → Ollama
-    4. Default → Gemini
+    4. Unknown models → raises ConfigError
 
     Args:
         model: Model name/identifier.
 
     Returns:
         "ollama" or "gemini"
+
+    Raises:
+        ConfigError: If model provider cannot be determined.
     """
+    from summarize_links.exceptions import ConfigError
+
     # Check for Gemini-specific prefix first
     if model.startswith("gemini-"):
         logger.debug("Detected Gemini model by 'gemini-' prefix: %s", model)
@@ -79,9 +84,12 @@ def detect_provider(model: str) -> str:
             logger.debug("Detected Ollama model by prefix '%s': %s", prefix, model)
             return "ollama"
 
-    # Default to Gemini
-    logger.debug("Detected Gemini model (default): %s", model)
-    return "gemini"
+    # Cannot determine provider - raise error
+    raise ConfigError(
+        f"Unable to determine provider for model: {model}. "
+        f"Use 'gemini-*' prefix for Gemini models, ':' for Ollama tags (e.g., 'llama3:latest'), "
+        f"or a known Ollama model prefix."
+    )
 
 
 def create_llm_client(
