@@ -30,11 +30,21 @@ class TestDetectProvider:
             assert detect_provider(f"{prefix}3") == "ollama"
             assert detect_provider(f"{prefix.upper()}") == "ollama"
 
-    def test_detect_gemini_default(self) -> None:
-        """Test detection of Gemini models (default)."""
+    def test_detect_gemini_by_prefix(self) -> None:
+        """Test detection of Gemini models by 'gemini-' prefix."""
         assert detect_provider("gemini-2.5-flash") == "gemini"
         assert detect_provider("gemini-3-flash") == "gemini"
+        assert detect_provider("gemini-1.5-pro") == "gemini"
+
+    def test_detect_gemini_prefix_overrides_colon(self) -> None:
+        """Test that gemini- prefix takes priority over : character."""
+        # Even if someone weirdly adds a colon, gemini- prefix wins
+        assert detect_provider("gemini-1.5:custom") == "gemini"
+
+    def test_detect_gemini_default(self) -> None:
+        """Test detection of Gemini models (default for unknown models)."""
         assert detect_provider("unknown-model") == "gemini"
+        assert detect_provider("some-other-model") == "gemini"
 
     def test_all_ollama_prefixes_detected(self) -> None:
         """Test that all known Ollama prefixes are detected."""

@@ -50,11 +50,11 @@ def detect_provider(model: str) -> str:
     """
     Detect which provider to use based on model name.
 
-    Ollama models are detected by:
-    1. Presence of ":" character (Ollama tag notation, e.g., "llama3:latest")
-    2. Known Ollama model name prefixes
-
-    Otherwise, defaults to Gemini.
+    Provider detection logic:
+    1. Models starting with "gemini-" → Gemini
+    2. Models with ":" character (Ollama tag notation, e.g., "llama3:latest") → Ollama
+    3. Known Ollama model name prefixes → Ollama
+    4. Default → Gemini
 
     Args:
         model: Model name/identifier.
@@ -62,6 +62,11 @@ def detect_provider(model: str) -> str:
     Returns:
         "ollama" or "gemini"
     """
+    # Check for Gemini-specific prefix first
+    if model.startswith("gemini-"):
+        logger.debug("Detected Gemini model by 'gemini-' prefix: %s", model)
+        return "gemini"
+
     # Ollama models typically use : for tags (e.g., llama3:latest)
     if ":" in model:
         logger.debug("Detected Ollama model by ':' character: %s", model)

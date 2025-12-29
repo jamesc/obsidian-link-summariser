@@ -234,6 +234,7 @@ class OllamaClient:
 
         except requests.exceptions.RequestException as e:
             raise OllamaServerError(f"Failed to check installed models: {e}") from e
+
     def summarize(self, content: str, url: str, title: str | None = None) -> str:
         """
         Summarize content using the Ollama API.
