@@ -697,6 +697,7 @@ def build_frontmatter(
     default_tags: list[str] | None = None,
     max_tags: int = DEFAULT_MAX_TAGS,
     summary_model: str | None = None,
+    summary_date: datetime | None = None,
 ) -> str:
     """
     Build YAML frontmatter for a summary note.
@@ -714,6 +715,7 @@ def build_frontmatter(
         default_tags: Tags to always include.
         max_tags: Maximum number of tags.
         summary_model: Model used to generate the summary.
+        summary_date: Date when the summary was generated (defaults to now).
 
     Returns:
         YAML frontmatter string (including --- delimiters).
@@ -748,6 +750,12 @@ def build_frontmatter(
     # Model used
     if summary_model:
         lines.append(f"summary_model: {summary_model}")
+
+    # Summary generation date
+    if summary_date is None:
+        summary_date = datetime.now()
+    summary_date_str = summary_date.strftime("%Y-%m-%d %H:%M:%S")
+    lines.append(f"summary_date: {summary_date_str}")
 
     # Source daily note (backlink)
     if source_note:
@@ -884,6 +892,7 @@ def write_summary_note_with_metadata(
     max_tags: int = DEFAULT_MAX_TAGS,
     summary_status: str = "success",
     summary_model: str | None = None,
+    summary_date: datetime | None = None,
 ) -> Path:
     """
     Write a summary note with rich frontmatter.
@@ -941,6 +950,7 @@ def write_summary_note_with_metadata(
         default_tags=default_tags,
         max_tags=max_tags,
         summary_model=summary_model,
+        summary_date=summary_date,
     )
 
     # Combine frontmatter and content

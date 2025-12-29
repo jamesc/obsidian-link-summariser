@@ -6,6 +6,7 @@ and summarization functionality with various response formats.
 """
 
 import json
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -19,14 +20,14 @@ from summarize_links.ollama_client import OllamaClient, _parse_ollama_response
 class TestOllamaClient:
     """Tests for OllamaClient."""
 
-    def test_init(self):
+    def test_init(self) -> None:
         """Test client initialization."""
         client = OllamaClient(model="llama3:latest")
         assert client._model == "llama3:latest"
         assert client._endpoint == "http://localhost:11434"
         assert client._timeout == 120
 
-    def test_init_custom_endpoint(self):
+    def test_init_custom_endpoint(self) -> None:
         """Test client initialization with custom endpoint."""
         client = OllamaClient(
             model="mistral",
@@ -38,7 +39,7 @@ class TestOllamaClient:
         assert client._timeout == 60
 
     @patch("summarize_links.ollama_client.requests.get")
-    def test_check_server_success(self, mock_get):
+    def test_check_server_success(self, mock_get: Any) -> None:
         """Test successful server connectivity check."""
         mock_get.return_value.status_code = 200
         mock_get.return_value.json.return_value = {"models": []}
@@ -50,7 +51,7 @@ class TestOllamaClient:
         mock_get.assert_called_once()
 
     @patch("summarize_links.ollama_client.requests.get")
-    def test_check_server_connection_error(self, mock_get):
+    def test_check_server_connection_error(self, mock_get: Any) -> None:
         """Test server check with connection error."""
         mock_get.side_effect = requests.exceptions.ConnectionError("Connection refused")
 
@@ -59,7 +60,7 @@ class TestOllamaClient:
             client._check_server()
 
     @patch("summarize_links.ollama_client.requests.get")
-    def test_check_server_timeout(self, mock_get):
+    def test_check_server_timeout(self, mock_get: Any) -> None:
         """Test server check with timeout."""
         mock_get.side_effect = requests.exceptions.Timeout("Timeout")
 
@@ -68,7 +69,7 @@ class TestOllamaClient:
             client._check_server()
 
     @patch("summarize_links.ollama_client.requests.get")
-    def test_check_model_installed_success(self, mock_get):
+    def test_check_model_installed_success(self, mock_get: Any) -> None:
         """Test successful model installation check."""
         mock_get.return_value.status_code = 200
         mock_get.return_value.json.return_value = {
@@ -84,7 +85,7 @@ class TestOllamaClient:
         assert client._model_checked is True
 
     @patch("summarize_links.ollama_client.requests.get")
-    def test_check_model_not_installed(self, mock_get):
+    def test_check_model_not_installed(self, mock_get: Any) -> None:
         """Test model check when model is not installed."""
         mock_get.return_value.status_code = 200
         mock_get.return_value.json.return_value = {
@@ -99,7 +100,7 @@ class TestOllamaClient:
 
     @patch("summarize_links.ollama_client.requests.post")
     @patch("summarize_links.ollama_client.requests.get")
-    def test_summarize_success(self, mock_get, mock_post):
+    def test_summarize_success(self, mock_get: Any, mock_post: Any) -> None:
         """Test successful summarization."""
         # Mock server and model checks
         mock_get.return_value.status_code = 200
@@ -127,7 +128,7 @@ class TestOllamaClient:
 
     @patch("summarize_links.ollama_client.requests.post")
     @patch("summarize_links.ollama_client.requests.get")
-    def test_summarize_timeout(self, mock_get, mock_post):
+    def test_summarize_timeout(self, mock_get: Any, mock_post: Any) -> None:
         """Test summarization with timeout."""
         # Mock server and model checks
         mock_get.return_value.status_code = 200
@@ -142,7 +143,7 @@ class TestOllamaClient:
 
     @patch("summarize_links.ollama_client.requests.post")
     @patch("summarize_links.ollama_client.requests.get")
-    def test_summarize_empty_response(self, mock_get, mock_post):
+    def test_summarize_empty_response(self, mock_get: Any, mock_post: Any) -> None:
         """Test summarization with empty response."""
         # Mock server and model checks
         mock_get.return_value.status_code = 200
@@ -162,7 +163,7 @@ class TestOllamaClient:
 
     @patch("summarize_links.ollama_client.requests.post")
     @patch("summarize_links.ollama_client.requests.get")
-    def test_summarize_with_metadata(self, mock_get, mock_post):
+    def test_summarize_with_metadata(self, mock_get: Any, mock_post: Any) -> None:
         """Test summarization with structured metadata."""
         # Mock server and model checks
         mock_get.return_value.status_code = 200
@@ -193,7 +194,7 @@ class TestOllamaClient:
 class TestParseOllamaResponse:
     """Tests for _parse_ollama_response function."""
 
-    def test_parse_clean_json(self):
+    def test_parse_clean_json(self) -> None:
         """Test parsing clean JSON response."""
         response = '{"summary": "Test", "suggested_tags": ["tag1"], "content_type": "article"}'
         result = _parse_ollama_response(response)
@@ -202,7 +203,7 @@ class TestParseOllamaResponse:
         assert result.suggested_tags == ["tag1"]
         assert result.content_type == "article"
 
-    def test_parse_json_in_markdown(self):
+    def test_parse_json_in_markdown(self) -> None:
         """Test parsing JSON wrapped in markdown code block."""
         response = """```json
 {
@@ -217,7 +218,7 @@ class TestParseOllamaResponse:
         assert result.suggested_tags == ["test"]
         assert result.content_type == "blog"
 
-    def test_parse_malformed_json(self):
+    def test_parse_malformed_json(self) -> None:
         """Test parsing malformed JSON (fallback to raw text)."""
         response = "This is not valid JSON but should still work"
         result = _parse_ollama_response(response)

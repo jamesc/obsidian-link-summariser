@@ -345,6 +345,7 @@ def _process_url_with_metadata(
             overwrite=needs_overwrite,
             summary_status=summary_status,
             summary_model=config.model,
+            summary_date=datetime.now(),
         )
 
         # Add link to daily note if we have the source note filename

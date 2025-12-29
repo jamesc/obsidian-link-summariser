@@ -280,7 +280,7 @@ class OllamaClient:
             response.raise_for_status()
 
             data = response.json()
-            summary = data.get("response", "")
+            summary: str = data.get("response", "")
 
             if not summary:
                 raise OllamaAPIError("Empty response from Ollama API")

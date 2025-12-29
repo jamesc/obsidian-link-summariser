@@ -7,6 +7,7 @@ the appropriate client implementation.
 
 import logging
 from pathlib import Path
+from typing import Any
 
 from summarize_links.gemini_client import GeminiClient, MockGeminiClient, SummarizerProtocol
 from summarize_links.ollama_client import DEFAULT_OLLAMA_ENDPOINT, OllamaClient
@@ -84,7 +85,7 @@ def create_llm_client(
     ollama_endpoint: str | None = None,
     mock_mode: bool = False,
     state_path: Path | None = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> SummarizerProtocol:
     """
     Create appropriate LLM client based on model name.

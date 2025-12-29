@@ -4,6 +4,8 @@ Unit tests for the LLM factory.
 Tests cover provider detection logic and client creation.
 """
 
+from typing import Any
+
 import pytest
 
 from summarize_links.exceptions import ConfigError
@@ -15,26 +17,26 @@ from summarize_links.ollama_client import OllamaClient
 class TestDetectProvider:
     """Tests for detect_provider function."""
 
-    def test_detect_ollama_with_colon(self):
+    def test_detect_ollama_with_colon(self) -> None:
         """Test detection of Ollama models by ':' character."""
         assert detect_provider("llama3:latest") == "ollama"
         assert detect_provider("mistral:7b") == "ollama"
         assert detect_provider("phi3:mini") == "ollama"
 
-    def test_detect_ollama_by_prefix(self):
+    def test_detect_ollama_by_prefix(self) -> None:
         """Test detection of Ollama models by known prefixes."""
         for prefix in ["llama", "mistral", "phi", "qwen", "gemma"]:
             assert detect_provider(prefix) == "ollama"
             assert detect_provider(f"{prefix}3") == "ollama"
             assert detect_provider(f"{prefix.upper()}") == "ollama"
 
-    def test_detect_gemini_default(self):
+    def test_detect_gemini_default(self) -> None:
         """Test detection of Gemini models (default)."""
         assert detect_provider("gemini-2.5-flash") == "gemini"
         assert detect_provider("gemini-3-flash") == "gemini"
         assert detect_provider("unknown-model") == "gemini"
 
-    def test_all_ollama_prefixes_detected(self):
+    def test_all_ollama_prefixes_detected(self) -> None:
         """Test that all known Ollama prefixes are detected."""
         for prefix in OLLAMA_MODEL_PREFIXES:
             assert detect_provider(prefix) == "ollama"
@@ -44,7 +46,7 @@ class TestDetectProvider:
 class TestCreateLLMClient:
     """Tests for create_llm_client factory function."""
 
-    def test_create_mock_client(self):
+    def test_create_mock_client(self) -> None:
         """Test creation of mock client."""
         client = create_llm_client(
             model="any-model",
@@ -52,7 +54,7 @@ class TestCreateLLMClient:
         )
         assert isinstance(client, MockGeminiClient)
 
-    def test_create_ollama_client(self):
+    def test_create_ollama_client(self) -> None:
         """Test creation of Ollama client."""
         client = create_llm_client(
             model="llama3:latest",
@@ -62,13 +64,13 @@ class TestCreateLLMClient:
         assert client._model == "llama3:latest"
         assert client._endpoint == "http://localhost:11434"
 
-    def test_create_ollama_client_default_endpoint(self):
+    def test_create_ollama_client_default_endpoint(self) -> None:
         """Test creation of Ollama client with default endpoint."""
         client = create_llm_client(model="mistral")
         assert isinstance(client, OllamaClient)
         assert client._endpoint == "http://localhost:11434"
 
-    def test_create_gemini_client(self):
+    def test_create_gemini_client(self) -> None:
         """Test creation of Gemini client."""
         client = create_llm_client(
             model="gemini-2.5-flash",
@@ -77,12 +79,12 @@ class TestCreateLLMClient:
         assert isinstance(client, GeminiClient)
         assert client._model_name == "gemini-2.5-flash"
 
-    def test_create_gemini_client_missing_api_key(self):
+    def test_create_gemini_client_missing_api_key(self) -> None:
         """Test creation of Gemini client without API key raises error."""
         with pytest.raises(ConfigError, match="GEMINI_API_KEY required"):
             create_llm_client(model="gemini-2.5-flash")
 
-    def test_create_gemini_client_with_state_path(self, tmp_path):
+    def test_create_gemini_client_with_state_path(self, tmp_path: Any) -> None:
         """Test creation of Gemini client with state path."""
         client = create_llm_client(
             model="gemini-2.5-flash",
@@ -91,7 +93,7 @@ class TestCreateLLMClient:
         )
         assert isinstance(client, GeminiClient)
 
-    def test_create_gemini_client_with_rate_limits(self):
+    def test_create_gemini_client_with_rate_limits(self) -> None:
         """Test creation of Gemini client with custom rate limits."""
         client = create_llm_client(
             model="gemini-2.5-flash",
