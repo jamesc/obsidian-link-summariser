@@ -44,6 +44,7 @@ from summarize_links.notes import (
     read_daily_note,
     remove_url_line_from_note,
     scan_summaries,
+    scan_summaries_for_resummarize,
     slug_from_url,
     summary_exists,
     write_stub_note,
@@ -136,6 +137,12 @@ Examples:
 
   # Summarize specific URLs
   summarize-links urls https://example.com https://another.com
+
+  # Re-summarize all existing summaries
+  summarize-links resummarize
+
+  # Re-summarize only summaries older than 30 days
+  summarize-links resummarize --age 30
 
   # Dry run - show what would be done
   summarize-links from-note --dry-run
@@ -241,6 +248,19 @@ Examples:
         "summaries",
         help="Report on summary status",
         description="Scan all summaries and report on their status (success, mocked, errors).",
+    )
+
+    # resummarize command
+    resummarize_cmd = subparsers.add_parser(
+        "resummarize",
+        help="Re-summarize existing summaries",
+        description="Re-summarize all existing summaries from the Summaries folder.",
+    )
+    resummarize_cmd.add_argument(
+        "--age",
+        type=int,
+        metavar="DAYS",
+        help="Only resummarize summaries older than DAYS days (based on generation date)",
     )
 
     return parser
@@ -1034,6 +1054,181 @@ def cmd_summaries(config: Config) -> int:
     return EXIT_SUCCESS
 
 
+def cmd_resummarize(config: Config, age_days: int | None = None) -> int:
+    """
+    Re-summarize existing summaries from the Summaries folder.
+
+    Scans all summaries, extracts their source URLs and dates,
+    and reprocesses them using the current model and settings.
+    Preserves the original summary date.
+
+    Note: This command automatically enables force mode to overwrite
+    existing summaries.
+
+    Args:
+        config: Application configuration.
+        age_days: Only resummarize summaries older than this many days (optional).
+
+    Returns:
+        Exit code.
+    """
+    # Vault path must be set (validated in load_config)
+    assert config.vault_path is not None
+
+    # Enable force mode for resummarize (we always want to overwrite)
+    config.force = True
+
+    _print("[bold]Scanning summaries for re-summarization...[/]\n")
+
+    # Find all summaries suitable for resummarization
+    summaries = scan_summaries_for_resummarize(
+        vault_path=config.vault_path,
+        out_folder=config.out_folder,
+    )
+
+    # Filter by age if specified (based on summary_date)
+    if age_days is not None:
+        from datetime import timedelta
+
+        cutoff_date = datetime.now() - timedelta(days=age_days)
+        original_count = len(summaries)
+        # Filter based on summary_date (3rd element in tuple)
+        summaries = [
+            (url, orig_date, summ_date)
+            for url, orig_date, summ_date in summaries
+            if summ_date < cutoff_date
+        ]
+        filtered_count = original_count - len(summaries)
+        if filtered_count > 0:
+            _print(f"[cyan]Filtered out {filtered_count} summaries newer than {age_days} days[/]")
+
+    if not summaries:
+        _print("[yellow]No summaries found to re-summarize.[/]")
+        if age_days is not None:
+            _print(f"(No summaries older than {age_days} days)")
+        _print(f"Summaries folder: {config.vault_path / config.out_folder}")
+        return EXIT_SUCCESS
+
+    # Apply max_links limit
+    if config.max_links and len(summaries) > config.max_links:
+        _print(f"[yellow]Found {len(summaries)} summaries, limiting to {config.max_links}[/]")
+        summaries = summaries[: config.max_links]
+    else:
+        _print(f"[green]Found {len(summaries)} summaries to re-summarize[/]")
+
+    # Convert to UrlWithContext (no user tags for resummarize)
+    url_contexts = [UrlWithContext(url=url) for url, _, _ in summaries]
+
+    # Extract original dates for each URL (preserve original dates in filenames)
+    url_dates = {url: orig_date for url, orig_date, _ in summaries}
+
+    # Process URLs with the preserved dates
+    # We need to pass each URL with its original date
+    return _process_resummarize_batch(url_contexts, url_dates, config)
+
+
+def _process_resummarize_batch(
+    url_contexts: list[UrlWithContext],
+    url_dates: dict[str, datetime],
+    config: Config,
+) -> int:
+    """
+    Process a batch of URLs for resummarization.
+
+    Similar to _process_urls_batch but preserves original dates
+    and doesn't attempt to link to daily notes or remove URLs.
+
+    Args:
+        url_contexts: URLs with context (no user tags for resummarize).
+        url_dates: Mapping of URL to its original summary date.
+        config: Application configuration.
+
+    Returns:
+        Exit code.
+    """
+    global _shutdown_requested
+
+    # Reset shutdown flag at start of batch
+    _shutdown_requested = False
+
+    # Install signal handler for graceful shutdown
+    original_handler = signal.signal(signal.SIGINT, _handle_shutdown)
+
+    try:
+        # Create the LLM client
+        client = create_llm_client(
+            model=config.model,
+            gemini_api_key=config.gemini_api_key,
+            ollama_endpoint=config.ollama_endpoint,
+            mock_mode=config.mock_mode,
+            state_path=config.vault_path,
+            rpm_limit=config.rpm_limit,
+            tpm_limit=config.tpm_limit,
+            daily_limit=config.daily_limit,
+        )
+
+        if config.mock_mode:
+            _print("[yellow]Running in mock mode (no API calls)[/]")
+        if config.dry_run:
+            _print("[yellow]Running in dry-run mode (no changes)[/]")
+
+        # Process with progress bar
+        results: list[tuple[bool, str]] = []
+        interrupted = False
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            task = progress.add_task("[cyan]Re-summarizing...", total=len(url_contexts))
+
+            for url_context in url_contexts:
+                # Check for shutdown request before processing each URL
+                if _shutdown_requested:
+                    interrupted = True
+                    remaining = len(url_contexts) - len(results)
+                    _print(f"[yellow]Stopping early. {remaining} URLs not processed.[/]")
+                    break
+
+                # Get the original date for this URL
+                original_date = url_dates.get(url_context.url)
+
+                # Process URL (no daily note filename, but with preserved date)
+                success, message, _ = _process_url_with_metadata(
+                    url_context,
+                    config,
+                    client,
+                    progress,
+                    task,
+                    daily_note_filename=None,  # No daily note linking for resummarize
+                    source_date=original_date,
+                )
+                results.append((success, message))
+                progress.advance(task)
+
+        # Print results table (even for partial results)
+        if results:
+            _print_results(results)
+
+            # Print summary
+            if interrupted:
+                _print("[yellow]Processing was interrupted.[/]")
+
+        # Return appropriate exit code
+        if not results:
+            return EXIT_ERROR
+        failures = sum(1 for success, _ in results if not success)
+        if failures == len(results):
+            return EXIT_ERROR
+        return EXIT_SUCCESS
+
+    finally:
+        # Restore original signal handler
+        signal.signal(signal.SIGINT, original_handler)
+
+
 def cmd_urls(config: Config, urls: list[str]) -> int:
     """
     Process specified URLs.
@@ -1287,6 +1482,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_status(config)
         elif args.command == "summaries":
             return cmd_summaries(config)
+        elif args.command == "resummarize":
+            return cmd_resummarize(config, age_days=getattr(args, "age", None))
         else:
             _print_error(f"[red]Unknown command: {args.command}[/]")
             return EXIT_ERROR

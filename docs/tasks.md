@@ -4,6 +4,157 @@ This document tracks completed development tasks for the Obsidian Link Summarize
 
 ---
 
+## 2025-12-29: Add --age Flag to resummarize Command
+
+**Goal:** Add an `--age` flag to the `resummarize` command to filter summaries by age, only resummarizing those older than a specified number of days based on when they were generated (not when the article was published).
+
+**Changes:**
+
+1. **Updated `scan_summaries_for_resummarize()` function** in [summarize_links/notes.py](summarize_links/notes.py):
+   - Modified return type to include both `original_date` and `summary_date`
+   - Extracts `summary_date` field from frontmatter
+   - Falls back to `date` field for older summaries without `summary_date`
+   - Handles multiple date formats (datetime with time, date-only)
+   - Returns 3-tuple: `(url, original_date, summary_date)`
+   - Updated logging to show both dates
+
+2. **Added `--age` argument** to resummarize subcommand in [summarize_links/cli.py](summarize_links/cli.py):
+   - Added integer parameter accepting number of days
+   - Help text clarifies filtering is based on generation date
+
+3. **Updated `cmd_resummarize()` function** in [summarize_links/cli.py](summarize_links/cli.py):
+   - Added `age_days: int | None` parameter
+   - Implemented age filtering logic using `summary_date` (3rd element in tuple)
+   - Compares summary generation dates against cutoff date (now - age_days)
+   - Shows informative message about filtered count
+   - Updated url_contexts and url_dates to handle 3-tuple structure
+   - Updated docstring
+
+4. **Updated command dispatcher** in [summarize_links/cli.py](summarize_links/cli.py):
+   - Passes `age` argument from args to `cmd_resummarize()`
+
+**Behavior:**
+
+- Without `--age`: Resummarizes all successful summaries
+- With `--age N`: Only resummarizes summaries where `summary_date` (when generated) is older than N days
+- For older summaries without `summary_date`, falls back to `date` field
+- Displays count of filtered summaries for transparency
+- Works with all other flags (`--dry-run`, `--mock`, `--max-links`)
+- Preserves original dates in filenames (uses `original_date`, not `summary_date`)
+
+**Rationale for using summary_date:**
+
+Using `summary_date` instead of `date` makes sense because:
+- It reflects when the summary was actually generated, not when the article was published
+- Allows targeting summaries that were created a long time ago for refresh
+- More useful for "re-summarize old summaries with new model" use case
+- Older summaries without this field naturally fall back to their creation date
+
+**Example Usage:**
+
+```bash
+# Re-summarize summaries generated more than 30 days ago
+summarize-links resummarize --age 30
+
+# Test with dry-run
+summarize-links --dry-run resummarize --age 60
+
+# Combine with max-links
+summarize-links --max-links 5 resummarize --age 90
+
+# Re-summarize old summaries with new model
+summarize-links --model llama3:latest resummarize --age 180
+```
+
+**Use Cases:**
+
+- Update old summaries to use improved models
+- Refresh summaries periodically (e.g., monthly batch of 30+ day old summaries)
+- Gradually migrate large summary collections to new models
+- Test model changes on a subset of older summaries first
+
+**Testing:**
+- All 496 tests pass
+- Static analysis passes (ruff, mypy)
+- Manual testing with various age values shows correct filtering based on summary_date
+- Verified fallback to `date` for older summaries
+- Verified with `--dry-run` to see filtered counts
+
+---
+
+## 2025-12-29: Add resummarize Command
+
+**Goal:** Add a `resummarize` command that works like `from-note`, but processes existing summaries from the Summaries directory instead of URLs from daily notes.
+
+**Changes:**
+
+1. **Added `scan_summaries_for_resummarize()` function** in [summarize_links/notes.py](summarize_links/notes.py):
+   - Scans all summary files in the Summaries folder
+   - Extracts source URL and date from frontmatter
+   - Filters out error/mocked summaries (those should be handled by `from-note --force`)
+   - Returns list of (url, date) tuples sorted by date (oldest first)
+   - Added to `__all__` exports
+
+2. **Added `resummarize` command** to CLI in [summarize_links/cli.py](summarize_links/cli.py):
+   - Added parser configuration for new subcommand
+   - Implemented `cmd_resummarize()` handler
+   - Implemented `_process_resummarize_batch()` helper
+   - Automatically enables force mode (always overwrites existing summaries)
+   - Preserves original summary dates (doesn't create new dates)
+   - Does not link to daily notes or remove URLs (summaries are standalone)
+   - Respects `--max-links`, `--dry-run`, `--mock` flags
+   - Supports graceful shutdown (Ctrl+C)
+
+3. **Updated command dispatch** in [summarize_links/cli.py](summarize_links/cli.py):
+   - Added `resummarize` case to main() command dispatcher
+   - Updated imports to include `scan_summaries_for_resummarize`
+
+4. **Updated documentation**:
+   - Added example to CLI help text
+   - Updated [README.md](README.md) with:
+     - New command in basic usage section
+     - Command reference documentation
+     - Use case description (useful when changing models)
+
+**Behavior:**
+
+- Scans Summaries folder for existing summaries
+- Extracts source URL and original date from each summary's frontmatter
+- Re-fetches and re-summarizes using current model/settings
+- **Preserves original date** in filename and frontmatter
+- Updates `summary_date` to show when re-summarization occurred
+- Updates `summary_model` to current model
+- Skips error/mocked summaries (use `from-note --force` for those)
+
+**Example Usage:**
+
+```bash
+# Re-summarize all existing summaries with current model
+summarize-links resummarize --vault ~/Notes
+
+# Test with dry-run
+summarize-links --dry-run resummarize --vault ~/Notes
+
+# Limit number of summaries
+summarize-links --max-links 10 resummarize --vault ~/Notes
+
+# Use different model
+summarize-links --model llama3:latest resummarize --vault ~/Notes
+```
+
+**Testing:**
+- All existing tests pass (496 tests)
+- Manual testing with `--dry-run` shows correct behavior
+- Manual testing with `--mock --max-links 1` verified complete pipeline
+- Verified date preservation in frontmatter
+
+**Notes:**
+- This is useful when switching models (e.g., Gemini → Ollama or vice versa)
+- Original dates are preserved so summaries don't lose their chronological context
+- The `summary_date` field tracks when re-summarization occurred
+
+---
+
 ## 2025-12-29: Send Raw LLM Request/Response to Langfuse
 
 **Issue:** Following user feedback and Langfuse best practices, generation traces should capture the **actual** LLM input/output (raw prompt and response), not metadata about them. This enables true LLM-as-a-Judge evaluation, prompt optimization, and debugging of actual model behavior.

@@ -38,6 +38,7 @@ __all__ = [
     "get_summary_filepath",
     "get_existing_summary_date",
     "scan_summaries",
+    "scan_summaries_for_resummarize",
     # Utilities
     "build_frontmatter",
     "generate_slug",
@@ -1379,3 +1380,90 @@ def _extract_error_reason(content: str) -> str:
         return "API error"
     else:
         return "Unknown error"
+
+
+def scan_summaries_for_resummarize(
+    vault_path: Path,
+    out_folder: str,
+) -> list[tuple[str, datetime, datetime]]:
+    """
+    Scan all summary notes and return those suitable for resummarization.
+
+    Returns summaries that exist (not errors or mocked stubs) and extracts
+    their source URL, original date, and summary date for reprocessing.
+
+    Args:
+        vault_path: Path to the Obsidian vault root.
+        out_folder: Folder name for summaries (relative to vault).
+
+    Returns:
+        List of tuples (source_url, original_date, summary_date) for summaries to reprocess.
+        For summaries without summary_date, the original date is used as summary_date.
+        Sorted by original date (oldest first).
+    """
+    summaries_path = vault_path / out_folder
+
+    if not summaries_path.exists():
+        logger.warning(f"Summaries folder not found: {summaries_path}")
+        return []
+
+    results: list[tuple[str, datetime, datetime]] = []
+
+    # Scan all markdown files
+    for filepath in summaries_path.glob("*.md"):
+        try:
+            content = filepath.read_text(encoding="utf-8")
+
+            # Extract source URL and dates from frontmatter
+            source_url = _extract_frontmatter_field(content, "source")
+            date_str = _extract_frontmatter_field(content, "date")
+            summary_date_str = _extract_frontmatter_field(content, "summary_date")
+            status = _extract_frontmatter_field(content, "summary_status")
+
+            if not source_url or not date_str:
+                logger.debug(f"Skipping {filepath.name}: missing source or date")
+                continue
+
+            # Skip error/mocked summaries (they should be handled by from-note --force)
+            if status and ("error" in status or status == "mocked"):
+                logger.debug(f"Skipping {filepath.name}: status={status}")
+                continue
+
+            # Parse original date
+            try:
+                original_date = datetime.strptime(date_str, "%Y-%m-%d")
+            except ValueError:
+                logger.warning(f"Invalid date format in {filepath.name}: {date_str}")
+                continue
+
+            # Parse summary_date if available, otherwise use original date
+            summary_date = original_date
+            if summary_date_str:
+                try:
+                    # summary_date format: "2025-12-29 22:31:49"
+                    summary_date = datetime.strptime(summary_date_str, "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    # Try date-only format as fallback
+                    try:
+                        summary_date = datetime.strptime(summary_date_str, "%Y-%m-%d")
+                    except ValueError:
+                        logger.warning(
+                            f"Invalid summary_date format in {filepath.name}: {summary_date_str}"
+                        )
+                        # Keep using original_date as fallback
+
+            results.append((source_url, original_date, summary_date))
+            logger.debug(
+                f"Found summary for resummarize: {source_url} "
+                f"(date={date_str}, summary_date={summary_date.strftime('%Y-%m-%d')})"
+            )
+
+        except OSError as e:
+            logger.warning(f"Failed to read summary {filepath}: {e}")
+            continue
+
+    # Sort by original date (oldest first) to maintain chronological order
+    results.sort(key=lambda x: x[1])
+
+    logger.info(f"Found {len(results)} summaries for resummarization")
+    return results
