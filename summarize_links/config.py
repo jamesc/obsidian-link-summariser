@@ -358,8 +358,12 @@ def load_config(
     elif os.getenv("GEMINI_MODEL"):
         config.model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
         logger.warning("GEMINI_MODEL is deprecated, use MODEL environment variable instead")
+    elif "summary_model" in yaml_config:
+        config.model = yaml_config["summary_model"]
     elif "model" in yaml_config:
+        # Backward compatibility: support old "model" field
         config.model = yaml_config["model"]
+        logger.warning("'model' in YAML config is deprecated, use 'summary_model' instead")
 
     # Output folder
     if out_folder:

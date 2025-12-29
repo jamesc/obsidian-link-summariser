@@ -849,7 +849,7 @@ class TestBuildFrontmatter:
         assert "---" in result
         assert "source: https://example.com" in result
         assert "date: 2025-12-16" in result
-        assert "status: success" in result
+        assert "summary_status: success" in result
 
     def test_with_page_metadata(self) -> None:
         """Should include page metadata fields."""

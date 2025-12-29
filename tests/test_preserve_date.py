@@ -150,7 +150,7 @@ class TestPreserveExistingDate:
             summary_result=summary_result,
             page_metadata=page_metadata,
             date=original_date,
-            status="mocked",  # Simulate a mocked summary that needs re-summarizing
+            summary_status="mocked",  # Simulate a mocked summary that needs re-summarizing
         )
 
         assert original_path.exists()
@@ -176,7 +176,7 @@ class TestPreserveExistingDate:
             summary_result=new_summary_result,
             page_metadata=new_page_metadata,
             date=original_date,  # Same date!
-            status="success",
+            summary_status="success",
             overwrite=True,
         )
 
@@ -188,7 +188,7 @@ class TestPreserveExistingDate:
         content = new_path.read_text(encoding="utf-8")
         assert "Updated Summary" in content
         assert "Updated Title" in content
-        assert "status: success" in content
+        assert "summary_status: success" in content
 
         # Date should be preserved
         assert "date: 2024-01-15" in content

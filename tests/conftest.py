@@ -83,7 +83,7 @@ def mock_vault_with_config(mock_vault: Path) -> Path:
 out_folder: "MySummaries"
 max_links: 5
 daily_notes_folder: "Journal"
-model: "gemini-2.0-flash-exp"
+summary_model: "gemini-2.0-flash-exp"
 """
     (mock_vault / ".summarizer-config.yaml").write_text(config_content)
     return mock_vault

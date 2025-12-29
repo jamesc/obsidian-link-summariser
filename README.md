@@ -207,7 +207,7 @@ tags:
   - gemini
   - pricing
 from: "[[2025-12-16]]"
-status: success
+summary_status: success
 ---
 
 ## Overview
@@ -243,7 +243,7 @@ Meaningful parameters are preserved (e.g., YouTube `?v=`, GitHub `?tab=`).
 When a URL fails to process (fetch error, rate limit, etc.), the tool creates a **stub note** with:
 - The original URL
 - The reason for failure
-- A `status: error` marker
+- A `summary_status: error` marker
 
 This ensures you don't lose track of links that couldn't be summarized. Running the command again will skip successfully processed URLs and retry failed ones (stubs are automatically regenerated).
 

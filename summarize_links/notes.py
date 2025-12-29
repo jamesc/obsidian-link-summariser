@@ -693,10 +693,10 @@ def build_frontmatter(
     user_tags: list[str] | None = None,
     date: datetime | None = None,
     source_note: str | None = None,
-    status: str = "success",
+    summary_status: str = "success",
     default_tags: list[str] | None = None,
     max_tags: int = DEFAULT_MAX_TAGS,
-    model: str | None = None,
+    summary_model: str | None = None,
 ) -> str:
     """
     Build YAML frontmatter for a summary note.
@@ -710,10 +710,10 @@ def build_frontmatter(
         user_tags: Tags from the user's daily note.
         date: Date for the summary (defaults to today).
         source_note: Name of the source daily note.
-        status: Status of the summary ("success" or "error").
+        summary_status: Status of the summary ("success" or "error").
         default_tags: Tags to always include.
         max_tags: Maximum number of tags.
-        model: Model used to generate the summary.
+        summary_model: Model used to generate the summary.
 
     Returns:
         YAML frontmatter string (including --- delimiters).
@@ -743,11 +743,11 @@ def build_frontmatter(
     lines.append(f"date: {date_str}")
 
     # Status
-    lines.append(f"status: {status}")
+    lines.append(f"summary_status: {summary_status}")
 
     # Model used
-    if model:
-        lines.append(f"model: {model}")
+    if summary_model:
+        lines.append(f"summary_model: {summary_model}")
 
     # Source daily note (backlink)
     if source_note:
@@ -882,8 +882,8 @@ def write_summary_note_with_metadata(
     overwrite: bool = False,
     default_tags: list[str] | None = None,
     max_tags: int = DEFAULT_MAX_TAGS,
-    status: str = "success",
-    model: str | None = None,
+    summary_status: str = "success",
+    summary_model: str | None = None,
 ) -> Path:
     """
     Write a summary note with rich frontmatter.
@@ -937,10 +937,10 @@ def write_summary_note_with_metadata(
         user_tags=user_tags,
         date=date,
         source_note=source_note,
-        status=status,
+        summary_status=summary_status,
         default_tags=default_tags,
         max_tags=max_tags,
-        model=model,
+        summary_model=summary_model,
     )
 
     # Combine frontmatter and content
@@ -1247,7 +1247,7 @@ def scan_summaries(
             content = filepath.read_text(encoding="utf-8")
 
             # Extract status from frontmatter
-            status = _extract_frontmatter_field(content, "status")
+            status = _extract_frontmatter_field(content, "summary_status")
             date = _extract_frontmatter_field(content, "date")
 
             if date:

@@ -327,7 +327,7 @@ def _process_url_with_metadata(
         )
 
         # Determine status based on mock mode
-        status = "mocked" if config.mock_mode else "success"
+        summary_status = "mocked" if config.mock_mode else "success"
 
         # Write the summary note with rich frontmatter
         # Use needs_overwrite to ensure mocked/error stubs get replaced
@@ -343,8 +343,8 @@ def _process_url_with_metadata(
             source_note=daily_note_filename,
             default_tags=config.default_tags,
             overwrite=needs_overwrite,
-            status=status,
-            model=config.model,
+            summary_status=summary_status,
+            summary_model=config.model,
         )
 
         # Add link to daily note if we have the source note filename
