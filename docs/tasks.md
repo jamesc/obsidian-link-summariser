@@ -1286,3 +1286,117 @@ Tips:
 - `ruff check .` ✓
 - `ruff format .` ✓
 - `mypy .` ✓
+---
+
+## 2025-12-24: Ollama Integration
+
+**Goal:** Add support for local LLM models via Ollama as an alternative to Gemini API, enabling offline summarization without rate limits.
+
+**Requirements:**
+- Support multiple Ollama models (Llama3, Mistral, Phi, Qwen, Gemma, etc.)
+- Automatic provider detection based on model name
+- Same output format from both providers (JSON with summary, tags, content_type)
+- No rate limiting for local models  
+- Support custom Ollama endpoint configuration
+- Clear error messages when Ollama is unavailable or model not installed
+- Both providers supported long-term (not replacing Gemini)
+
+**Implementation Plan:** See [ollama-integration-plan.md](docs/ollama-integration-plan.md)
+
+**Changes by Phase:**
+
+### Phase 1: Core Infrastructure
+
+**New Module: `summarize_links/ollama_client.py`** (332 lines)
+- `OllamaClient` class implementing `SummarizerProtocol` interface
+- Uses `requests` library for Ollama API communication
+- 120s timeout (10x longer than Gemini for slower local models)
+- Server availability check with helpful error messages
+- Model installation check with installation instructions
+- `summarize()` and `summarize_with_metadata()` methods matching Gemini client
+- Reuses `_parse_gemini_response()` for consistent JSON parsing
+- No rate limiting (local models don't have quotas)
+
+**New Module: `summarize_links/llm_factory.py`** (126 lines)
+- `detect_provider()` function for automatic provider detection:
+  - Models containing `:` → Ollama (e.g., `llama3:latest`)
+  - Known Ollama model prefixes → Ollama (llama, mistral, phi, qwen, gemma, etc.)
+  - Default → Gemini
+- `create_llm_client()` factory function:
+  - Returns `GeminiClient` or `OllamaClient` based on detection
+  - Passes appropriate configuration to each client
+  - Validates API key only for Gemini models
+  - Handles custom Ollama endpoint
+
+**Updated: `summarize_links/exceptions.py`**
+- Added `OllamaServerError` - Raised when Ollama server not reachable
+  - Message includes: "Run 'ollama serve' to start the server"
+- Added `OllamaAPIError` - Raised when Ollama API call fails
+- Added `ModelNotInstalledError` - Raised when model not pulled
+  - Message includes: "Pull it with 'ollama pull <model>'"
+
+**Updated: `summarize_links/config.py`**
+- Added `MODEL` environment variable (replaces GEMINI_MODEL)
+- `GEMINI_MODEL` deprecated but still supported for backward compatibility
+- Priority order: CLI → MODEL env → GEMINI_MODEL env → YAML → default
+- Added `ollama_endpoint` field with default `http://localhost:11434`
+- `OLLAMA_ENDPOINT` environment variable support
+- Updated `validate()` to only require API key for Gemini models
+- Config validation now provider-aware via `detect_provider()`
+
+### Phase 2: CLI Integration
+
+**Updated: `summarize_links/cli.py`**
+- Replaced imports to use `llm_factory` instead of `gemini_client`
+- Updated all `create_client()` calls to `create_llm_client()`
+- Added Ollama exception handlers with helpful error messages
+- Updated `cmd_status()` to show provider info and skip rate limits for Ollama
+
+### Phase 3: Testing
+
+**New Module: `tests/test_ollama_client.py`** (14 tests)
+**New Module: `tests/test_llm_factory.py`** (11 tests)
+**Updated: `tests/test_cli.py`** - Fixed create_client references
+
+**Test Results:** All 448 tests passing (440 existing + 8 new)
+
+### Phase 4: Documentation
+
+**Updated: `README.md`**
+- Added Ollama to features, prerequisites, and configuration sections
+- Added usage examples for both Gemini and Ollama providers  
+- Updated environment variables table with MODEL, OLLAMA_ENDPOINT
+- Added troubleshooting section for Ollama-specific errors
+
+### Phase 5: Code Quality
+
+**Linting & Formatting:**
+- Ran `ruff check .` and fixed unused imports
+- Fixed line length violations manually
+- Ran `ruff format .` to format all files
+
+**Static Analysis:** All checks pass ✓
+
+### Commits Made
+
+1. **feat: add core Ollama integration infrastructure**
+2. **feat: integrate LLM factory into CLI with Ollama error handling**
+3. **test: add comprehensive tests for Ollama integration**
+4. **style: fix linting issues and format code**
+5. **docs: complete README with Ollama usage examples and troubleshooting**
+
+**Provider Detection Rules:**
+- **Ollama detected if:** Model contains `:` OR starts with known prefix (llama, mistral, phi, qwen, gemma, etc.)
+- **Gemini otherwise:** Known gemini-* models or default for unknown
+
+**Key Benefits:**
+✓ Offline summarization capability
+✓ No API costs for local models
+✓ No rate limits
+✓ Privacy (content never leaves your machine)
+✓ Backward compatible (existing Gemini setups work unchanged)
+✓ Clear error messages guide users to fix issues
+✓ Consistent interface between providers
+
+**Tests:** All 448 tests passing
+**Branch:** `jc/ollama` (pushed to remote with 5 commits)
