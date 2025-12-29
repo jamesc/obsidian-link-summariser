@@ -4,6 +4,178 @@ This document tracks completed development tasks for the Obsidian Link Summarize
 
 ---
 
+## 2025-12-29: Send Raw LLM Request/Response to Langfuse
+
+**Issue:** Following user feedback and Langfuse best practices, generation traces should capture the **actual** LLM input/output (raw prompt and response), not metadata about them. This enables true LLM-as-a-Judge evaluation, prompt optimization, and debugging of actual model behavior.
+
+**Changes:**
+
+1. **Enhanced SummaryResult model** in [summarize_links/models.py](summarize_links/models.py):
+   - Added `raw_prompt: str | None` field to store the complete prompt sent to LLM
+   - Added `raw_response: str | None` field to store the unmodified model response
+   - Updated docstring to document these tracing-specific fields
+
+2. **Updated GeminiClient** in [summarize_links/gemini_client.py](summarize_links/gemini_client.py):
+   - Modified `summarize_with_metadata()` to capture and store `raw_prompt`
+   - Captures `raw_response` (the JSON string from Gemini)
+   - These fields are populated before parsing/processing
+
+3. **Updated OllamaClient** in [summarize_links/ollama_client.py](summarize_links/ollama_client.py):
+   - Modified `summarize_with_metadata()` to capture and store `full_prompt`
+   - Captures `raw_response` (the JSON string from Ollama)
+   - Consistent with GeminiClient implementation
+
+4. **Refactored CLI Langfuse integration** in [summarize_links/cli.py](summarize_links/cli.py):
+   - Changed `input` to send `raw_prompt` (actual text sent to LLM)
+   - Changed `output` to send `raw_response` (actual text from LLM)
+   - Moved contextual information to `metadata`:
+     - URL, title, content_length
+     - Parsed results (tags, content_type, summary_length)
+   - Usage details remain in `usage_details` field
+
+5. **Updated documentation** in [summarize_links/langfuse_tracer.py](summarize_links/langfuse_tracer.py):
+   - Clarified that Input = raw prompt text
+   - Clarified that Output = raw response text (before parsing)
+   - Documented that Metadata = contextual information and parsed results
+   - Explained benefits of capturing actual LLM I/O
+
+**Data Structure (Before vs After):**
+
+Before (metadata only):
+```python
+# Input
+{
+    "url": "https://example.com",
+    "title": "Article Title",
+    "content_length": 5234,
+    "content_preview": "First 500 chars..."
+}
+
+# Output
+{
+    "summary": "# Parsed Summary...",
+    "suggested_tags": ["python", "testing"],
+    "content_type": "article",
+    "summary_length": 842
+}
+```
+
+After (raw LLM I/O):
+```python
+# Input (actual prompt sent to LLM)
+"Summarize the following web page content titled 'Article Title'.\n\nSource URL: https://example.com\n\nContent:\n[full content]\n\nRemember to respond with valid JSON..."
+
+# Output (raw JSON string from LLM)
+'{\n  "summary": "# Article Title\\n\\n...",\n  "suggested_tags": ["python", "testing"],\n  "content_type": "article"\n}'
+
+# Metadata (context and parsed results)
+{
+    "url": "https://example.com",
+    "title": "Article Title",
+    "content_length": 5234,
+    "parsed_tags": ["python", "testing"],
+    "parsed_content_type": "article",
+    "summary_length": 842
+}
+```
+
+**Benefits:**
+- **LLM-as-a-Judge**: Can evaluate actual model outputs, not parsed versions
+- **Prompt Engineering**: See exactly what text the model receives
+- **Debugging**: Identify parsing issues vs model issues
+- **Reproducibility**: Have complete input/output for replay/testing
+- **Evaluation**: Run quality assessments on real model behavior
+- **Optimization**: A/B test actual prompts and see raw responses
+
+**Verification:**
+- All 499 tests pass
+- Static analysis (ruff check, ruff format, mypy) passes
+- No breaking changes to existing functionality
+- Backward compatible (raw fields are optional)
+
+---
+
+## 2025-12-29: Enhanced Langfuse Data Capture for Comprehensive LLM Tracing
+
+**Note:** This task was superseded by the "Send Raw LLM Request/Response" task above, which correctly implements Langfuse best practices.
+
+---
+
+## 2025-12-29: Change Error Frontmatter from `status: error` to `summary_status: <error_type>`
+
+**Issue:** Error stub notes were using the legacy frontmatter key `status: error`, which was inconsistent with the modern `summary_status` key used for successful summaries. Additionally, there was no differentiation between different types of errors (fetch errors, extraction errors, API errors, etc.).
+
+**Changes:**
+
+1. **Updated `write_stub_note()` function** in [summarize_links/notes.py](summarize_links/notes.py):
+   - Added new `error_type` parameter (default: "error")
+   - Changed from `status="error"` to `summary_status=error_type`
+   - Now allows specific error types like "fetch_error", "extraction_error", "api_error", etc.
+
+2. **Updated `write_summary_note()` function** in [summarize_links/notes.py](summarize_links/notes.py):
+   - Changed parameter name from `status` to `summary_status`
+   - Changed frontmatter key from `status:` to `summary_status:`
+   - Updated docstring to reflect new parameter name
+
+3. **Updated `summary_exists()` function** in [summarize_links/notes.py](summarize_links/notes.py):
+   - Added detection for new format: `summary_status: <value>` where value contains "error" or equals "mocked"
+   - Maintained backward compatibility with legacy format (`status: error`, `status: mocked`)
+   - More robust parsing that checks line-by-line for summary_status key
+
+4. **Updated all `write_stub_note()` calls in CLI** ([summarize_links/cli.py](summarize_links/cli.py)):
+   - `ContentFetchError` → `error_type="fetch_error"`
+   - `ContentExtractionError` → `error_type="extraction_error"`
+   - `RateLimitError` → `error_type="rate_limit_error"`
+   - `OllamaServerError` → `error_type="ollama_error"`
+   - `ModelNotInstalledError` → `error_type="model_error"`
+   - `OllamaAPIError` → `error_type="ollama_error"`
+   - `GeminiAPIError` → `error_type="api_error"`
+
+**Benefits:**
+- Consistent frontmatter structure across all summary notes
+- Specific error types enable better error tracking and filtering
+- Backward compatibility maintained for existing notes with legacy format
+- Error notes can still be properly retried using `--all` or `--force` flags
+
+**Verification:**
+- All 499 tests pass
+- Static analysis (ruff, mypy) passes
+- Legacy format notes are still correctly identified as retriable
+
+**Example frontmatter for fetch error:**
+```yaml
+---
+source: https://example.com/article
+date: 2025-12-29
+summary_status: fetch_error
+---
+```
+
+---
+
+## 2025-12-29: Fix Langfuse Context Manager Exception Handling
+
+**Issue:** When content extraction failed with `ContentExtractionError`, the Langfuse tracing context managers would raise `RuntimeError: generator didn't stop after throw()` instead of properly propagating the original exception.
+
+**Root Cause:** The `@contextmanager` decorated functions in `langfuse_tracer.py` were catching exceptions and yielding None after the exception had already been thrown into the generator. This violated Python's generator protocol.
+
+**Solution:**
+- Modified `trace_url_processing()`, `trace_span()`, and `trace_generation()` context managers to properly propagate exceptions
+- Changed exception handling to log warnings but re-raise the exception using `raise`
+- Added `finally` block in `trace_url_processing()` to ensure Langfuse client flush happens even when exceptions occur
+- Added test class `TestExceptionHandling` with 3 tests to verify exceptions propagate correctly through all context managers
+
+**Changes:**
+- `summarize_links/langfuse_tracer.py`: Fixed exception handling in all 3 context managers
+- `tests/test_langfuse_tracer.py`: Added `TestExceptionHandling` class with 3 new tests
+
+**Verification:**
+- All 23 tests in `test_langfuse_tracer.py` pass
+- Static analysis checks (ruff, mypy) pass
+- Exception propagation now works correctly while still logging tracing failures
+
+---
+
 ## 2025-12-18: Test Coverage Improvement Initiative
 
 **Goal:** Increase test coverage from 85% to 91%+ by adding comprehensive tests for identified gaps.
@@ -1400,3 +1572,381 @@ Tips:
 
 **Tests:** All 448 tests passing
 **Branch:** `jc/ollama` (pushed to remote with 5 commits)
+
+---
+
+## 2025-12-29: Langfuse Integration - Phase 1 (Core Integration)
+
+**Goal:** Add core Langfuse tracing infrastructure with graceful degradation for monitoring LLM operations.
+
+**Implementation Plan:** See [langfuse-integration-plan.md](docs/langfuse-integration-plan.md)
+
+**Changes:**
+
+### Configuration (`summarize_links/config.py`)
+Added Langfuse configuration fields to `Config` dataclass:
+- `langfuse_enabled`: Boolean flag (default: False)
+- `langfuse_public_key`: Public API key (from env or YAML)
+- `langfuse_secret_key`: Secret API key (from env or YAML)
+- `langfuse_base_url`: Server URL (default: "https://cloud.langfuse.com")
+
+Configuration priority: Environment variables → YAML config → Defaults
+- Env vars: `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`
+- Auto-enable if keys provided (can be explicitly disabled in YAML)
+
+Example YAML:
+```yaml
+langfuse:
+  enabled: true
+  base_url: "https://cloud.langfuse.com"
+  # Keys should be in .env for security
+```
+
+### Tracer Module (`summarize_links/langfuse_tracer.py`)
+Created `LangfuseTracer` class with graceful degradation:
+- No-op when Langfuse not configured or library not installed
+- Context managers for different observation types:
+  - `trace_url_processing()`: Creates trace for entire URL processing
+  - `trace_span()`: Creates span observations (fetch, extract, write)
+  - `trace_generation()`: Creates generation observations for LLM calls
+- `score_trace()`: Adds scores to traces (for future evaluation)
+- `flush()`: Ensures traces are sent to server
+- Global tracer management: `initialize_tracer()`, `get_tracer()`
+
+**Graceful Degradation:**
+- All operations return None when disabled
+- Exceptions caught and logged as warnings
+- Application functions normally without Langfuse
+
+### CLI Integration (`summarize_links/cli.py`)
+- Initialize tracer after config loading in `main()`
+- Tracer auto-detects configuration
+- No-op if not configured
+
+### LLM Client Tracing
+**`summarize_links/gemini_client.py`:**
+- Added tracing to `summarize_with_metadata()` method
+- Updates current observation with model, input metadata (content_length, url, title)
+- Updates observation with output metadata (summary_length, tags, content_type)
+- Provider metadata: `provider: "gemini"`
+
+**`summarize_links/ollama_client.py`:**
+- Added identical tracing to `summarize_with_metadata()` method
+- Provider metadata: `provider: "ollama"`, includes endpoint
+- Uses `self._model` attribute (not `_model_name`)
+
+**Implementation:**
+- Uses Langfuse decorators for automatic instrumentation
+- Graceful handling of missing `langfuse.decorators` import
+- Type ignore comments for optional dependencies
+
+### Tests
+**`tests/test_config.py`** - Added `TestLangfuseConfig` class (7 tests):
+- Default disabled state
+- Environment variable loading
+- YAML configuration loading
+- Priority (env overrides YAML)
+- Auto-enable when keys provided
+- Explicit disable in YAML respected
+- Default base URL
+
+**`tests/test_langfuse_tracer.py`** - Comprehensive tracer tests (20 tests):
+- Disabled mode (all operations are no-ops)
+- Missing keys graceful degradation
+- Context manager behavior
+- Null trace_id handling
+- Global tracer initialization
+
+**`tests/conftest.py`:**
+- Added `mock_config` fixture with Langfuse fields
+- Type-safe Config import using TYPE_CHECKING
+
+### Code Quality
+**Static Analysis:** All checks pass ✓
+- `ruff check .` - All issues fixed
+- `ruff format .` - Code formatted
+- `mypy .` - Type checking passes with appropriate type: ignore comments
+
+**Tests:** All 494 tests passing (474 existing + 20 new)
+
+### Key Features
+✓ Optional integration (gracefully degrades if not configured)
+✓ No performance impact when disabled (minimal overhead when checking)
+✓ Configuration from environment variables or YAML
+✓ Comprehensive test coverage
+✓ Both Gemini and Ollama tracing supported
+✓ Type-safe with proper error handling
+✓ Ready for Phase 2 (Evaluation Framework)
+
+**Commit:** `feat: Add Phase 1 Langfuse integration (Core Integration)` (9733a6c)
+**Branch:** `feat/langfuse-integration` (pushed to remote)
+
+---
+
+## 2025-12-29: Langfuse Integration - Phase 1.5 (Fixed Tracing Issues)
+
+**Goal:** Fix non-working Langfuse tracing by migrating to OpenTelemetry-based API and implementing proper trace/span creation with token usage tracking.
+
+**Problem:** 
+Initial integration used decorator-based `langfuse_context` API which was deprecated in Langfuse v2.x. The new v3.x SDK uses OpenTelemetry context managers via `start_as_current_observation()`.
+
+**Root Causes:**
+1. Used `@observe()` decorators and `langfuse_context` which don't exist in new SDK
+2. Tracer was initialized but never actually created traces
+3. `'Langfuse' object has no attribute 'trace'` warnings
+4. No traces appeared in Langfuse dashboard
+5. Verbose HTTP debug logs from httpcore/httpx flooding output
+6. Token usage not captured from API responses
+
+**Migration Changes:**
+
+### Tracer Module (`summarize_links/langfuse_tracer.py`)
+Complete rewrite of trace creation methods:
+- Replaced direct method calls with `start_as_current_observation()` context managers
+- `trace_url_processing()`: Creates trace using `as_type="span"` with URL metadata
+- `trace_span()`: Creates nested spans for operations (fetch, summarize, write)
+- `trace_generation()`: Creates generation observations for LLM calls
+- All methods return context managers that yield the observation object
+- Parent-child relationships handled automatically by OpenTelemetry context
+
+**API Migration:**
+```python
+# Old (doesn't exist):
+trace_id = client.trace(name="process-url", input={...})
+
+# New:
+with client.start_as_current_observation(as_type="span", name="process-url", input={...}) as trace:
+    trace_id = trace.trace_id
+```
+
+### CLI Integration (`summarize_links/cli.py`)
+Added comprehensive tracing in `_process_url_with_metadata()`:
+
+```python
+# Create trace for entire URL processing
+with tracer.trace_url_processing(url, metadata={...}) as trace:
+    trace_id = trace.trace_id if trace else None
+    
+    # Fetch span
+    with tracer.trace_span(trace_id, "fetch", ...):
+        content, meta = fetch_and_extract_metadata(...)
+    
+    # Summarize span (generation)
+    with tracer.trace_generation(trace_id, "summarize", model=...):
+        summary = client.summarize_with_metadata(...)
+        
+        # Update generation with output and usage
+        if generation and hasattr(generation, "update"):
+            generation.update(output={...}, usage_details={...})
+    
+    # Write span
+    with tracer.trace_span(trace_id, "write", ...):
+        write_summary_note_with_metadata(...)
+```
+
+### Token Usage Tracking
+
+**Models (`summarize_links/models.py`):**
+- Added `usage_details: dict[str, int] | None = None` field to `SummaryResult`
+- Stores token counts: `{"input": 100, "output": 50, "total": 150}`
+
+**Gemini Client (`summarize_links/gemini_client.py`):**
+- Modified `summarize_with_metadata()` to extract tokens from `response.usage_metadata`
+- Maps Gemini response fields to standard names:
+  - `prompt_token_count` → `"input"`
+  - `candidates_token_count` → `"output"`
+  - `total_token_count` → `"total"`
+- Returns usage in SummaryResult
+- Removed decorator-based `langfuse_context` usage
+
+**CLI (`summarize_links/cli.py`):**
+- Updated generation span to include `usage_details` in Langfuse update
+- Format: `generation.update(output={...}, usage_details={...})`
+- Enables cost calculation in Langfuse UI when matched with model definitions
+
+### Configuration Changes (`summarize_links/config.py`)
+Added HTTP logging suppressors:
+- httpcore and httpx loggers set to WARNING level
+- Prevents verbose connection debug logs flooding output
+- Uses proper name-based suppression without regex
+
+### LLM Client Cleanup
+**`summarize_links/ollama_client.py`:**
+- Removed decorator-based `langfuse_context` usage
+- Consistent with Gemini client approach
+- Tracing now handled at CLI layer
+
+### Tests
+
+**Updated `tests/test_langfuse_tracer.py`:**
+- All tracer tests updated to use new API
+- Mock `get_client()` and `start_as_current_observation()`
+- Tests verify context manager behavior
+- Proper handling of disabled/null trace scenarios
+- Tests for metadata, model info, and span hierarchy
+
+**Updated `tests/test_gemini.py`:**
+- Fixed mock responses to include `usage_metadata` with token counts:
+  ```python
+  mock_response.usage_metadata.prompt_token_count = 100
+  mock_response.usage_metadata.candidates_token_count = 50
+  mock_response.usage_metadata.total_token_count = 150
+  ```
+- Prevents MagicMock comparison errors in rate limiter
+
+**Tests:** All 496 tests passing
+
+### Static Analysis
+**All checks pass** ✓
+- `ruff check .` - Linting clean
+- `ruff format .` - Code formatted
+- `mypy .` - Type checking passes (added type annotation for `update_data`)
+
+### Results
+✓ Traces successfully created and sent to Langfuse
+✓ Proper hierarchy: trace → fetch span → generation → write span
+✓ Token usage tracked and visible in Langfuse UI
+✓ All metadata captured (URL, content length, model, tags, content_type)
+✓ HTTP debug logs suppressed
+✓ Graceful degradation when Langfuse not configured
+✓ All tests passing
+
+### Token Tracking Format
+Langfuse receives:
+```json
+{
+  "usage_details": {
+    "input": 1234,
+    "output": 567,
+    "total": 1801
+  }
+}
+```
+
+This enables:
+- Automatic cost calculation in Langfuse dashboard
+- Token usage analytics per model
+- Tracking efficiency over time
+- Budget monitoring
+
+**Commits:**
+1. `fix: migrate Langfuse tracer to OpenTelemetry API` (a9a5556)
+2. `feat: Add token usage tracking to Langfuse integration` (0a260cd)
+3. `feat: Add token usage tracking for Ollama models` (e5e70ae)
+
+**Branch:** `feat/langfuse-integration` (pushed to remote)
+
+### Ollama Token Usage Support
+
+**Problem:** Token usage not appearing in Langfuse for Ollama models (qwen3:latest, etc.)
+
+**Solution:** Added token usage extraction from Ollama API responses
+
+**Changes:**
+
+**`summarize_links/ollama_client.py`:**
+- Updated `summarize()` to extract and log token counts from Ollama response
+- Modified `summarize_with_metadata()` to capture token usage:
+  - Extracts `prompt_eval_count` (input tokens)
+  - Extracts `eval_count` (output/completion tokens)
+  - Calculates total tokens
+  - Maps to standard format: `{"input": X, "output": Y, "total": Z}`
+  - Returns usage in `SummaryResult.usage_details`
+- Added debug logging for token counts
+
+**`tests/test_ollama_client.py`:**
+- Updated `test_summarize_with_metadata` to include token counts in mock response
+- Verifies `usage_details` in returned `SummaryResult`
+
+**Ollama API Response Format:**
+```json
+{
+  "response": "...",
+  "prompt_eval_count": 150,
+  "eval_count": 75
+}
+```
+
+**Behavior:**
+- Token usage now tracked for both Gemini and Ollama models
+- Consistent format across all LLM providers
+- Appears in Langfuse dashboard for analytics and cost tracking
+- Debug logs show: "Token usage: input=X, output=Y, total=Z"
+
+**Tests:** All 496 tests passing
+
+
+
+---
+
+## 2025-12-29: Implement Langfuse Best Practices for Tracing
+
+**Issue:** Following Langfuse documentation and best practices, implemented three high-priority improvements to enhance tracing capabilities:
+1. Include system prompt in generation input
+2. Use propagate_attributes() for trace-level metadata
+3. Add error tracking to generation observations
+
+**Changes:**
+
+1. **Enhanced SummaryResult model** in [summarize_links/models.py](summarize_links/models.py):
+   - Added `system_prompt: str | None` field to capture system instructions
+   - Now stores three components: system prompt, user prompt, and model response
+
+2. **Updated both LLM clients** ([gemini_client.py](summarize_links/gemini_client.py), [ollama_client.py](summarize_links/ollama_client.py)):
+   - Modified `summarize_with_metadata()` to capture SUMMARY_SYSTEM_PROMPT
+   - Set `result.system_prompt = SUMMARY_SYSTEM_PROMPT` before returning
+   - Enables complete reconstruction of model input
+
+3. **Enhanced Langfuse tracer module** in [summarize_links/langfuse_tracer.py](summarize_links/langfuse_tracer.py):
+   - Added `propagate_attributes` to imports and __all__ exports
+   - Re-exported for convenient use in CLI code
+   - Added documentation about its purpose
+
+4. **Refactored CLI tracing** in [summarize_links/cli.py](summarize_links/cli.py):
+   - **System Prompt in Input**: Generation input now includes both system and user prompts:
+     `python
+     update_data["input"] = {
+         "system": system_prompt,
+         "prompt": raw_prompt,
+     }
+     `
+   
+   - **Propagate Attributes**: Wrapped processing in propagate_attributes context:
+     `python
+     with propagate_attributes(
+         session_id=daily_note_filename or "direct-url",
+         tags=["production"/"mock", model_name],
+         metadata={"vault": vault_path, "provider": "gemini"/"ollama"},
+     ):
+     `
+     This ensures session_id, tags, and metadata propagate to ALL child observations (fetch, generation, write spans)
+   
+   - **Error Tracking**: Added error handling in generation observation:
+     `python
+     except Exception as e:
+         if generation:
+             generation.update(level="ERROR", status_message=str(e))
+         raise
+     `
+     Failed generations now marked with ERROR level and status message
+
+5. **Configuration update** in [pyproject.toml](pyproject.toml):
+   - Added SIM117 to ruff ignore list to allow nested with statements
+   - Nested contexts (trace + propagate_attributes) are intentional for clarity
+
+**Benefits:**
+
+- **Complete Context**: Evaluators see both system instructions and user prompts
+- **Consistent Metadata**: All observations within a trace share session_id, tags, and metadata
+- **Better Debugging**: Failed generations are clearly marked with error details
+- **Improved Evaluation**: LLM-as-a-Judge can assess responses with full prompt context
+- **Session Tracking**: Easy to analyze all URLs from a daily note or processing session
+- **Provider Analytics**: Can filter/analyze by provider (Gemini vs Ollama)
+
+**Testing:**
+
+- All 499 tests pass with new implementation
+- Static analysis (ruff, mypy) validates type safety and code quality
+- Error tracking tested with exception scenarios
+- Metadata propagation verified in traces
+

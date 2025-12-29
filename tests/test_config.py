@@ -509,3 +509,129 @@ class TestModelLimitsConfig:
         assert limits.rpm_limit == 100
         assert limits.tpm_limit == 1000000
         assert limits.daily_limit == 5000
+
+
+class TestLangfuseConfig:
+    """Tests for Langfuse configuration."""
+
+    def test_langfuse_disabled_by_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Langfuse should be disabled by default."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        config = load_config(vault_path=tmp_path)
+
+        assert config.langfuse_enabled is False
+        assert config.langfuse_public_key == ""
+        assert config.langfuse_secret_key == ""
+        assert config.langfuse_base_url == "https://cloud.langfuse.com"
+
+    def test_langfuse_from_env_vars(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Should load Langfuse config from environment variables."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test-public")
+        monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test-secret")
+        monkeypatch.setenv("LANGFUSE_BASE_URL", "https://custom.langfuse.com")
+
+        config = load_config(vault_path=tmp_path)
+
+        assert config.langfuse_enabled is True  # Auto-enabled when keys provided
+        assert config.langfuse_public_key == "pk-lf-test-public"
+        assert config.langfuse_secret_key == "sk-lf-test-secret"
+        assert config.langfuse_base_url == "https://custom.langfuse.com"
+
+    def test_langfuse_from_yaml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Should load Langfuse config from YAML."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        config_content = {
+            "langfuse": {
+                "enabled": True,
+                "public_key": "pk-lf-yaml-public",
+                "secret_key": "sk-lf-yaml-secret",
+                "base_url": "https://yaml.langfuse.com",
+            }
+        }
+        config_file = tmp_path / ".summarizer-config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump(config_content, f)
+
+        config = load_config(vault_path=tmp_path)
+
+        assert config.langfuse_enabled is True
+        assert config.langfuse_public_key == "pk-lf-yaml-public"
+        assert config.langfuse_secret_key == "sk-lf-yaml-secret"
+        assert config.langfuse_base_url == "https://yaml.langfuse.com"
+
+    def test_langfuse_env_overrides_yaml(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Environment variables should override YAML for Langfuse."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-env-public")
+        monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-env-secret")
+
+        config_content = {
+            "langfuse": {
+                "enabled": True,
+                "public_key": "pk-lf-yaml-public",
+                "secret_key": "sk-lf-yaml-secret",
+            }
+        }
+        config_file = tmp_path / ".summarizer-config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump(config_content, f)
+
+        config = load_config(vault_path=tmp_path)
+
+        # Env should override YAML
+        assert config.langfuse_public_key == "pk-lf-env-public"
+        assert config.langfuse_secret_key == "sk-lf-env-secret"
+
+    def test_langfuse_auto_enable_with_keys(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Langfuse should auto-enable when keys are provided."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
+        monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
+
+        config = load_config(vault_path=tmp_path)
+
+        assert config.langfuse_enabled is True
+
+    def test_langfuse_explicit_disable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Should respect explicit disable in YAML even with keys."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        config_content = {
+            "langfuse": {
+                "enabled": False,
+                "public_key": "pk-lf-yaml-public",
+                "secret_key": "sk-lf-yaml-secret",
+            }
+        }
+        config_file = tmp_path / ".summarizer-config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump(config_content, f)
+
+        config = load_config(vault_path=tmp_path)
+
+        # Should be explicitly disabled even though keys are present
+        assert config.langfuse_enabled is False
+        assert config.langfuse_public_key == "pk-lf-yaml-public"
+
+    def test_langfuse_default_base_url(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Should use default base URL when not specified."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
+        monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
+
+        config = load_config(vault_path=tmp_path)
+
+        assert config.langfuse_base_url == "https://cloud.langfuse.com"
