@@ -33,8 +33,7 @@ from summarize_links.exceptions import (
     URLValidationError,
 )
 from summarize_links.extract import fetch_and_extract_metadata
-from summarize_links.gemini_client import SummarizerProtocol
-from summarize_links.llm_factory import create_llm_client, detect_provider
+from summarize_links.llm import SummarizerProtocol, create_llm_client, detect_provider
 from summarize_links.models import UrlWithContext
 from summarize_links.notes import (
     add_summary_link_to_daily_note,

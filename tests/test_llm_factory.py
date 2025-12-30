@@ -9,9 +9,8 @@ from typing import Any
 import pytest
 
 from summarize_links.exceptions import ConfigError
-from summarize_links.gemini_client import GeminiClient, MockGeminiClient
-from summarize_links.llm_factory import OLLAMA_MODEL_PREFIXES, create_llm_client, detect_provider
-from summarize_links.ollama_client import OllamaClient
+from summarize_links.llm import GeminiClient, MockGeminiClient, OllamaClient
+from summarize_links.llm.factory import OLLAMA_MODEL_PREFIXES, create_llm_client, detect_provider
 
 
 class TestDetectProvider:

@@ -14,7 +14,7 @@ import requests
 
 from summarize_links.exceptions import ModelNotInstalledError, OllamaAPIError, OllamaServerError
 from summarize_links.models import SummaryResult
-from summarize_links.ollama_client import OllamaClient, _parse_ollama_response
+from summarize_links.llm.ollama import OllamaClient, _parse_ollama_response
 
 
 class TestOllamaClient:
