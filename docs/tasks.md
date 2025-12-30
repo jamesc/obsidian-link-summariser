@@ -3493,3 +3493,125 @@ Could further split if any file grows too large:
 - extract.py (1,123 lines) - Could split fetching vs parsing vs metadata
 
 >>>>>>> affb1ad (refactor: split notes.py into focused subpackage)
+
+---
+
+## 2025-12-30: Langfuse Integration - Phase 2 (Filesystem Prompts)
+
+**Goal:** Move hardcoded prompts to filesystem for better prompt management, with fallback hierarchy: Langfuse → Filesystem → Error.
+
+**Implementation Plan:** See [langfuse-integration-plan.md](docs/langfuse-integration-plan.md)
+
+**Changes:**
+
+### Filesystem Prompts (`summarize_links/prompts/`)
+Created directory with fallback prompts:
+- **system.txt** - System instructions for LLM:
+  - Role definition as summarization assistant
+  - Output format (JSON with summary, tags, content_type)
+  - Content type descriptions from CONTENT_TYPE_DESCRIPTIONS
+  - Tag generation guidelines
+  
+- **user.txt** - User prompt template:
+  - Template with variables: `{{title}}`, `{{url}}`, `{{content}}`
+  - `{{title}}` becomes ` titled 'X'` or empty (inline format)
+  - Preserves original format for backward compatibility
+
+- **README.md** - Documentation:
+  - Prompt loading priority order
+  - Upload script usage instructions
+  - Editing workflow (local → test → upload)
+
+### Prompt Loading Module (`summarize_links/llm/prompts.py`)
+Created utility module with three functions:
+- `load_system_prompt()` - Reads system.txt with caching
+- `load_user_prompt_template()` - Reads user.txt with caching
+- `build_user_prompt_from_template()` - Replaces variables:
+  - `{{title}}` → ` titled 'X'` (if title exists) or empty
+  - `{{url}}` → actual URL
+  - `{{content}}` → extracted page content
+
+**Caching Strategy:**
+- Module-level globals cache prompts after first load
+- Avoids repeated file I/O during batch processing
+- Same pattern used by both Gemini and Ollama clients
+
+### Client Updates
+**`summarize_links/llm/gemini.py`:**
+- Removed `SUMMARY_SYSTEM_PROMPT` hardcoded constant
+- Added `_get_system_prompt()` with caching
+- Added `_get_user_prompt_template()` with caching
+- Updated `_build_prompt()` to use template from file
+- Changed `prompt_metadata.source` from "hardcoded" to "filesystem"
+
+**`summarize_links/llm/ollama.py`:**
+- Identical refactoring as gemini.py
+- Removed hardcoded prompt constant
+- Added caching functions
+- Updated to use filesystem prompts
+
+### Upload Script (`scripts/upload_prompts.py`)
+Created script to upload filesystem prompts to Langfuse:
+- Reads system.txt and user.txt
+- Creates/updates prompts in Langfuse:
+  - `summarize-document` (system prompt)
+  - `summarize-document-user` (user template)
+- Includes configuration metadata (model, temperature, variables)
+- Requires Langfuse credentials in environment
+
+**Usage:**
+``bash
+# Set credentials
+export LANGFUSE_PUBLIC_KEY="pk-lf-..."
+export LANGFUSE_SECRET_KEY="sk-lf-..."
+
+# Upload prompts
+uv run python scripts/upload_prompts.py
+``
+
+### Test Updates
+**`tests/test_gemini.py`:**
+- Removed `SUMMARY_SYSTEM_PROMPT` import
+- Added `_get_system_prompt` import
+- Updated tests to call function instead of using constant
+- All prompt content tests still passing
+
+### Prompt Format Fixes
+**Content Type Descriptions:**
+- Updated system.txt to use exact descriptions from CONTENT_TYPE_DESCRIPTIONS:
+  - "article" (news, opinion, analysis)
+  - "tutorial" (how-to, guide, walkthrough)
+  - "documentation" (API docs, reference material)
+  - etc.
+- Ensures consistency between prompt and validation
+
+**User Prompt Format:**
+- Fixed `build_user_prompt_from_template()` to handle inline title format
+- Template: "Please summarize the following web page{{title}}:"
+- With title: "Please summarize the following web page titled 'X':"
+- Without title: "Please summarize the following web page:"
+
+### Documentation Updates
+**`docs/langfuse-integration-plan.md`:**
+- Updated Phase 2 status to "Complete"
+- Added filesystem storage details
+- Documented fallback hierarchy: Langfuse → Filesystem → Error
+- Added upload script information
+- Updated benefits to include filesystem fallback
+
+### Code Quality
+**Static Analysis:** All checks pass ✓
+- `ruff check .` - No issues
+- `ruff format .` - All formatted
+- `mypy .` - Type checking passes
+
+**Tests:** All 557 tests passing (85 in gemini/ollama, 472 existing)
+
+### Benefits Achieved
+✅ Filesystem-based fallback ensures prompts always available
+✅ Version control for prompts via git
+✅ Upload script for syncing to Langfuse
+✅ Centralized prompt editing in Langfuse UI (when enabled)
+✅ Hot-swap prompts in production without redeploying
+✅ Automatic versioning in Langfuse
+✅ No breaking changes - all tests pass

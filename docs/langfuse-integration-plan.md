@@ -38,28 +38,148 @@
 
 ---
 
-### ⏳ Phase 2: Langfuse Prompt Management (PLANNED - NOT IMPLEMENTED)
+### ✅ Phase 2: Langfuse Prompt Management (COMPLETE)
 
 **Goal:** Migrate from hardcoded prompts to centralized Langfuse Prompt Management
 
-**Features to Implement:**
-- Fetch prompts from Langfuse UI using `langfuse.get_prompt()` API
-- Two managed prompts:
-  - `summarize-document/system` - System instructions
-  - `summarize-document/user` - User prompt with `{{title}}`, `{{url}}`, `{{content}}` variables
-- Prompt caching to avoid repeated API calls
-- Fallback to hardcoded prompts when Langfuse unavailable
-- Link prompt versions to generation observations
+**Status**: ✅ **Implemented** - Prompts fetched from Langfuse with fallback to filesystem
 
-**Benefits:**
-- ✅ Centralized prompt editing in Langfuse UI (no code changes)
+**What Was Implemented:**
+- ✅ Filesystem-based fallback prompts in `summarize_links/prompts/`
+  - `system.txt` - System instructions with content type descriptions
+  - `user.txt` - User prompt template with `{{title}}`, `{{url}}`, `{{content}}` variables
+  - `README.md` - Documentation for prompt management
+  - `prompts.py` - Utility module for loading prompts from filesystem
+- ✅ Fetch prompts from Langfuse UI using `langfuse.get_prompt()` API (when enabled)
+- ✅ Two managed prompts:
+  - `summarize-document/system` - System instructions
+  - `summarize-document/user` - User prompt with variables
+- ✅ Prompt caching to avoid repeated API calls within session
+- ✅ Graceful fallback hierarchy: Langfuse → Filesystem → (no hardcoded fallback)
+- ✅ Link prompt versions to generation observations via `prompt_metadata`
+- ✅ Template variable compilation with `{{title}}` → ` titled 'X'` or empty
+- ✅ Upload script to sync filesystem prompts to Langfuse
+- ✅ Added to both Gemini and Ollama clients
+
+**Implementation Details:**
+
+Both clients (`GeminiClient` and `OllamaClient`) now support:
+
+```python
+# Initialize with langfuse_enabled flag
+client = GeminiClient(
+    api_key="...",
+    model="gemini-2.5-flash",
+    langfuse_enabled=True  # Enable prompt management
+)
+
+# Client automatically:
+# 1. Fetches prompts from Langfuse on first use (if enabled)
+# 2. Falls back to filesystem prompts if Langfuse unavailable
+# 3. Caches prompt objects for reuse
+# 4. Compiles templates with variables
+```
+
+**Filesystem Prompt Structure:**
+
+```
+summarize_links/
+  prompts/
+    system.txt          # System instructions (fallback)
+    user.txt            # User template with {{variables}} (fallback)
+    README.md           # Documentation
+  llm/
+    prompts.py          # Prompt loading utilities
+```
+
+**Prompt Loading Priority:**
+
+1. **Langfuse** (if enabled and configured): Fetch from Langfuse API
+2. **Filesystem**: Load from `summarize_links/prompts/` directory
+3. **Error**: Raise exception if neither available
+
+**Upload Script:**
+
+```bash
+# Upload filesystem prompts to Langfuse
+uv run python scripts/upload_prompts.py
+```
+
+The script reads `system.txt` and `user.txt`, then creates/updates:
+- `summarize-document/system` in Langfuse
+- `summarize-document-user` in Langfuse
+
+**Benefits Achieved:**
+- ✅ Centralized prompt editing in Langfuse UI (no code changes needed)
 - ✅ Automatic versioning on every prompt change
 - ✅ Hot-swap prompts in production without redeploying
-- ✅ Built-in A/B testing support
-- ✅ Compare model responses to identical prompt versions
+- ✅ Versioned prompts linked to generation traces
 - ✅ Instant rollback to previous prompt versions
+- ✅ Compare model responses using same prompt version
+- ✅ Filesystem fallback ensures prompts always available
+- ✅ Version control for filesystem prompts via git
 
-**Estimated Time:** 2-3 hours
+**Prompt Metadata Tracking:**
+
+The `SummaryResult` now includes `prompt_metadata`:
+
+```python
+@dataclass
+class SummaryResult:
+    content: str
+    suggested_tags: list[str]
+    content_type: ContentType
+    # ... other fields ...
+    prompt_metadata: dict[str, Any] | None = None  # NEW
+```
+
+When Langfuse prompts are used:
+
+```python
+prompt_metadata = {
+    "system_prompt_name": "summarize-document/system",
+    "system_prompt_version": 5,
+    "user_prompt_name": "summarize-document/user",
+    "user_prompt_version": 10,
+    "source": "langfuse"
+}
+```
+
+**Benefits Achieved:**
+- ✅ Centralized prompt editing in Langfuse UI (no code changes needed)
+- ✅ Automatic versioning on every prompt change
+- ✅ Hot-swap prompts in production without redeploying
+- ✅ Versioned prompts linked to generation traces
+- ✅ Instant rollback to previous prompt versions
+- ✅ Compare model responses using same prompt version
+
+**Setup Instructions:**
+
+1. **Create prompts in Langfuse UI:**
+   - Name: `summarize-document/system`
+   - Content: Copy from `SUMMARY_SYSTEM_PROMPT` in code
+   
+   - Name: `summarize-document/user`
+   - Content:
+     ```
+     # Web Page Summary
+     
+     Title: {{title}}
+     Source URL: {{url}}
+     
+     Content to summarize:
+     {{content}}
+     ```
+
+2. **Enable in config:**
+   ```bash
+   # .env
+   LANGFUSE_PUBLIC_KEY=pk-lf-xxx
+   LANGFUSE_SECRET_KEY=sk-lf-xxx
+   LANGFUSE_BASE_URL=https://cloud.langfuse.com
+   ```
+
+3. **Prompts auto-fetched on next run** - logs will show versions used
 
 ---
 

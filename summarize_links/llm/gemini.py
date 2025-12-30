@@ -19,6 +19,11 @@ from google.genai import errors, types
 from summarize_links.config import DEFAULT_MODEL, get_model_rate_limits
 from summarize_links.exceptions import GeminiAPIError, RateLimitError
 from summarize_links.llm.parsing import parse_llm_json_response
+from summarize_links.llm.prompts import (
+    build_user_prompt_from_template,
+    load_system_prompt,
+    load_user_prompt_template,
+)
 from summarize_links.models import CONTENT_TYPE_DESCRIPTIONS, SummaryResult
 from summarize_links.rate_limiter import ModelRateLimits, RateLimiter
 
@@ -53,38 +58,30 @@ def _build_content_type_list() -> str:
 
 # System prompt for summarization with structured output
 # Content types are generated dynamically from CONTENT_TYPE_DESCRIPTIONS
-SUMMARY_SYSTEM_PROMPT = f"""You are a summarization assistant. Your task is to create
-concise, informative summaries of web page content for a personal knowledge base.
+# Cached prompts loaded from filesystem
+_SYSTEM_PROMPT_CACHE: str | None = None
+_USER_PROMPT_TEMPLATE_CACHE: str | None = None
 
-Guidelines for the summary:
-- Write in clear, direct prose
-- Use Markdown formatting (headers, bullet points, bold/italic as appropriate)
-- Focus on the main ideas and key takeaways
-- Omit advertisements, navigation, and boilerplate content
-- Keep summaries focused and scannable
-- Include relevant quotes if they capture key insights
-- Use a neutral, informative tone
 
-You MUST respond with valid JSON in this exact format:
-{{
-  "summary": "Your markdown-formatted summary here",
-  "suggested_tags": ["tag1", "tag2", "tag3"],
-  "content_type": "article"
-}}
+def _get_system_prompt() -> str:
+    """Get system prompt from cache or load from file."""
+    global _SYSTEM_PROMPT_CACHE
+    if _SYSTEM_PROMPT_CACHE is None:
+        _SYSTEM_PROMPT_CACHE = load_system_prompt()
+    return _SYSTEM_PROMPT_CACHE
 
-For suggested_tags:
-- Provide 3-5 relevant topic tags
-- Use lowercase, hyphenated format (e.g., "machine-learning", "web-development")
-- Focus on the main topics and technologies discussed
-- Avoid generic tags like "article" or "blog"
 
-For content_type, choose ONE of:
-{_build_content_type_list()}"""
+def _get_user_prompt_template() -> str:
+    """Get user prompt template from cache or load from file."""
+    global _USER_PROMPT_TEMPLATE_CACHE
+    if _USER_PROMPT_TEMPLATE_CACHE is None:
+        _USER_PROMPT_TEMPLATE_CACHE = load_user_prompt_template()
+    return _USER_PROMPT_TEMPLATE_CACHE
 
 
 def _build_prompt(content: str, url: str, title: str | None = None) -> str:
     """
-    Build the prompt for the Gemini API.
+    Build the prompt for the Gemini API using template from filesystem.
 
     Args:
         content: Web page content to summarize.
@@ -92,17 +89,10 @@ def _build_prompt(content: str, url: str, title: str | None = None) -> str:
         title: Optional page title.
 
     Returns:
-        Formatted prompt string.
+        Formatted prompt string with variables replaced.
     """
-    title_part = f" titled '{title}'" if title else ""
-    return f"""Summarize the following web page content{title_part}.
-
-Source URL: {url}
-
-Content:
-{content}
-
-Remember to respond with valid JSON containing "summary", "suggested_tags", and "content_type"."""
+    template = _get_user_prompt_template()
+    return build_user_prompt_from_template(template, content, url, title)
 
 
 class GeminiClient:
@@ -125,6 +115,7 @@ class GeminiClient:
         rpm_limit: int | None = None,
         tpm_limit: int | None = None,
         daily_limit: int | None = None,
+        langfuse_enabled: bool = False,
     ) -> None:
         """
         Initialize the Gemini client.
@@ -139,10 +130,25 @@ class GeminiClient:
             rpm_limit: Legacy: Requests per minute limit (ignored if model_limits provided).
             tpm_limit: Legacy: Tokens per minute limit (ignored if model_limits provided).
             daily_limit: Legacy: Requests per day limit (ignored if model_limits provided).
+            langfuse_enabled: Whether to fetch prompts from Langfuse (requires Langfuse configured).
         """
         self._api_key = api_key
         self._model_name = model
         self._client: Any = None
+        self._langfuse_enabled = langfuse_enabled
+        self._langfuse_client: Any = None
+        self._prompt_cache: dict[str, Any] = {}
+
+        # Initialize Langfuse client if enabled
+        if self._langfuse_enabled:
+            try:
+                from langfuse import Langfuse
+
+                self._langfuse_client = Langfuse()
+                logger.debug("Langfuse client initialized for prompt management")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Langfuse for prompt management: {e}")
+                self._langfuse_enabled = False
 
         # Get model-specific rate limits
         if model_limits is not None:
@@ -169,11 +175,12 @@ class GeminiClient:
             )
 
         logger.debug(
-            "Initialized GeminiClient with model: %s (RPM=%d, TPM=%d, Daily=%d)",
+            "Initialized GeminiClient with model: %s (RPM=%d, TPM=%d, Daily=%d)%s",
             model,
             self._rate_limiter.rpm_limit,
             self._rate_limiter.tpm_limit,
             self._rate_limiter.daily_limit,
+            " [Langfuse prompts enabled]" if self._langfuse_enabled else "",
         )
 
     def _get_client(self) -> Any:
@@ -187,6 +194,89 @@ class GeminiClient:
             self._client = genai.Client(api_key=self._api_key)
             logger.debug("Created Client instance")
         return self._client
+
+    def _get_langfuse_prompts(self) -> tuple[str, str] | None:
+        """
+        Fetch prompts from Langfuse with caching.
+
+        Returns:
+            Tuple of (system_prompt_text, user_prompt_template_text) if successful, None otherwise.
+            Returns None to signal fallback to hardcoded prompts.
+        """
+        if not self._langfuse_enabled or not self._langfuse_client:
+            return None
+
+        try:
+            # Check cache first
+            if "system" in self._prompt_cache and "user" in self._prompt_cache:
+                logger.debug("Using cached Langfuse prompts")
+                system_obj = self._prompt_cache["system"]
+                user_obj = self._prompt_cache["user"]
+                return system_obj.prompt, user_obj.prompt
+
+            # Fetch from Langfuse
+            logger.debug("Fetching prompts from Langfuse")
+            system_obj = self._langfuse_client.get_prompt("summarize-document/system")
+            user_obj = self._langfuse_client.get_prompt("summarize-document/user")
+
+            # Cache the objects (not just text, for metadata)
+            self._prompt_cache["system"] = system_obj
+            self._prompt_cache["user"] = user_obj
+
+            logger.info(
+                "Fetched prompts from Langfuse: system v%s, user v%s",
+                getattr(system_obj, "version", "unknown"),
+                getattr(user_obj, "version", "unknown"),
+            )
+
+            return system_obj.prompt, user_obj.prompt
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch Langfuse prompts, using fallback: {e}")
+            return None
+
+    def _compile_user_prompt(self, template: str, content: str, url: str, title: str | None) -> str:
+        """
+        Compile user prompt template with variables.
+
+        Supports both Langfuse templates (with {{var}}) and fallback templates.
+
+        Args:
+            template: Prompt template string.
+            content: Web page content.
+            url: Source URL.
+            title: Page title.
+
+        Returns:
+            Compiled prompt string.
+        """
+        # Check if template uses Langfuse variable syntax {{var}}
+        if "{{" in template and "}}" in template:
+            # Langfuse template - compile with variables
+            try:
+                # Get the user prompt object from cache for compilation
+                if "user" in self._prompt_cache:
+                    user_obj = self._prompt_cache["user"]
+                    compiled: str = user_obj.compile(
+                        title=title or "Unknown",
+                        url=url,
+                        content=content,
+                    )
+                    return compiled
+            except Exception as e:
+                logger.warning(
+                    f"Failed to compile Langfuse template, using simple replacement: {e}"
+                )
+
+            # Fallback: simple string replacement
+            return (
+                template.replace("{{title}}", title or "Unknown")
+                .replace("{{url}}", url)
+                .replace("{{content}}", content)
+            )
+        else:
+            # Not a template, assume it's the old _build_prompt format
+            return template
 
     def _calculate_rate_limit_wait(self, attempt: int, error: Exception) -> float:
         """
@@ -287,7 +377,7 @@ class GeminiClient:
                     model=self._model_name,
                     contents=prompt,
                     config=types.GenerateContentConfig(
-                        system_instruction=SUMMARY_SYSTEM_PROMPT,
+                        system_instruction=_get_system_prompt(),
                     ),
                 )
 
@@ -430,11 +520,37 @@ class GeminiClient:
             RateLimitError: When rate limited after all retries exhausted.
             GeminiAPIError: When API returns an error.
         """
-        prompt = _build_prompt(content, url, title)
+        # Try to get prompts from Langfuse, fallback to hardcoded
+        langfuse_prompts = self._get_langfuse_prompts()
+        prompt_metadata = None
+
+        if langfuse_prompts:
+            system_prompt_text, user_prompt_template = langfuse_prompts
+            user_prompt_text = self._compile_user_prompt(user_prompt_template, content, url, title)
+
+            # Store prompt metadata if using Langfuse
+            if "system" in self._prompt_cache and "user" in self._prompt_cache:
+                system_obj = self._prompt_cache["system"]
+                user_obj = self._prompt_cache["user"]
+                prompt_metadata = {
+                    "system_prompt_name": "summarize-document/system",
+                    "user_prompt_name": "summarize-document/user",
+                    "system_version": getattr(system_obj, "version", None),
+                    "user_version": getattr(user_obj, "version", None),
+                    "source": "langfuse",
+                }
+            logger.debug("Using Langfuse-managed prompts")
+        else:
+            # Fallback to filesystem prompts
+            system_prompt_text = _get_system_prompt()
+            user_prompt_text = _build_prompt(content, url, title)
+            prompt_metadata = {"source": "filesystem"}
+            logger.debug("Using filesystem prompts (Langfuse unavailable or disabled)")
+
         client = self._get_client()
 
         # Estimate tokens for rate limiting
-        estimated_tokens = self._rate_limiter.estimate_tokens(content + prompt)
+        estimated_tokens = self._rate_limiter.estimate_tokens(content + user_prompt_text)
 
         # Wait if we're near rate limits
         self._rate_limiter.wait_if_needed(estimated_tokens)
@@ -442,9 +558,9 @@ class GeminiClient:
         # Make the API call
         response = client.models.generate_content(
             model=self._model_name,
-            contents=prompt,
+            contents=user_prompt_text,
             config=types.GenerateContentConfig(
-                system_instruction=SUMMARY_SYSTEM_PROMPT,
+                system_instruction=system_prompt_text,
             ),
         )
 
@@ -483,9 +599,10 @@ class GeminiClient:
         result.usage_details = usage_details
 
         # Store system prompt, user prompt, and response for tracing
-        result.system_prompt = SUMMARY_SYSTEM_PROMPT
-        result.raw_prompt = prompt
+        result.system_prompt = system_prompt_text
+        result.raw_prompt = user_prompt_text
         result.raw_response = raw_response
+        result.prompt_metadata = prompt_metadata
 
         return result
 
@@ -617,7 +734,7 @@ This summary was generated by MockGeminiClient for testing the summarization pip
             content=summary_text,
             suggested_tags=mock_tags,
             content_type=content_type,
-            system_prompt=SUMMARY_SYSTEM_PROMPT,
+            system_prompt=_get_system_prompt(),
             raw_prompt=prompt,
             raw_response=summary_text,  # Mock: response is the summary itself
         )
@@ -633,6 +750,7 @@ def create_client(
     rpm_limit: int | None = None,
     tpm_limit: int | None = None,
     daily_limit: int | None = None,
+    langfuse_enabled: bool = False,
 ) -> GeminiClient | MockGeminiClient:
     """
     Factory function to create appropriate client based on mode.
@@ -647,6 +765,7 @@ def create_client(
         rpm_limit: Legacy: Requests per minute limit (uses default if None).
         tpm_limit: Legacy: Tokens per minute limit (uses default if None).
         daily_limit: Legacy: Requests per day limit (uses default if None).
+        langfuse_enabled: Whether to fetch prompts from Langfuse.
 
     Returns:
         Configured client instance.
@@ -671,4 +790,5 @@ def create_client(
         rpm_limit=rpm_limit,
         tpm_limit=tpm_limit,
         daily_limit=daily_limit,
+        langfuse_enabled=langfuse_enabled,
     )

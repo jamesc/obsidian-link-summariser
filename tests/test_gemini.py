@@ -8,11 +8,11 @@ from google.genai import errors
 from summarize_links.config import DEFAULT_MODEL
 from summarize_links.exceptions import GeminiAPIError, RateLimitError
 from summarize_links.llm.gemini import (
-    SUMMARY_SYSTEM_PROMPT,
     GeminiClient,
     MockGeminiClient,
     _build_content_type_list,
     _build_prompt,
+    _get_system_prompt,
     create_client,
 )
 from summarize_links.llm.parsing import (
@@ -40,13 +40,15 @@ class TestContentTypeListGeneration:
 
     def test_all_content_types_in_prompt(self) -> None:
         """System prompt should contain all content types from CONTENT_TYPES."""
+        system_prompt = _get_system_prompt()
         for content_type in CONTENT_TYPES:
-            assert f'"{content_type}"' in SUMMARY_SYSTEM_PROMPT
+            assert f'"{content_type}"' in system_prompt
 
     def test_all_descriptions_in_prompt(self) -> None:
         """System prompt should contain all descriptions from CONTENT_TYPE_DESCRIPTIONS."""
+        system_prompt = _get_system_prompt()
         for description in CONTENT_TYPE_DESCRIPTIONS.values():
-            assert description in SUMMARY_SYSTEM_PROMPT
+            assert description in system_prompt
 
     def test_build_content_type_list_format(self) -> None:
         """_build_content_type_list should produce properly formatted list."""
