@@ -14,15 +14,16 @@ from summarize_links.cli import (
     EXIT_CONFIG_ERROR,
     EXIT_ERROR,
     EXIT_SUCCESS,
-    _print_results,
-    _process_url_with_metadata,
+    create_parser,
+    main,
+)
+from summarize_links.commands import (
     cmd_from_note,
     cmd_from_note_all,
     cmd_list,
     cmd_resummarize,
+    cmd_status,
     cmd_urls,
-    create_parser,
-    main,
 )
 from summarize_links.config import Config
 from summarize_links.exceptions import (
@@ -34,6 +35,8 @@ from summarize_links.exceptions import (
     RateLimitError,
 )
 from summarize_links.models import PageMetadata, SummaryResult, UrlWithContext
+from summarize_links.processor import process_url_with_metadata
+from summarize_links.ui import print_results
 
 
 class TestCreateParser:
@@ -230,7 +233,7 @@ class TestCmdFromNote:
         result = cmd_from_note(config, "not-a-date")
         assert result == EXIT_ERROR
 
-    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.commands.from_note.read_daily_note")
     def test_note_read_error(
         self,
         mock_read: MagicMock,
@@ -246,8 +249,8 @@ class TestCmdFromNote:
         result = cmd_from_note(config, "2025-12-16")
         assert result == EXIT_ERROR
 
-    @patch("summarize_links.cli.read_daily_note")
-    @patch("summarize_links.cli.extract_urls_with_context")
+    @patch("summarize_links.commands.from_note.read_daily_note")
+    @patch("summarize_links.commands.from_note.extract_urls_with_context")
     def test_no_urls_found(
         self,
         mock_extract: MagicMock,
@@ -265,9 +268,9 @@ class TestCmdFromNote:
         result = cmd_from_note(config, "2025-12-16")
         assert result == EXIT_SUCCESS
 
-    @patch("summarize_links.cli._process_urls_with_metadata")
-    @patch("summarize_links.cli.extract_urls_with_context")
-    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.commands.from_note.process_urls_batch")
+    @patch("summarize_links.commands.from_note.extract_urls_with_context")
+    @patch("summarize_links.commands.from_note.read_daily_note")
     def test_max_links_applied(
         self,
         mock_read: MagicMock,
@@ -284,7 +287,7 @@ class TestCmdFromNote:
             UrlWithContext(url="https://4.com"),
             UrlWithContext(url="https://5.com"),
         ]
-        mock_process.return_value = EXIT_SUCCESS
+        mock_process.return_value = (EXIT_SUCCESS, [])
 
         config = Config(
             vault_path=mock_vault,
@@ -302,7 +305,7 @@ class TestCmdFromNote:
 class TestCmdFromNoteAll:
     """Tests for from-note --all command handler."""
 
-    @patch("summarize_links.cli.find_daily_notes_with_urls")
+    @patch("summarize_links.commands.from_note.find_daily_notes_with_urls")
     def test_no_notes_with_urls(
         self,
         mock_find: MagicMock,
@@ -318,10 +321,10 @@ class TestCmdFromNoteAll:
         result = cmd_from_note_all(config)
         assert result == EXIT_SUCCESS
 
-    @patch("summarize_links.cli._process_urls_with_metadata")
-    @patch("summarize_links.cli.extract_urls_with_context")
-    @patch("summarize_links.cli.read_daily_note")
-    @patch("summarize_links.cli.find_daily_notes_with_urls")
+    @patch("summarize_links.commands.from_note.process_urls_batch")
+    @patch("summarize_links.commands.from_note.extract_urls_with_context")
+    @patch("summarize_links.commands.from_note.read_daily_note")
+    @patch("summarize_links.commands.from_note.find_daily_notes_with_urls")
     def test_processes_multiple_notes(
         self,
         mock_find: MagicMock,
@@ -338,7 +341,7 @@ class TestCmdFromNoteAll:
         ]
         mock_read.return_value = "Note content"
         mock_extract.return_value = [UrlWithContext(url="https://example.com")]
-        mock_process.return_value = EXIT_SUCCESS
+        mock_process.return_value = (EXIT_SUCCESS, [])
 
         config = Config(
             vault_path=mock_vault,
@@ -353,10 +356,10 @@ class TestCmdFromNoteAll:
         first_call = mock_process.call_args_list[0]
         assert first_call[1]["daily_note_filename"] == "2025-12-15.md"
 
-    @patch("summarize_links.cli._process_urls_with_metadata")
-    @patch("summarize_links.cli.extract_urls_with_context")
-    @patch("summarize_links.cli.read_daily_note")
-    @patch("summarize_links.cli.find_daily_notes_with_urls")
+    @patch("summarize_links.commands.from_note.process_urls_batch")
+    @patch("summarize_links.commands.from_note.extract_urls_with_context")
+    @patch("summarize_links.commands.from_note.read_daily_note")
+    @patch("summarize_links.commands.from_note.find_daily_notes_with_urls")
     def test_max_links_across_notes(
         self,
         mock_find: MagicMock,
@@ -376,7 +379,7 @@ class TestCmdFromNoteAll:
             UrlWithContext(url="https://2.com"),
             UrlWithContext(url="https://3.com"),
         ]
-        mock_process.return_value = EXIT_SUCCESS
+        mock_process.return_value = (EXIT_SUCCESS, [])
 
         config = Config(
             vault_path=mock_vault,
@@ -398,14 +401,14 @@ class TestCmdFromNoteAll:
 class TestCmdUrls:
     """Tests for urls command handler."""
 
-    @patch("summarize_links.cli._process_urls_with_metadata")
+    @patch("summarize_links.commands.urls.process_urls_batch")
     def test_processes_provided_urls(
         self,
         mock_process: MagicMock,
         mock_vault: Path,
     ) -> None:
         """Should process provided URLs."""
-        mock_process.return_value = EXIT_SUCCESS
+        mock_process.return_value = (EXIT_SUCCESS, [])
         config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
@@ -420,14 +423,14 @@ class TestCmdUrls:
         assert [ctx.url for ctx in call_args[0]] == urls
         assert result == EXIT_SUCCESS
 
-    @patch("summarize_links.cli._process_urls_with_metadata")
+    @patch("summarize_links.commands.urls.process_urls_batch")
     def test_max_links_applied(
         self,
         mock_process: MagicMock,
         mock_vault: Path,
     ) -> None:
         """Should limit URLs to max_links."""
-        mock_process.return_value = EXIT_SUCCESS
+        mock_process.return_value = (EXIT_SUCCESS, [])
         config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
@@ -504,8 +507,8 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        with patch("summarize_links.cli.summary_exists", return_value=True):
-            success, message, should_delete = _process_url_with_metadata(
+        with patch("summarize_links.processor.summary_exists", return_value=True):
+            success, message, should_delete = process_url_with_metadata(
                 url_context,
                 config,
                 MagicMock(),
@@ -515,9 +518,9 @@ class TestProcessUrlWithMetadata:
         assert "Skipped" in message
         assert should_delete is False
 
-    @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.processor.write_summary_note_with_metadata")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
     def test_force_overwrites_existing_summary(
         self,
         mock_exists: MagicMock,
@@ -546,7 +549,7 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = _process_url_with_metadata(
+        success, message, should_delete = process_url_with_metadata(
             url_context,
             config,
             mock_client,
@@ -570,8 +573,8 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        with patch("summarize_links.cli.summary_exists", return_value=False):
-            success, message, should_delete = _process_url_with_metadata(
+        with patch("summarize_links.processor.summary_exists", return_value=False):
+            success, message, should_delete = process_url_with_metadata(
                 url_context,
                 config,
                 MagicMock(),
@@ -581,9 +584,9 @@ class TestProcessUrlWithMetadata:
         assert "Would process" in message
         assert should_delete is False
 
-    @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.processor.write_summary_note_with_metadata")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
     def test_successful_processing(
         self,
         mock_exists: MagicMock,
@@ -611,7 +614,7 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = _process_url_with_metadata(
+        success, message, should_delete = process_url_with_metadata(
             url_context,
             config,
             mock_client,
@@ -622,9 +625,9 @@ class TestProcessUrlWithMetadata:
         assert should_delete is True
         mock_write.assert_called_once()
 
-    @patch("summarize_links.cli.write_stub_note")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.processor.write_stub_note")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
     def test_fetch_error_creates_stub(
         self,
         mock_exists: MagicMock,
@@ -643,7 +646,7 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = _process_url_with_metadata(
+        success, message, should_delete = process_url_with_metadata(
             url_context,
             config,
             MagicMock(),
@@ -654,9 +657,9 @@ class TestProcessUrlWithMetadata:
         assert should_delete is False
         mock_stub.assert_called_once()
 
-    @patch("summarize_links.cli.write_stub_note")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.processor.write_stub_note")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
     def test_extraction_error_creates_stub(
         self,
         mock_exists: MagicMock,
@@ -675,7 +678,7 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = _process_url_with_metadata(
+        success, message, should_delete = process_url_with_metadata(
             url_context,
             config,
             MagicMock(),
@@ -686,9 +689,9 @@ class TestProcessUrlWithMetadata:
         assert should_delete is False
         mock_stub.assert_called_once()
 
-    @patch("summarize_links.cli.write_stub_note")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.processor.write_stub_note")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
     def test_rate_limit_creates_stub(
         self,
         mock_exists: MagicMock,
@@ -714,7 +717,7 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = _process_url_with_metadata(
+        success, message, should_delete = process_url_with_metadata(
             url_context,
             config,
             mock_client,
@@ -725,9 +728,9 @@ class TestProcessUrlWithMetadata:
         assert should_delete is False
         mock_stub.assert_called_once()
 
-    @patch("summarize_links.cli.write_stub_note")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.processor.write_stub_note")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
     def test_api_error_creates_stub(
         self,
         mock_exists: MagicMock,
@@ -753,7 +756,7 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = _process_url_with_metadata(
+        success, message, should_delete = process_url_with_metadata(
             url_context,
             config,
             mock_client,
@@ -764,8 +767,8 @@ class TestProcessUrlWithMetadata:
         assert should_delete is False
         mock_stub.assert_called_once()
 
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
     def test_dry_run_no_stub_on_error(
         self,
         mock_exists: MagicMock,
@@ -784,8 +787,8 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        with patch("summarize_links.cli.write_stub_note") as mock_stub:
-            success, message, should_delete = _process_url_with_metadata(
+        with patch("summarize_links.processor.write_stub_note") as mock_stub:
+            success, message, should_delete = process_url_with_metadata(
                 url_context,
                 config,
                 MagicMock(),
@@ -794,9 +797,9 @@ class TestProcessUrlWithMetadata:
             mock_stub.assert_not_called()
             assert should_delete is False
 
-    @patch("summarize_links.cli.write_stub_note")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.processor.write_stub_note")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
     def test_error_during_resummarize_preserves_successful_summary(
         self,
         mock_exists: MagicMock,
@@ -818,7 +821,7 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = _process_url_with_metadata(
+        success, message, should_delete = process_url_with_metadata(
             url_context,
             config,
             MagicMock(),
@@ -832,9 +835,9 @@ class TestProcessUrlWithMetadata:
         # CRITICAL: Should NOT write stub note because a successful summary already existed
         mock_stub.assert_not_called()
 
-    @patch("summarize_links.cli.write_stub_note")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.processor.write_stub_note")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
     def test_error_on_first_try_creates_stub(
         self,
         mock_exists: MagicMock,
@@ -854,7 +857,7 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = _process_url_with_metadata(
+        success, message, should_delete = process_url_with_metadata(
             url_context,
             config,
             MagicMock(),
@@ -879,7 +882,7 @@ class TestPrintResults:
             (False, "Fetch error: test.com"),
         ]
 
-        _print_results(results)
+        print_results(results)
 
         # The output goes to Rich console, which uses stderr by default
         # We can verify the function runs without error
@@ -888,12 +891,12 @@ class TestPrintResults:
 class TestCliIntegration:
     """Integration tests for CLI functionality."""
 
-    @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.create_llm_client")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
-    @patch("summarize_links.cli.extract_urls_with_context")
-    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.processor.write_summary_note_with_metadata")
+    @patch("summarize_links.processor.create_llm_client")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.commands.from_note.extract_urls_with_context")
+    @patch("summarize_links.commands.from_note.read_daily_note")
     @patch("summarize_links.cli.load_config")
     def test_full_from_note_flow(
         self,
@@ -936,10 +939,10 @@ class TestCliIntegration:
         mock_fetch.assert_called_once()
         mock_write.assert_called_once()
 
-    @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.create_llm_client")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.processor.write_summary_note_with_metadata")
+    @patch("summarize_links.processor.create_llm_client")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
     @patch("summarize_links.cli.load_config")
     def test_full_urls_flow(
         self,
@@ -1001,14 +1004,14 @@ class TestCliIntegration:
 class TestUrlLineDeletion:
     """Tests for URL line deletion behavior after successful processing."""
 
-    @patch("summarize_links.cli.remove_url_line_from_note")
-    @patch("summarize_links.cli.add_summary_link_to_daily_note")
-    @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.create_llm_client")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
-    @patch("summarize_links.cli.extract_urls_with_context")
-    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.processor.remove_url_line_from_note")
+    @patch("summarize_links.processor.add_summary_link_to_daily_note")
+    @patch("summarize_links.processor.write_summary_note_with_metadata")
+    @patch("summarize_links.processor.create_llm_client")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.commands.from_note.extract_urls_with_context")
+    @patch("summarize_links.commands.from_note.read_daily_note")
     @patch("summarize_links.cli.load_config")
     def test_mock_mode_does_not_delete_url_lines(
         self,
@@ -1052,14 +1055,14 @@ class TestUrlLineDeletion:
         # URL line should NOT be deleted in mock mode
         mock_remove_url.assert_not_called()
 
-    @patch("summarize_links.cli.remove_url_line_from_note")
-    @patch("summarize_links.cli.add_summary_link_to_daily_note")
-    @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.create_llm_client")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
-    @patch("summarize_links.cli.extract_urls_with_context")
-    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.processor.remove_url_line_from_note")
+    @patch("summarize_links.processor.add_summary_link_to_daily_note")
+    @patch("summarize_links.processor.write_summary_note_with_metadata")
+    @patch("summarize_links.processor.create_llm_client")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.commands.from_note.extract_urls_with_context")
+    @patch("summarize_links.commands.from_note.read_daily_note")
     @patch("summarize_links.cli.load_config")
     def test_real_mode_deletes_url_lines(
         self,
@@ -1105,14 +1108,14 @@ class TestUrlLineDeletion:
         call_args = mock_remove_url.call_args
         assert call_args[1]["url"] == "https://example.com"
 
-    @patch("summarize_links.cli.remove_url_line_from_note")
-    @patch("summarize_links.cli.add_summary_link_to_daily_note")
-    @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.create_llm_client")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
-    @patch("summarize_links.cli.extract_urls_with_context")
-    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.processor.remove_url_line_from_note")
+    @patch("summarize_links.processor.add_summary_link_to_daily_note")
+    @patch("summarize_links.processor.write_summary_note_with_metadata")
+    @patch("summarize_links.processor.create_llm_client")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.commands.from_note.extract_urls_with_context")
+    @patch("summarize_links.commands.from_note.read_daily_note")
     @patch("summarize_links.cli.load_config")
     def test_dry_run_does_not_delete_url_lines(
         self,
@@ -1149,14 +1152,14 @@ class TestUrlLineDeletion:
         # URL line should NOT be deleted in dry-run mode
         mock_remove_url.assert_not_called()
 
-    @patch("summarize_links.cli.remove_url_line_from_note")
-    @patch("summarize_links.cli.add_summary_link_to_daily_note")
-    @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.create_llm_client")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
-    @patch("summarize_links.cli.extract_urls_with_context")
-    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.processor.remove_url_line_from_note")
+    @patch("summarize_links.processor.add_summary_link_to_daily_note")
+    @patch("summarize_links.processor.write_summary_note_with_metadata")
+    @patch("summarize_links.processor.create_llm_client")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.commands.from_note.extract_urls_with_context")
+    @patch("summarize_links.commands.from_note.read_daily_note")
     @patch("summarize_links.cli.load_config")
     def test_skipped_urls_not_deleted(
         self,
@@ -1193,13 +1196,13 @@ class TestUrlLineDeletion:
         # URL line should NOT be deleted when summary already exists
         mock_remove_url.assert_not_called()
 
-    @patch("summarize_links.cli.write_stub_note")
-    @patch("summarize_links.cli.remove_url_line_from_note")
-    @patch("summarize_links.cli.create_llm_client")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
-    @patch("summarize_links.cli.extract_urls_with_context")
-    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.processor.write_stub_note")
+    @patch("summarize_links.processor.remove_url_line_from_note")
+    @patch("summarize_links.processor.create_llm_client")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.commands.from_note.extract_urls_with_context")
+    @patch("summarize_links.commands.from_note.read_daily_note")
     @patch("summarize_links.cli.load_config")
     def test_failed_urls_not_deleted(
         self,
@@ -1236,14 +1239,14 @@ class TestUrlLineDeletion:
         assert result == EXIT_ERROR
         mock_remove_url.assert_not_called()
 
-    @patch("summarize_links.cli.remove_url_line_from_note")
-    @patch("summarize_links.cli.add_summary_link_to_daily_note")
-    @patch("summarize_links.cli.write_summary_note_with_metadata")
-    @patch("summarize_links.cli.create_llm_client")
-    @patch("summarize_links.cli.fetch_and_extract_metadata")
-    @patch("summarize_links.cli.summary_exists")
-    @patch("summarize_links.cli.extract_urls_with_context")
-    @patch("summarize_links.cli.read_daily_note")
+    @patch("summarize_links.processor.remove_url_line_from_note")
+    @patch("summarize_links.processor.add_summary_link_to_daily_note")
+    @patch("summarize_links.processor.write_summary_note_with_metadata")
+    @patch("summarize_links.processor.create_llm_client")
+    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.commands.from_note.extract_urls_with_context")
+    @patch("summarize_links.commands.from_note.read_daily_note")
     @patch("summarize_links.cli.load_config")
     def test_reprocessing_mocked_summary_overwrites(
         self,
@@ -1298,7 +1301,7 @@ class TestUrlLineDeletion:
 class TestCmdStatus:
     """Tests for the status command."""
 
-    @patch("summarize_links.cli.get_rate_limiter")
+    @patch("summarize_links.commands.status.get_rate_limiter")
     def test_displays_rate_limit_info(
         self,
         mock_get_limiter: MagicMock,
@@ -1313,7 +1316,7 @@ class TestCmdStatus:
         }
         mock_get_limiter.return_value = mock_limiter
 
-        from summarize_links.cli import cmd_status
+        # cmd_status is now imported at module level
 
         config = Config(
             vault_path=mock_vault,
@@ -1325,7 +1328,7 @@ class TestCmdStatus:
         assert result == EXIT_SUCCESS
         mock_limiter.get_status.assert_called_once()
 
-    @patch("summarize_links.cli.get_rate_limiter")
+    @patch("summarize_links.commands.status.get_rate_limiter")
     def test_warns_on_low_daily_quota(
         self,
         mock_get_limiter: MagicMock,
@@ -1341,7 +1344,7 @@ class TestCmdStatus:
         }
         mock_get_limiter.return_value = mock_limiter
 
-        from summarize_links.cli import cmd_status
+        # cmd_status is now imported at module level
 
         config = Config(
             vault_path=mock_vault,
@@ -1370,7 +1373,7 @@ class TestQuietMode:
 class TestInvalidUrlHandling:
     """Tests for invalid URL handling in processing."""
 
-    @patch("summarize_links.cli.summary_exists")
+    @patch("summarize_links.processor.summary_exists")
     def test_invalid_url_not_retried(
         self,
         mock_exists: MagicMock,
@@ -1389,10 +1392,10 @@ class TestInvalidUrlHandling:
         # URL without proper domain
         url_context = UrlWithContext(url="not-a-valid-url")
 
-        with patch("summarize_links.cli.fetch_and_extract_metadata") as mock_fetch:
+        with patch("summarize_links.processor.fetch_and_extract_metadata") as mock_fetch:
             mock_fetch.side_effect = URLValidationError("Invalid URL")
 
-            success, message, should_delete = _process_url_with_metadata(
+            success, message, should_delete = process_url_with_metadata(
                 url_context,
                 config,
                 MagicMock(),
@@ -1436,7 +1439,7 @@ class TestCmdResummarize:
         result = cmd_resummarize(config, age_days=-1)
         assert result == EXIT_ERROR
 
-    @patch("summarize_links.cli.scan_summaries_for_resummarize")
+    @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_positive_age_accepted(
         self,
         mock_scan: MagicMock,
@@ -1452,7 +1455,7 @@ class TestCmdResummarize:
         result = cmd_resummarize(config, age_days=30)
         assert result == EXIT_SUCCESS
 
-    @patch("summarize_links.cli.scan_summaries_for_resummarize")
+    @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_no_age_filter_accepted(
         self,
         mock_scan: MagicMock,

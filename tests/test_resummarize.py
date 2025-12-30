@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from summarize_links.cli import cmd_resummarize
+from summarize_links.commands import cmd_resummarize
 from summarize_links.config import Config
 from summarize_links.notes import scan_summaries_for_resummarize
 
@@ -387,8 +387,8 @@ Content without explicit status.
 class TestCmdResumarize:
     """Tests for cmd_resummarize command."""
 
-    @patch("summarize_links.cli._process_resummarize_batch")
-    @patch("summarize_links.cli.scan_summaries_for_resummarize")
+    @patch("summarize_links.commands.resummarize.process_resummarize_batch")
+    @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_no_summaries_found(
         self,
         mock_scan: MagicMock,
@@ -403,8 +403,8 @@ class TestCmdResumarize:
         assert result == 0  # EXIT_SUCCESS
         mock_process.assert_not_called()
 
-    @patch("summarize_links.cli._process_resummarize_batch")
-    @patch("summarize_links.cli.scan_summaries_for_resummarize")
+    @patch("summarize_links.commands.resummarize.process_resummarize_batch")
+    @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_basic_resummarize(
         self,
         mock_scan: MagicMock,
@@ -416,7 +416,7 @@ class TestCmdResumarize:
             ("https://example1.com", datetime(2024, 1, 1), datetime(2024, 1, 1, 10, 0), None),
             ("https://example2.com", datetime(2024, 1, 2), datetime(2024, 1, 2, 11, 0), None),
         ]
-        mock_process.return_value = 0
+        mock_process.return_value = (0, [])
 
         result = cmd_resummarize(mock_config)
 
@@ -431,9 +431,9 @@ class TestCmdResumarize:
         assert url_contexts[0].url == "https://example1.com"
         assert url_contexts[1].url == "https://example2.com"
 
-    @patch("summarize_links.cli.datetime")
-    @patch("summarize_links.cli._process_resummarize_batch")
-    @patch("summarize_links.cli.scan_summaries_for_resummarize")
+    @patch("summarize_links.commands.resummarize.datetime")
+    @patch("summarize_links.commands.resummarize.process_resummarize_batch")
+    @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_age_filtering(
         self,
         mock_scan: MagicMock,
@@ -453,7 +453,7 @@ class TestCmdResumarize:
             ("https://old.com", datetime(2024, 1, 1), old_date, None),
             ("https://recent.com", datetime(2024, 1, 2), recent_date, None),
         ]
-        mock_process.return_value = 0
+        mock_process.return_value = (0, [])
 
         result = cmd_resummarize(mock_config, age_days=5)
 
@@ -465,9 +465,9 @@ class TestCmdResumarize:
         assert len(url_contexts) == 1
         assert url_contexts[0].url == "https://old.com"
 
-    @patch("summarize_links.cli.datetime")
-    @patch("summarize_links.cli._process_resummarize_batch")
-    @patch("summarize_links.cli.scan_summaries_for_resummarize")
+    @patch("summarize_links.commands.resummarize.datetime")
+    @patch("summarize_links.commands.resummarize.process_resummarize_batch")
+    @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_no_summaries_within_age_filter(
         self,
         mock_scan: MagicMock,
@@ -492,8 +492,8 @@ class TestCmdResumarize:
         assert result == 0
         mock_process.assert_not_called()
 
-    @patch("summarize_links.cli._process_resummarize_batch")
-    @patch("summarize_links.cli.scan_summaries_for_resummarize")
+    @patch("summarize_links.commands.resummarize.process_resummarize_batch")
+    @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_max_links_limiting(
         self,
         mock_scan: MagicMock,
@@ -508,7 +508,7 @@ class TestCmdResumarize:
             ("https://example4.com", datetime(2024, 1, 4), datetime(2024, 1, 4), None),
             ("https://example5.com", datetime(2024, 1, 5), datetime(2024, 1, 5), None),
         ]
-        mock_process.return_value = 0
+        mock_process.return_value = (0, [])
         mock_config.max_links = 3
 
         result = cmd_resummarize(mock_config)
@@ -519,8 +519,8 @@ class TestCmdResumarize:
         url_contexts = call_args[0]
         assert len(url_contexts) == 3
 
-    @patch("summarize_links.cli._process_resummarize_batch")
-    @patch("summarize_links.cli.scan_summaries_for_resummarize")
+    @patch("summarize_links.commands.resummarize.process_resummarize_batch")
+    @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_force_mode_enabled(
         self,
         mock_scan: MagicMock,
@@ -531,15 +531,15 @@ class TestCmdResumarize:
         mock_scan.return_value = [
             ("https://example.com", datetime(2024, 1, 1), datetime(2024, 1, 1), None),
         ]
-        mock_process.return_value = 0
+        mock_process.return_value = (0, [])
         mock_config.force = False
 
         cmd_resummarize(mock_config)
 
         assert mock_config.force is True
 
-    @patch("summarize_links.cli._process_resummarize_batch")
-    @patch("summarize_links.cli.scan_summaries_for_resummarize")
+    @patch("summarize_links.commands.resummarize.process_resummarize_batch")
+    @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_preserves_original_dates(
         self,
         mock_scan: MagicMock,
@@ -556,7 +556,7 @@ class TestCmdResumarize:
             ("https://example1.com", orig_date1, summ_date1, None),
             ("https://example2.com", orig_date2, summ_date2, None),
         ]
-        mock_process.return_value = 0
+        mock_process.return_value = (0, [])
 
         cmd_resummarize(mock_config)
 
