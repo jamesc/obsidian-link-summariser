@@ -4,7 +4,7 @@ Tests for the resummarize command.
 Tests the scan_summaries_for_resummarize function and cmd_resummarize CLI command.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -431,18 +431,23 @@ class TestCmdResumarize:
         assert url_contexts[0].url == "https://example1.com"
         assert url_contexts[1].url == "https://example2.com"
 
+    @patch("summarize_links.cli.datetime")
     @patch("summarize_links.cli._process_resummarize_batch")
     @patch("summarize_links.cli.scan_summaries_for_resummarize")
     def test_age_filtering(
         self,
         mock_scan: MagicMock,
         mock_process: MagicMock,
+        mock_datetime: MagicMock,
         mock_config: Config,
     ) -> None:
         """Test age filtering with --age flag."""
-        now = datetime.now()
-        old_date = now - timedelta(days=10)
-        recent_date = now - timedelta(days=2)
+        # Mock datetime.now() to return a fixed date
+        fixed_now = datetime(2024, 1, 20, 12, 0, 0)
+        mock_datetime.now.return_value = fixed_now
+
+        old_date = datetime(2024, 1, 5)  # 15 days ago
+        recent_date = datetime(2024, 1, 18)  # 2 days ago
 
         mock_scan.return_value = [
             ("https://old.com", datetime(2024, 1, 1), old_date),
@@ -460,17 +465,22 @@ class TestCmdResumarize:
         assert len(url_contexts) == 1
         assert url_contexts[0].url == "https://old.com"
 
+    @patch("summarize_links.cli.datetime")
     @patch("summarize_links.cli._process_resummarize_batch")
     @patch("summarize_links.cli.scan_summaries_for_resummarize")
     def test_no_summaries_within_age_filter(
         self,
         mock_scan: MagicMock,
         mock_process: MagicMock,
+        mock_datetime: MagicMock,
         mock_config: Config,
     ) -> None:
         """Test when all summaries are filtered out by age."""
-        now = datetime.now()
-        recent_date = now - timedelta(days=2)
+        # Mock datetime.now() to return a fixed date
+        fixed_now = datetime(2024, 1, 20, 12, 0, 0)
+        mock_datetime.now.return_value = fixed_now
+
+        recent_date = datetime(2024, 1, 18)  # 2 days ago
 
         mock_scan.return_value = [
             ("https://recent1.com", datetime(2024, 1, 1), recent_date),
