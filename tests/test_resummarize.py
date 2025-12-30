@@ -413,8 +413,8 @@ class TestCmdResumarize:
     ) -> None:
         """Test basic resummarize without age filter."""
         mock_scan.return_value = [
-            ("https://example1.com", datetime(2024, 1, 1), datetime(2024, 1, 1, 10, 0)),
-            ("https://example2.com", datetime(2024, 1, 2), datetime(2024, 1, 2, 11, 0)),
+            ("https://example1.com", datetime(2024, 1, 1), datetime(2024, 1, 1, 10, 0), None),
+            ("https://example2.com", datetime(2024, 1, 2), datetime(2024, 1, 2, 11, 0), None),
         ]
         mock_process.return_value = 0
 
@@ -450,8 +450,8 @@ class TestCmdResumarize:
         recent_date = datetime(2024, 1, 18)  # 2 days ago
 
         mock_scan.return_value = [
-            ("https://old.com", datetime(2024, 1, 1), old_date),
-            ("https://recent.com", datetime(2024, 1, 2), recent_date),
+            ("https://old.com", datetime(2024, 1, 1), old_date, None),
+            ("https://recent.com", datetime(2024, 1, 2), recent_date, None),
         ]
         mock_process.return_value = 0
 
@@ -483,8 +483,8 @@ class TestCmdResumarize:
         recent_date = datetime(2024, 1, 18)  # 2 days ago
 
         mock_scan.return_value = [
-            ("https://recent1.com", datetime(2024, 1, 1), recent_date),
-            ("https://recent2.com", datetime(2024, 1, 2), recent_date),
+            ("https://recent1.com", datetime(2024, 1, 1), recent_date, None),
+            ("https://recent2.com", datetime(2024, 1, 2), recent_date, None),
         ]
 
         result = cmd_resummarize(mock_config, age_days=5)
@@ -502,11 +502,11 @@ class TestCmdResumarize:
     ) -> None:
         """Test max_links limits number of summaries processed."""
         mock_scan.return_value = [
-            ("https://example1.com", datetime(2024, 1, 1), datetime(2024, 1, 1)),
-            ("https://example2.com", datetime(2024, 1, 2), datetime(2024, 1, 2)),
-            ("https://example3.com", datetime(2024, 1, 3), datetime(2024, 1, 3)),
-            ("https://example4.com", datetime(2024, 1, 4), datetime(2024, 1, 4)),
-            ("https://example5.com", datetime(2024, 1, 5), datetime(2024, 1, 5)),
+            ("https://example1.com", datetime(2024, 1, 1), datetime(2024, 1, 1), None),
+            ("https://example2.com", datetime(2024, 1, 2), datetime(2024, 1, 2), None),
+            ("https://example3.com", datetime(2024, 1, 3), datetime(2024, 1, 3), None),
+            ("https://example4.com", datetime(2024, 1, 4), datetime(2024, 1, 4), None),
+            ("https://example5.com", datetime(2024, 1, 5), datetime(2024, 1, 5), None),
         ]
         mock_process.return_value = 0
         mock_config.max_links = 3
@@ -529,7 +529,7 @@ class TestCmdResumarize:
     ) -> None:
         """Test that force mode is automatically enabled."""
         mock_scan.return_value = [
-            ("https://example.com", datetime(2024, 1, 1), datetime(2024, 1, 1)),
+            ("https://example.com", datetime(2024, 1, 1), datetime(2024, 1, 1), None),
         ]
         mock_process.return_value = 0
         mock_config.force = False
@@ -553,8 +553,8 @@ class TestCmdResumarize:
         summ_date2 = datetime(2024, 1, 11)
 
         mock_scan.return_value = [
-            ("https://example1.com", orig_date1, summ_date1),
-            ("https://example2.com", orig_date2, summ_date2),
+            ("https://example1.com", orig_date1, summ_date1, None),
+            ("https://example2.com", orig_date2, summ_date2, None),
         ]
         mock_process.return_value = 0
 
