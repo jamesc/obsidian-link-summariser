@@ -19,6 +19,7 @@ from summarize_links.cli import (
     cmd_from_note,
     cmd_from_note_all,
     cmd_list,
+    cmd_resummarize,
     cmd_urls,
     create_parser,
     main,
@@ -121,6 +122,20 @@ class TestCreateParser:
         parser = create_parser()
         args = parser.parse_args(["list"])
         assert args.command == "list"
+
+    def test_resummarize_command(self) -> None:
+        """Should parse resummarize command."""
+        parser = create_parser()
+
+        # Basic resummarize
+        args = parser.parse_args(["resummarize"])
+        assert args.command == "resummarize"
+        assert args.age is None
+
+        # With --age option
+        args = parser.parse_args(["resummarize", "--age", "30"])
+        assert args.command == "resummarize"
+        assert args.age == 30
 
     def test_short_options(self) -> None:
         """Should support short option forms."""
@@ -779,6 +794,80 @@ class TestProcessUrlWithMetadata:
             mock_stub.assert_not_called()
             assert should_delete is False
 
+    @patch("summarize_links.cli.write_stub_note")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
+    @patch("summarize_links.cli.summary_exists")
+    def test_error_during_resummarize_preserves_successful_summary(
+        self,
+        mock_exists: MagicMock,
+        mock_fetch: MagicMock,
+        mock_stub: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Should NOT overwrite successful summary with error stub during resummarization."""
+        # Simulate that a successful summary already exists
+        mock_exists.return_value = True
+        # Force mode is enabled (as in resummarize)
+        mock_fetch.side_effect = ContentFetchError("Connection refused")
+
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+            force=True,  # Force mode is enabled during resummarization
+        )
+
+        url_context = UrlWithContext(url="https://example.com")
+
+        success, message, should_delete = _process_url_with_metadata(
+            url_context,
+            config,
+            MagicMock(),
+        )
+
+        # Should return error
+        assert success is False
+        assert "Fetch error" in message
+        assert should_delete is False
+
+        # CRITICAL: Should NOT write stub note because a successful summary already existed
+        mock_stub.assert_not_called()
+
+    @patch("summarize_links.cli.write_stub_note")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
+    @patch("summarize_links.cli.summary_exists")
+    def test_error_on_first_try_creates_stub(
+        self,
+        mock_exists: MagicMock,
+        mock_fetch: MagicMock,
+        mock_stub: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Should create stub on error for URLs that never had a successful summary."""
+        # No existing summary
+        mock_exists.return_value = False
+        mock_fetch.side_effect = ContentFetchError("Connection refused")
+
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        url_context = UrlWithContext(url="https://example.com")
+
+        success, message, should_delete = _process_url_with_metadata(
+            url_context,
+            config,
+            MagicMock(),
+        )
+
+        # Should return error
+        assert success is False
+        assert "Fetch error" in message
+        assert should_delete is False
+
+        # Should write stub note because this is the first attempt
+        mock_stub.assert_called_once()
+
 
 class TestPrintResults:
     """Tests for results table printing."""
@@ -1312,3 +1401,69 @@ class TestInvalidUrlHandling:
         assert success is False
         assert "Invalid URL" in message
         assert should_delete is False
+
+
+class TestCmdResummarize:
+    """Tests for resummarize command handler."""
+
+    def test_negative_age_rejected(self, mock_vault: Path) -> None:
+        """Should reject negative age values."""
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_resummarize(config, age_days=-5)
+        assert result == EXIT_ERROR
+
+    def test_zero_age_rejected(self, mock_vault: Path) -> None:
+        """Should reject zero age value."""
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_resummarize(config, age_days=0)
+        assert result == EXIT_ERROR
+
+    def test_negative_one_age_rejected(self, mock_vault: Path) -> None:
+        """Should reject -1 age value."""
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_resummarize(config, age_days=-1)
+        assert result == EXIT_ERROR
+
+    @patch("summarize_links.cli.scan_summaries_for_resummarize")
+    def test_positive_age_accepted(
+        self,
+        mock_scan: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Should accept positive age values."""
+        mock_scan.return_value = []  # No summaries to process
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_resummarize(config, age_days=30)
+        assert result == EXIT_SUCCESS
+
+    @patch("summarize_links.cli.scan_summaries_for_resummarize")
+    def test_no_age_filter_accepted(
+        self,
+        mock_scan: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Should accept None (no age filter)."""
+        mock_scan.return_value = []  # No summaries to process
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_resummarize(config, age_days=None)
+        assert result == EXIT_SUCCESS

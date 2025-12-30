@@ -13,6 +13,7 @@ from summarize_links.models import PageMetadata, SummaryResult
 from summarize_links.notes import (
     get_existing_summary_date,
     get_summary_filepath,
+    scan_summaries_for_resummarize,
     write_summary_note_with_metadata,
 )
 
@@ -256,3 +257,134 @@ class TestPreserveExistingDate:
         summary_files = list(summaries_path.glob("*.md"))
         assert len(summary_files) == 1
         assert summary_files[0] == original_path
+
+
+class TestPreserveFromField:
+    """Tests for preserving the 'from' frontmatter field during resummarization."""
+
+    def test_scan_extracts_from_field(self, tmp_path: Path) -> None:
+        """Should extract the 'from' field when scanning summaries."""
+        vault_path = tmp_path / "vault"
+        summaries_folder = "Summaries"
+        summaries_path = vault_path / summaries_folder
+        summaries_path.mkdir(parents=True)
+
+        # Create a summary with a 'from' field
+        url = "https://example.com/article"
+        summary_file = summaries_path / "2024-01-15-article.md"
+        summary_file.write_text(
+            """---
+source: https://example.com/article
+date: 2024-01-15
+summary_status: success
+summary_date: 2024-01-15 10:30:00
+from: "[[2024-01-15]]"
+---
+
+# Article Summary
+
+Some content here.
+""",
+            encoding="utf-8",
+        )
+
+        # Scan for summaries
+        summaries = scan_summaries_for_resummarize(vault_path, summaries_folder)
+
+        assert len(summaries) == 1
+        source_url, original_date, summary_date, source_note = summaries[0]
+
+        assert source_url == url
+        assert original_date.strftime("%Y-%m-%d") == "2024-01-15"
+        assert source_note == "2024-01-15.md"
+
+    def test_scan_handles_missing_from_field(self, tmp_path: Path) -> None:
+        """Should handle summaries without a 'from' field."""
+        vault_path = tmp_path / "vault"
+        summaries_folder = "Summaries"
+        summaries_path = vault_path / summaries_folder
+        summaries_path.mkdir(parents=True)
+
+        # Create a summary without a 'from' field
+        url = "https://example.com/article"
+        summary_file = summaries_path / "2024-01-15-article.md"
+        summary_file.write_text(
+            """---
+source: https://example.com/article
+date: 2024-01-15
+summary_status: success
+---
+
+# Article Summary
+
+Some content here.
+""",
+            encoding="utf-8",
+        )
+
+        # Scan for summaries
+        summaries = scan_summaries_for_resummarize(vault_path, summaries_folder)
+
+        assert len(summaries) == 1
+        source_url, original_date, summary_date, source_note = summaries[0]
+
+        assert source_url == url
+        assert source_note is None
+
+    def test_preserves_from_field_during_resummarize(self, tmp_path: Path) -> None:
+        """Should preserve the 'from' field when re-summarizing."""
+        vault_path = tmp_path / "vault"
+        summaries_folder = "Summaries"
+        summaries_path = vault_path / summaries_folder
+        summaries_path.mkdir(parents=True)
+
+        url = "https://example.com/article"
+        original_date = datetime(2024, 1, 15)
+        source_note = "2024-01-15.md"
+
+        # Create original summary with 'from' field
+        summary_result = SummaryResult(
+            content="# Original Summary\n\nOriginal content.",
+            suggested_tags=["tag1"],
+            content_type="article",
+        )
+        page_metadata = PageMetadata(
+            title="Original Title",
+            domain="example.com",
+            content="Original content",
+        )
+
+        write_summary_note_with_metadata(
+            vault_path=vault_path,
+            out_folder=summaries_folder,
+            url=url,
+            summary_result=summary_result,
+            page_metadata=page_metadata,
+            date=original_date,
+            source_note=source_note,  # Original source note
+            summary_status="success",
+        )
+
+        # Re-summarize with new content but preserve source_note
+        new_summary_result = SummaryResult(
+            content="# Updated Summary\n\nNew content!",
+            suggested_tags=["tag2"],
+            content_type="article",
+        )
+
+        updated_path = write_summary_note_with_metadata(
+            vault_path=vault_path,
+            out_folder=summaries_folder,
+            url=url,
+            summary_result=new_summary_result,
+            page_metadata=page_metadata,
+            date=original_date,
+            source_note=source_note,  # Preserve the source note
+            summary_status="success",
+            overwrite=True,
+        )
+
+        # Verify the 'from' field is still present
+        content = updated_path.read_text(encoding="utf-8")
+        assert "Updated Summary" in content
+        assert 'from: "[[2024-01-15]]"' in content
