@@ -40,6 +40,8 @@ The fastest way to get started with development is using VS Code Dev Containers:
 
 See [.devcontainer/README.md](.devcontainer/README.md) for detailed setup instructions and troubleshooting.
 
+**GitHub Copilot Users:** This repository includes [`.github/copilot-agent.yml`](.github/copilot-agent.yml) to optimize the Copilot Coding Agent's context. It ensures the agent focuses on relevant source code and documentation while excluding cache files and build artifacts.
+
 ### Option 2: Local Setup
 
 #### Prerequisites

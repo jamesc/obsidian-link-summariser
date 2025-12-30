@@ -1987,11 +1987,20 @@ This enables:
    - Git commit conventions
    - Guidelines for Copilot when suggesting code
 
-4. **Updated main `README.md`**:
+4. **Created `.github/copilot-agent.yml`**:
+   - Configures Copilot Coding Agent environment per GitHub's documentation
+   - Specifies files and directories to include in agent's context
+   - Excludes cache files, build artifacts, and IDE-specific files
+   - Prioritizes core architecture files (models, config, exceptions)
+   - Prioritizes LLM client implementations and key functionality
+   - Ensures agent focuses on relevant code and documentation
+
+5. **Updated main `README.md`**:
    - Added "Option 1: Dev Container (Recommended for Contributors)" section
    - Reorganized installation instructions
    - Links to devcontainer README for detailed setup
    - Preserves existing "Option 2: Local Setup" instructions
+   - Added note about Copilot agent configuration
 
 **Benefits:**
 
@@ -2007,9 +2016,10 @@ This enables:
 - `.devcontainer/devcontainer.json` (77 lines)
 - `.devcontainer/README.md` (170 lines)
 - `.github/copilot-instructions.md` (206 lines)
+- `.github/copilot-agent.yml` (101 lines)
 
 **Files Modified:**
-- `README.md` (added devcontainer setup option)
+- `README.md` (added devcontainer setup option and Copilot agent note)
 
 **Testing:**
 - JSON syntax validated
