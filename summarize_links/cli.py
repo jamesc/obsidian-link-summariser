@@ -10,7 +10,7 @@ import contextlib
 import logging
 import signal
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from rich.console import Console
@@ -332,6 +332,10 @@ def _process_url_with_metadata(
     # If we're reprocessing (summary exists but incomplete), we need to overwrite
     needs_overwrite = config.force or not existing_summary_complete
 
+    # Store whether we had a successful summary before processing
+    # Used to prevent overwriting successful summaries with error stubs
+    had_successful_summary = existing_summary_complete
+
     if config.dry_run:
         return True, f"Would process: {url} -> {slug}.md", False
 
@@ -558,7 +562,8 @@ def _process_url_with_metadata(
 
             except ContentFetchError as e:
                 logger.warning("Failed to fetch %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -571,7 +576,8 @@ def _process_url_with_metadata(
 
             except ContentExtractionError as e:
                 logger.warning("Failed to extract content from %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -584,7 +590,8 @@ def _process_url_with_metadata(
 
             except RateLimitError as e:
                 logger.error("Rate limited while processing %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -597,7 +604,8 @@ def _process_url_with_metadata(
 
             except OllamaServerError as e:
                 logger.error("Ollama server error for %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -610,7 +618,8 @@ def _process_url_with_metadata(
 
             except ModelNotInstalledError as e:
                 logger.error("Model not installed for %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -623,7 +632,8 @@ def _process_url_with_metadata(
 
             except OllamaAPIError as e:
                 logger.error("Ollama API error for %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -636,7 +646,8 @@ def _process_url_with_metadata(
 
             except GeminiAPIError as e:
                 logger.error("Gemini API error for %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -1088,8 +1099,6 @@ def cmd_resummarize(config: Config, age_days: int | None = None) -> int:
 
     # Filter by age if specified (based on summary_date)
     if age_days is not None:
-        from datetime import timedelta
-
         cutoff_date = datetime.now() - timedelta(days=age_days)
         original_count = len(summaries)
         # Filter based on summary_date (3rd element in tuple)

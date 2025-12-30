@@ -2101,3 +2101,104 @@ This enables:
 - Error tracking tested with exception scenarios
 - Metadata propagation verified in traces
 
+
+## 2025-12-30: Preserve Successful Summaries During Resummarization Errors
+
+**Goal:** When resummarizing a previously successful article, if an error occurs (rate limit, network failure, etc.), don't overwrite the successful summary with an error stub.
+
+**Problem:**
+During resummarization with --resummarize, if an error occurred for a URL that previously had a successful summary:
+1. The existing successful summary would be overwritten with an error stub
+2. The user loses good content and replaces it with an error message
+3. This is especially problematic for transient errors (network, rate limits)
+4. Original successful summary data is lost
+
+**Solution:**
+Track whether a successful summary existed before processing, and skip writing error stubs when it did.
+
+**Changes:**
+
+### CLI (summarize_links/cli.py)
+- Added had_successful_summary flag in _process_url_with_metadata():
+  - Set to xisting_summary_complete value before processing begins
+  - Tracks whether the summary existed and was successful before any errors occurred
+- Updated all error handlers to check had_successful_summary before writing error stubs:
+  - ContentFetchError: Only writes stub if 
+ot had_successful_summary`n  - ContentExtractionError: Only writes stub if 
+ot had_successful_summary`n  - RateLimitError: Only writes stub if 
+ot had_successful_summary`n  - OllamaServerError: Only writes stub if 
+ot had_successful_summary`n  - ModelNotInstalledError: Only writes stub if 
+ot had_successful_summary`n  - OllamaAPIError: Only writes stub if 
+ot had_successful_summary`n  - GeminiAPIError: Only writes stub if 
+ot had_successful_summary`n
+### Tests (	ests/test_cli.py)
+- Added 	est_error_during_resummarize_preserves_successful_summary:
+  - Simulates successful summary existing
+  - Force mode enabled (resummarize always uses force)
+  - Fetch error occurs during processing
+  - Verifies error stub is NOT written
+  - Verifies error is still returned correctly
+- Added 	est_error_on_first_try_creates_stub:
+  - Simulates no existing summary
+  - Fetch error occurs
+  - Verifies error stub IS written (first attempt)
+  - Ensures normal error handling still works
+
+**Behavior:**
+
+**Before Fix:**
+```markdown
+Example successful summary:
+---
+source: https://example.com/article
+title: Great Article
+date: 2024-01-15
+summary_status: success
+---
+# Great Article
+[Summary content...]
+```n
+After resummarize with error, becomes:
+```markdown
+---
+source: https://example.com/article
+date: 2024-01-15
+summary_status: fetch_error
+---
+## Summary Unavailable
+Failed to fetch: Connection refused
+```n
+**After Fix:**
+- Successful summary remains unchanged
+- Error is logged and reported
+- URL can be retried later
+- No data loss
+
+**Error Scenarios:**
+
+| Scenario | Had Success Before? | Error Stub Written? | Result |
+|----------|---------------------|---------------------|--------|
+| First summarization attempt fails | No | Yes | Stub created for retry |
+| Resummarize successful summary fails | Yes | No | Original preserved |
+| Process mocked summary fails | No | Yes | Stub replaces mock |
+| Process error stub fails again | No | Yes | Stub updated |
+
+**Benefits:**
+- Prevents data loss during resummarization
+- Transient errors don't destroy good content
+- Can retry resummarization safely
+- Original summaries preserved for reference
+- Error reporting still works correctly
+
+**Static Analysis:** All checks pass ✓
+- uff check . - Clean
+- uff format . - Formatted
+- mypy . - Type checking passes
+
+**Tests:** All 498 tests pass (496 existing + 2 new)
+- Test suite runtime: ~8 seconds
+- All error handler tests pass
+- New preservation tests pass
+
+---
+
