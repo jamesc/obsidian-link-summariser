@@ -19,6 +19,11 @@
 
 - **Always use uv for python environment management**
 
+- **Follow PEP 8 style guidelines**: Adhere to Python's PEP 8 style guide for all code
+  - Imports at the top of the file (avoid local imports unless necessary for circular dependencies)
+  - Proper spacing, indentation, and naming conventions
+  - Maximum line length of 88 characters (Black formatter default)
+
 - **Static analysis before commits - MANDATORY**: Run ALL these tools before EVERY commit:
   1. `uv run ruff check .` - Fast linting
   2. `uv run ruff format .` - Code formatting

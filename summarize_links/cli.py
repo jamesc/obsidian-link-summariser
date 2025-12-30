@@ -10,7 +10,7 @@ import contextlib
 import logging
 import signal
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from rich.console import Console
@@ -44,6 +44,7 @@ from summarize_links.notes import (
     read_daily_note,
     remove_url_line_from_note,
     scan_summaries,
+    scan_summaries_for_resummarize,
     slug_from_url,
     summary_exists,
     write_stub_note,
@@ -136,6 +137,12 @@ Examples:
 
   # Summarize specific URLs
   summarize-links urls https://example.com https://another.com
+
+  # Re-summarize all existing summaries
+  summarize-links resummarize
+
+  # Re-summarize only summaries older than 30 days
+  summarize-links resummarize --age 30
 
   # Dry run - show what would be done
   summarize-links from-note --dry-run
@@ -243,6 +250,19 @@ Examples:
         description="Scan all summaries and report on their status (success, mocked, errors).",
     )
 
+    # resummarize command
+    resummarize_cmd = subparsers.add_parser(
+        "resummarize",
+        help="Re-summarize existing summaries",
+        description="Re-summarize all existing summaries from the Summaries folder.",
+    )
+    resummarize_cmd.add_argument(
+        "--age",
+        type=int,
+        metavar="DAYS",
+        help="Only resummarize summaries older than DAYS days (based on generation date)",
+    )
+
     return parser
 
 
@@ -311,6 +331,10 @@ def _process_url_with_metadata(
 
     # If we're reprocessing (summary exists but incomplete), we need to overwrite
     needs_overwrite = config.force or not existing_summary_complete
+
+    # Store whether we had a successful summary before processing
+    # Used to prevent overwriting successful summaries with error stubs
+    had_successful_summary = existing_summary_complete
 
     if config.dry_run:
         return True, f"Would process: {url} -> {slug}.md", False
@@ -538,7 +562,8 @@ def _process_url_with_metadata(
 
             except ContentFetchError as e:
                 logger.warning("Failed to fetch %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -551,7 +576,8 @@ def _process_url_with_metadata(
 
             except ContentExtractionError as e:
                 logger.warning("Failed to extract content from %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -564,7 +590,8 @@ def _process_url_with_metadata(
 
             except RateLimitError as e:
                 logger.error("Rate limited while processing %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -577,7 +604,8 @@ def _process_url_with_metadata(
 
             except OllamaServerError as e:
                 logger.error("Ollama server error for %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -590,7 +618,8 @@ def _process_url_with_metadata(
 
             except ModelNotInstalledError as e:
                 logger.error("Model not installed for %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -603,7 +632,8 @@ def _process_url_with_metadata(
 
             except OllamaAPIError as e:
                 logger.error("Ollama API error for %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -616,7 +646,8 @@ def _process_url_with_metadata(
 
             except GeminiAPIError as e:
                 logger.error("Gemini API error for %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -1034,6 +1065,187 @@ def cmd_summaries(config: Config) -> int:
     return EXIT_SUCCESS
 
 
+def cmd_resummarize(config: Config, age_days: int | None = None) -> int:
+    """
+    Re-summarize existing summaries from the Summaries folder.
+
+    Scans all summaries, extracts their source URLs and dates,
+    and reprocesses them using the current model and settings.
+    Preserves the original summary date.
+
+    Note: This command automatically enables force mode to overwrite
+    existing summaries.
+
+    Args:
+        config: Application configuration.
+        age_days: Only resummarize summaries older than this many days (optional).
+
+    Returns:
+        Exit code.
+    """
+    # Vault path must be set (validated in load_config)
+    assert config.vault_path is not None
+
+    # Validate age_days parameter
+    if age_days is not None and age_days <= 0:
+        _print_error("[red]--age must be a positive integer[/]")
+        return EXIT_ERROR
+
+    # Enable force mode for resummarize (we always want to overwrite)
+    config.force = True
+
+    _print("[bold]Scanning summaries for re-summarization...[/]\n")
+
+    # Find all summaries suitable for resummarization
+    summaries = scan_summaries_for_resummarize(
+        vault_path=config.vault_path,
+        out_folder=config.out_folder,
+    )
+
+    # Filter by age if specified (based on summary_date)
+    if age_days is not None:
+        cutoff_date = datetime.now() - timedelta(days=age_days)
+        original_count = len(summaries)
+        # Filter based on summary_date (3rd element in tuple)
+        summaries = [
+            (url, orig_date, summ_date, source_note)
+            for url, orig_date, summ_date, source_note in summaries
+            if summ_date < cutoff_date
+        ]
+        filtered_count = original_count - len(summaries)
+        if filtered_count > 0:
+            _print(f"[cyan]Filtered out {filtered_count} summaries newer than {age_days} days[/]")
+
+    if not summaries:
+        _print("[yellow]No summaries found to re-summarize.[/]")
+        if age_days is not None:
+            _print(f"(No summaries older than {age_days} days)")
+        _print(f"Summaries folder: {config.vault_path / config.out_folder}")
+        return EXIT_SUCCESS
+
+    # Apply max_links limit
+    if config.max_links and len(summaries) > config.max_links:
+        _print(f"[yellow]Found {len(summaries)} summaries, limiting to {config.max_links}[/]")
+        summaries = summaries[: config.max_links]
+    else:
+        _print(f"[green]Found {len(summaries)} summaries to re-summarize[/]")
+
+    # Convert to UrlWithContext (no user tags for resummarize)
+    url_contexts = [UrlWithContext(url=url) for url, _, _, _ in summaries]
+
+    # Extract original dates and source notes for each URL
+    url_dates = {url: orig_date for url, orig_date, _, _ in summaries}
+    url_source_notes = {url: source_note for url, _, _, source_note in summaries}
+
+    # Process URLs with the preserved dates and source notes
+    return _process_resummarize_batch(url_contexts, url_dates, url_source_notes, config)
+
+
+def _process_resummarize_batch(
+    url_contexts: list[UrlWithContext],
+    url_dates: dict[str, datetime],
+    url_source_notes: dict[str, str | None],
+    config: Config,
+) -> int:
+    """
+    Process a batch of URLs for resummarization.
+
+    Similar to _process_urls_batch but preserves original dates
+    and source notes, and doesn't attempt to remove URLs from daily notes.
+
+    Args:
+        url_contexts: URLs with context (no user tags for resummarize).
+        url_dates: Mapping of URL to its original summary date.
+        url_source_notes: Mapping of URL to its source note filename (from 'from' field).
+        config: Application configuration.
+
+    Returns:
+        Exit code.
+    """
+    global _shutdown_requested
+
+    # Reset shutdown flag at start of batch
+    _shutdown_requested = False
+
+    # Install signal handler for graceful shutdown
+    original_handler = signal.signal(signal.SIGINT, _handle_shutdown)
+
+    try:
+        # Create the LLM client
+        client = create_llm_client(
+            model=config.model,
+            gemini_api_key=config.gemini_api_key,
+            ollama_endpoint=config.ollama_endpoint,
+            mock_mode=config.mock_mode,
+            state_path=config.vault_path,
+            rpm_limit=config.rpm_limit,
+            tpm_limit=config.tpm_limit,
+            daily_limit=config.daily_limit,
+        )
+
+        if config.mock_mode:
+            _print("[yellow]Running in mock mode (no API calls)[/]")
+        if config.dry_run:
+            _print("[yellow]Running in dry-run mode (no changes)[/]")
+
+        # Process with progress bar
+        results: list[tuple[bool, str]] = []
+        interrupted = False
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            task = progress.add_task("[cyan]Re-summarizing...", total=len(url_contexts))
+
+            for url_context in url_contexts:
+                # Check for shutdown request before processing each URL
+                if _shutdown_requested:
+                    interrupted = True
+                    remaining = len(url_contexts) - len(results)
+                    _print(f"[yellow]Stopping early. {remaining} URLs not processed.[/]")
+                    break
+
+                # Get the original date and source note for this URL
+                original_date = url_dates.get(url_context.url)
+                source_note = url_source_notes.get(url_context.url)
+
+                # Process URL with preserved date and source note (for 'from' field)
+                success, message, _ = _process_url_with_metadata(
+                    url_context,
+                    config,
+                    client,
+                    progress,
+                    task,
+                    daily_note_filename=source_note,  # Preserve 'from' field
+                    source_date=original_date,
+                )
+                results.append((success, message))
+                progress.advance(task)
+
+        # Print results table (even for partial results)
+        if results:
+            _print_results(results)
+
+            # Print summary
+            if interrupted:
+                _print("[yellow]Processing was interrupted.[/]")
+
+        # Return appropriate exit code
+        if not results:
+            return EXIT_ERROR
+        failures = sum(1 for success, _ in results if not success)
+        if failures == len(results):
+            return EXIT_ERROR
+        return EXIT_SUCCESS
+
+    finally:
+        # Restore original signal handler
+        signal.signal(signal.SIGINT, original_handler)
+
+
 def cmd_urls(config: Config, urls: list[str]) -> int:
     """
     Process specified URLs.
@@ -1287,6 +1499,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_status(config)
         elif args.command == "summaries":
             return cmd_summaries(config)
+        elif args.command == "resummarize":
+            return cmd_resummarize(config, age_days=getattr(args, "age", None))
         else:
             _print_error(f"[red]Unknown command: {args.command}[/]")
             return EXIT_ERROR

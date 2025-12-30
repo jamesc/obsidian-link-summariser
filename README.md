@@ -88,6 +88,12 @@ summarize-links from-note --vault ~/Notes --date 2025-12-16
 # Process ALL daily notes with URLs (oldest first)
 summarize-links from-note --vault ~/Notes --all
 
+# Re-summarize existing summaries (useful when changing models)
+summarize-links resummarize --vault ~/Notes
+
+# Re-summarize only summaries older than 30 days
+summarize-links resummarize --vault ~/Notes --age 30
+
 # List all daily notes that have URLs
 summarize-links list --vault ~/Notes
 
@@ -175,6 +181,10 @@ Commands:
 
   urls              Summarize specific URLs
     URLS...         One or more URLs to summarize
+
+  resummarize       Re-summarize existing summaries from Summaries folder
+                    Preserves original dates, useful when changing models
+    --age DAYS      Only resummarize summaries older than DAYS days
 
   list              List all daily notes that have URLs
 
