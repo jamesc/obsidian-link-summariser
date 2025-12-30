@@ -1075,6 +1075,11 @@ def cmd_resummarize(config: Config, age_days: int | None = None) -> int:
     # Vault path must be set (validated in load_config)
     assert config.vault_path is not None
 
+    # Validate age_days parameter
+    if age_days is not None and age_days <= 0:
+        _print_error("[red]--age must be a positive integer[/]")
+        return EXIT_ERROR
+
     # Enable force mode for resummarize (we always want to overwrite)
     config.force = True
 
