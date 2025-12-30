@@ -122,6 +122,20 @@ class TestCreateParser:
         args = parser.parse_args(["list"])
         assert args.command == "list"
 
+    def test_resummarize_command(self) -> None:
+        """Should parse resummarize command."""
+        parser = create_parser()
+
+        # Basic resummarize
+        args = parser.parse_args(["resummarize"])
+        assert args.command == "resummarize"
+        assert args.age is None
+
+        # With --age option
+        args = parser.parse_args(["resummarize", "--age", "30"])
+        assert args.command == "resummarize"
+        assert args.age == 30
+
     def test_short_options(self) -> None:
         """Should support short option forms."""
         parser = create_parser()
