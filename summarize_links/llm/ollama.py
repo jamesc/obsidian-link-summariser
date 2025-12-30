@@ -13,11 +13,7 @@ import logging
 import requests
 
 from summarize_links.exceptions import ModelNotInstalledError, OllamaAPIError, OllamaServerError
-from summarize_links.llm.prompts import (
-    build_user_prompt_from_template,
-    load_system_prompt,
-    load_user_prompt_template,
-)
+from summarize_links.llm.base import BaseLLMClient
 from summarize_links.models import SummaryResult
 
 __all__ = [
@@ -30,59 +26,6 @@ logger = logging.getLogger(__name__)
 # Default configuration
 DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434"
 DEFAULT_TIMEOUT = 120  # Seconds (local models can be slower)
-
-
-def _build_content_type_list() -> str:
-    """
-    Build the content type list for the system prompt.
-
-    Returns:
-        Formatted string listing all content types with descriptions.
-    """
-    from summarize_links.models import CONTENT_TYPE_DESCRIPTIONS
-
-    lines = []
-    for content_type, description in CONTENT_TYPE_DESCRIPTIONS.items():
-        lines.append(f'- "{content_type}" ({description})')
-    return "\n".join(lines)
-
-
-# System prompt for summarization with structured output (same as Gemini)
-# Cached prompts loaded from filesystem
-_SYSTEM_PROMPT_CACHE: str | None = None
-_USER_PROMPT_TEMPLATE_CACHE: str | None = None
-
-
-def _get_system_prompt() -> str:
-    """Get system prompt from cache or load from file."""
-    global _SYSTEM_PROMPT_CACHE
-    if _SYSTEM_PROMPT_CACHE is None:
-        _SYSTEM_PROMPT_CACHE = load_system_prompt()
-    return _SYSTEM_PROMPT_CACHE
-
-
-def _get_user_prompt_template() -> str:
-    """Get user prompt template from cache or load from file."""
-    global _USER_PROMPT_TEMPLATE_CACHE
-    if _USER_PROMPT_TEMPLATE_CACHE is None:
-        _USER_PROMPT_TEMPLATE_CACHE = load_user_prompt_template()
-    return _USER_PROMPT_TEMPLATE_CACHE
-
-
-def _build_prompt(content: str, url: str, title: str | None = None) -> str:
-    """
-    Build the prompt for the Ollama API using template from filesystem.
-
-    Args:
-        content: Web page content to summarize.
-        url: Source URL.
-        title: Optional page title.
-
-    Returns:
-        Formatted prompt string with variables replaced.
-    """
-    template = _get_user_prompt_template()
-    return build_user_prompt_from_template(template, content, url, title)
 
 
 def _parse_ollama_response(response_text: str) -> SummaryResult:
@@ -106,7 +49,7 @@ def _parse_ollama_response(response_text: str) -> SummaryResult:
     return parse_llm_json_response(response_text)
 
 
-class OllamaClient:
+class OllamaClient(BaseLLMClient):
     """
     Client for the Ollama API.
 
@@ -129,108 +72,20 @@ class OllamaClient:
             endpoint: Ollama server endpoint URL.
             timeout: Request timeout in seconds.
         """
+        # Initialize base class with Langfuse support
+        super().__init__(error_class=OllamaAPIError)
+
         self._model = model
         self._endpoint = endpoint.rstrip("/")
         self._timeout = timeout
         self._server_checked = False
         self._model_checked = False
-        self._prompt_cache: dict[str, object] = {}
-
-        # Initialize Langfuse client (REQUIRED)
-        try:
-            from langfuse import Langfuse
-
-            self._langfuse_client = Langfuse()
-            logger.debug("Langfuse client initialized for prompt management")
-        except Exception as e:
-            raise OllamaAPIError(f"Failed to initialize Langfuse (required): {e}") from e
 
         logger.debug(
             "Initialized OllamaClient with model: %s, endpoint: %s [Langfuse prompts required]",
             model,
             endpoint,
         )
-
-    def _get_langfuse_prompts(self) -> tuple[str, str]:
-        """
-        Fetch prompts from Langfuse with caching.
-
-        Returns:
-            Tuple of (system_prompt_text, user_prompt_template_text).
-
-        Raises:
-            OllamaAPIError: If prompts cannot be fetched from Langfuse.
-        """
-        try:
-            # Check cache first
-            if "system" in self._prompt_cache and "user" in self._prompt_cache:
-                logger.debug("Using cached Langfuse prompts")
-                system_obj = self._prompt_cache["system"]
-                user_obj = self._prompt_cache["user"]
-                return system_obj.prompt, user_obj.prompt  # type: ignore[attr-defined]
-
-            # Fetch from Langfuse
-            logger.debug("Fetching prompts from Langfuse")
-            system_obj = self._langfuse_client.get_prompt("summarize-document/system")
-            user_obj = self._langfuse_client.get_prompt("summarize-document/user")
-
-            # Cache the objects (not just text, for metadata)
-            self._prompt_cache["system"] = system_obj
-            self._prompt_cache["user"] = user_obj
-
-            logger.info(
-                "Fetched prompts from Langfuse: system v%s, user v%s",
-                getattr(system_obj, "version", "unknown"),
-                getattr(user_obj, "version", "unknown"),
-            )
-
-            return system_obj.prompt, user_obj.prompt
-
-        except Exception as e:
-            raise OllamaAPIError(f"Failed to fetch prompts from Langfuse (required): {e}") from e
-
-    def _compile_user_prompt(self, template: str, content: str, url: str, title: str | None) -> str:
-        """
-        Compile user prompt template with variables.
-
-        Supports both Langfuse templates (with {{var}}) and fallback templates.
-
-        Args:
-            template: Prompt template string.
-            content: Web page content.
-            url: Source URL.
-            title: Page title.
-
-        Returns:
-            Compiled prompt string.
-        """
-        # Check if template uses Langfuse variable syntax {{var}}
-        if "{{" in template and "}}" in template:
-            # Langfuse template - compile with variables
-            try:
-                # Get the user prompt object from cache for compilation
-                if "user" in self._prompt_cache:
-                    user_obj = self._prompt_cache["user"]
-                    compiled: str = user_obj.compile(  # type: ignore[attr-defined]
-                        title=title or "Unknown",
-                        url=url,
-                        content=content,
-                    )
-                    return compiled
-            except Exception as e:
-                logger.warning(
-                    f"Failed to compile Langfuse template, using simple replacement: {e}"
-                )
-
-            # Fallback: simple string replacement
-            return (
-                template.replace("{{title}}", title or "Unknown")
-                .replace("{{url}}", url)
-                .replace("{{content}}", content)
-            )
-        else:
-            # Not a template, assume it's the old _build_prompt format
-            return template
 
     def _check_server(self) -> None:
         """
@@ -337,11 +192,12 @@ class OllamaClient:
         self._check_server()
         self._check_model_installed()
 
-        # Build the prompt
-        prompt = _build_prompt(content, url, title)
+        # Get prompts from Langfuse
+        system_prompt, user_prompt_template = self._get_langfuse_prompts()
+        prompt = self._compile_user_prompt(user_prompt_template, content, url, title)
 
         # Combine system prompt and user prompt
-        full_prompt = f"{_get_system_prompt()}\n\n{prompt}"
+        full_prompt = f"{system_prompt}\n\n{prompt}"
 
         logger.debug("Sending request to Ollama API")
 

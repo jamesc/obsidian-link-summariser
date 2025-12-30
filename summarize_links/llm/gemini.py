@@ -18,13 +18,9 @@ from google.genai import errors, types
 
 from summarize_links.config import DEFAULT_MODEL, get_model_rate_limits
 from summarize_links.exceptions import GeminiAPIError, RateLimitError
+from summarize_links.llm.base import BaseLLMClient
 from summarize_links.llm.parsing import parse_llm_json_response
-from summarize_links.llm.prompts import (
-    build_user_prompt_from_template,
-    load_system_prompt,
-    load_user_prompt_template,
-)
-from summarize_links.models import CONTENT_TYPE_DESCRIPTIONS, SummaryResult
+from summarize_links.models import SummaryResult
 from summarize_links.rate_limiter import ModelRateLimits, RateLimiter
 
 __all__ = [
@@ -43,59 +39,7 @@ MIN_RATE_LIMIT_WAIT = 10.0  # Minimum wait when rate limited (seconds)
 MAX_RETRY_DELAY = 120.0  # Maximum delay cap (seconds)
 
 
-def _build_content_type_list() -> str:
-    """
-    Build the content type list for the system prompt from CONTENT_TYPE_DESCRIPTIONS.
-
-    Returns:
-        Formatted string listing all content types with descriptions.
-    """
-    lines = []
-    for content_type, description in CONTENT_TYPE_DESCRIPTIONS.items():
-        lines.append(f'- "{content_type}" ({description})')
-    return "\n".join(lines)
-
-
-# System prompt for summarization with structured output
-# Content types are generated dynamically from CONTENT_TYPE_DESCRIPTIONS
-# Cached prompts loaded from filesystem
-_SYSTEM_PROMPT_CACHE: str | None = None
-_USER_PROMPT_TEMPLATE_CACHE: str | None = None
-
-
-def _get_system_prompt() -> str:
-    """Get system prompt from cache or load from file."""
-    global _SYSTEM_PROMPT_CACHE
-    if _SYSTEM_PROMPT_CACHE is None:
-        _SYSTEM_PROMPT_CACHE = load_system_prompt()
-    return _SYSTEM_PROMPT_CACHE
-
-
-def _get_user_prompt_template() -> str:
-    """Get user prompt template from cache or load from file."""
-    global _USER_PROMPT_TEMPLATE_CACHE
-    if _USER_PROMPT_TEMPLATE_CACHE is None:
-        _USER_PROMPT_TEMPLATE_CACHE = load_user_prompt_template()
-    return _USER_PROMPT_TEMPLATE_CACHE
-
-
-def _build_prompt(content: str, url: str, title: str | None = None) -> str:
-    """
-    Build the prompt for the Gemini API using template from filesystem.
-
-    Args:
-        content: Web page content to summarize.
-        url: Source URL.
-        title: Optional page title.
-
-    Returns:
-        Formatted prompt string with variables replaced.
-    """
-    template = _get_user_prompt_template()
-    return build_user_prompt_from_template(template, content, url, title)
-
-
-class GeminiClient:
+class GeminiClient(BaseLLMClient):
     """
     Client for the Google Gemini API.
 
@@ -130,19 +74,12 @@ class GeminiClient:
             tpm_limit: Legacy: Tokens per minute limit (ignored if model_limits provided).
             daily_limit: Legacy: Requests per day limit (ignored if model_limits provided).
         """
+        # Initialize base class with Langfuse prompt management
+        super().__init__(error_class=GeminiAPIError)
+
         self._api_key = api_key
         self._model_name = model
         self._client: Any = None
-        self._prompt_cache: dict[str, Any] = {}
-
-        # Initialize Langfuse client (REQUIRED)
-        try:
-            from langfuse import Langfuse
-
-            self._langfuse_client = Langfuse()
-            logger.debug("Langfuse client initialized for prompt management")
-        except Exception as e:
-            raise GeminiAPIError(f"Failed to initialize Langfuse (required): {e}") from e
 
         # Get model-specific rate limits
         if model_limits is not None:
@@ -188,87 +125,6 @@ class GeminiClient:
             self._client = genai.Client(api_key=self._api_key)
             logger.debug("Created Client instance")
         return self._client
-
-    def _get_langfuse_prompts(self) -> tuple[str, str]:
-        """
-        Fetch prompts from Langfuse with caching.
-
-        Returns:
-            Tuple of (system_prompt_text, user_prompt_template_text).
-
-        Raises:
-            GeminiAPIError: If prompts cannot be fetched from Langfuse.
-        """
-        try:
-            # Check cache first
-            if "system" in self._prompt_cache and "user" in self._prompt_cache:
-                logger.debug("Using cached Langfuse prompts")
-                system_obj = self._prompt_cache["system"]
-                user_obj = self._prompt_cache["user"]
-                return system_obj.prompt, user_obj.prompt
-
-            # Fetch from Langfuse
-            logger.debug("Fetching prompts from Langfuse")
-            system_obj = self._langfuse_client.get_prompt("summarize-document/system")
-            user_obj = self._langfuse_client.get_prompt("summarize-document/user")
-
-            # Cache the objects (not just text, for metadata)
-            self._prompt_cache["system"] = system_obj
-            self._prompt_cache["user"] = user_obj
-
-            logger.info(
-                "Fetched prompts from Langfuse: system v%s, user v%s",
-                getattr(system_obj, "version", "unknown"),
-                getattr(user_obj, "version", "unknown"),
-            )
-
-            return system_obj.prompt, user_obj.prompt
-
-        except Exception as e:
-            raise GeminiAPIError(f"Failed to fetch prompts from Langfuse (required): {e}") from e
-
-    def _compile_user_prompt(self, template: str, content: str, url: str, title: str | None) -> str:
-        """
-        Compile user prompt template with variables.
-
-        Supports both Langfuse templates (with {{var}}) and fallback templates.
-
-        Args:
-            template: Prompt template string.
-            content: Web page content.
-            url: Source URL.
-            title: Page title.
-
-        Returns:
-            Compiled prompt string.
-        """
-        # Check if template uses Langfuse variable syntax {{var}}
-        if "{{" in template and "}}" in template:
-            # Langfuse template - compile with variables
-            try:
-                # Get the user prompt object from cache for compilation
-                if "user" in self._prompt_cache:
-                    user_obj = self._prompt_cache["user"]
-                    compiled: str = user_obj.compile(
-                        title=title or "Unknown",
-                        url=url,
-                        content=content,
-                    )
-                    return compiled
-            except Exception as e:
-                logger.warning(
-                    f"Failed to compile Langfuse template, using simple replacement: {e}"
-                )
-
-            # Fallback: simple string replacement
-            return (
-                template.replace("{{title}}", title or "Unknown")
-                .replace("{{url}}", url)
-                .replace("{{content}}", content)
-            )
-        else:
-            # Not a template, assume it's the old _build_prompt format
-            return template
 
     def _calculate_rate_limit_wait(self, attempt: int, error: Exception) -> float:
         """
@@ -347,7 +203,9 @@ class GeminiClient:
                            or daily limit exceeded.
             GeminiAPIError: When API returns an error.
         """
-        prompt = _build_prompt(content, url, title)
+        # Get prompts from Langfuse
+        system_prompt, user_prompt_template = self._get_langfuse_prompts()
+        prompt = self._compile_user_prompt(user_prompt_template, content, url, title)
         client = self._get_client()
 
         # Estimate tokens for rate limiting
@@ -369,7 +227,7 @@ class GeminiClient:
                     model=self._model_name,
                     contents=prompt,
                     config=types.GenerateContentConfig(
-                        system_instruction=_get_system_prompt(),
+                        system_instruction=system_prompt,
                     ),
                 )
 
@@ -708,14 +566,15 @@ This summary was generated by MockGeminiClient for testing the summarization pip
         elif "video" in url_lower or "youtube" in url_lower:
             content_type = "video"
 
-        # Build prompt for tracing consistency
-        prompt = _build_prompt(content, url, title)
+        # Build mock prompts for tracing consistency
+        system_prompt = "Mock system prompt"
+        prompt = f"Mock prompt for URL: {url}"
 
         return SummaryResult(
             content=summary_text,
             suggested_tags=mock_tags,
             content_type=content_type,
-            system_prompt=_get_system_prompt(),
+            system_prompt=system_prompt,
             raw_prompt=prompt,
             raw_response=summary_text,  # Mock: response is the summary itself
         )

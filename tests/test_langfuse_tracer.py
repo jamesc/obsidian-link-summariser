@@ -17,9 +17,7 @@ class TestLangfuseTracer:
     """Tests for LangfuseTracer class."""
 
     @patch("summarize_links.langfuse_tracer.Langfuse")
-    def test_langfuse_tracer_initialization_success(
-        self, mock_langfuse_class: Mock
-    ) -> None:
+    def test_langfuse_tracer_initialization_success(self, mock_langfuse_class: Mock) -> None:
         """Test that tracer initializes successfully with valid credentials."""
         mock_client = Mock()
         mock_client.auth_check.return_value = True

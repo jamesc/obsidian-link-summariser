@@ -259,9 +259,7 @@ class Config:
             raise ConfigError(f"max_links must be at least 1, got {self.max_links}")
 
         # Langfuse credentials are required (not in mock mode)
-        if not self.mock_mode and (
-            not self.langfuse_public_key or not self.langfuse_secret_key
-        ):
+        if not self.mock_mode and (not self.langfuse_public_key or not self.langfuse_secret_key):
             raise ConfigError(
                 "Langfuse credentials are required. Set LANGFUSE_PUBLIC_KEY and "
                 "LANGFUSE_SECRET_KEY environment variables or configure in YAML."
