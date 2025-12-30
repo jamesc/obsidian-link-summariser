@@ -19,6 +19,7 @@ from summarize_links.cli import (
     cmd_from_note,
     cmd_from_note_all,
     cmd_list,
+    cmd_resummarize,
     cmd_urls,
     create_parser,
     main,
@@ -121,6 +122,20 @@ class TestCreateParser:
         parser = create_parser()
         args = parser.parse_args(["list"])
         assert args.command == "list"
+
+    def test_resummarize_command(self) -> None:
+        """Should parse resummarize command."""
+        parser = create_parser()
+
+        # Basic resummarize
+        args = parser.parse_args(["resummarize"])
+        assert args.command == "resummarize"
+        assert args.age is None
+
+        # With age option
+        args = parser.parse_args(["resummarize", "--age", "30"])
+        assert args.command == "resummarize"
+        assert args.age == 30
 
     def test_short_options(self) -> None:
         """Should support short option forms."""
@@ -1312,3 +1327,69 @@ class TestInvalidUrlHandling:
         assert success is False
         assert "Invalid URL" in message
         assert should_delete is False
+
+
+class TestCmdResummarize:
+    """Tests for resummarize command handler."""
+
+    def test_negative_age_rejected(self, mock_vault: Path) -> None:
+        """Should reject negative age values."""
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_resummarize(config, age_days=-5)
+        assert result == EXIT_ERROR
+
+    def test_zero_age_rejected(self, mock_vault: Path) -> None:
+        """Should reject zero age value."""
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_resummarize(config, age_days=0)
+        assert result == EXIT_ERROR
+
+    def test_negative_one_age_rejected(self, mock_vault: Path) -> None:
+        """Should reject -1 age value."""
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_resummarize(config, age_days=-1)
+        assert result == EXIT_ERROR
+
+    @patch("summarize_links.cli.scan_summaries_for_resummarize")
+    def test_positive_age_accepted(
+        self,
+        mock_scan: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Should accept positive age values."""
+        mock_scan.return_value = []  # No summaries to process
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_resummarize(config, age_days=30)
+        assert result == EXIT_SUCCESS
+
+    @patch("summarize_links.cli.scan_summaries_for_resummarize")
+    def test_no_age_filter_accepted(
+        self,
+        mock_scan: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Should accept None (no age filter)."""
+        mock_scan.return_value = []  # No summaries to process
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        result = cmd_resummarize(config, age_days=None)
+        assert result == EXIT_SUCCESS
