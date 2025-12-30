@@ -13,12 +13,16 @@ from summarize_links.llm.gemini import (
     MockGeminiClient,
     _build_content_type_list,
     _build_prompt,
+    create_client,
+)
+from summarize_links.llm.parsing import (
     _extract_content_type_from_malformed_json,
     _extract_summary_from_malformed_json,
     _extract_tags_from_malformed_json,
     _is_garbled_summary,
-    _parse_gemini_response,
-    create_client,
+)
+from summarize_links.llm.parsing import (
+    parse_llm_json_response as _parse_gemini_response,
 )
 from summarize_links.models import CONTENT_TYPE_DESCRIPTIONS, CONTENT_TYPES, SummaryResult
 from summarize_links.rate_limiter import ModelRateLimits, RateLimiter

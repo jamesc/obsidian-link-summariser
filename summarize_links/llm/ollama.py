@@ -110,10 +110,10 @@ def _parse_ollama_response(response_text: str) -> SummaryResult:
     Returns:
         Parsed SummaryResult object.
     """
-    from summarize_links.llm.gemini import _parse_gemini_response
+    from summarize_links.llm.parsing import parse_llm_json_response
 
-    # Reuse Gemini's robust parsing logic
-    return _parse_gemini_response(response_text)
+    # Reuse shared parsing logic
+    return parse_llm_json_response(response_text)
 
 
 class OllamaClient:
