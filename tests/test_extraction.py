@@ -606,7 +606,7 @@ class TestFetchContentRetry:
             mock_response,
         ]
 
-        mocker.patch("summarize_links.extract._create_session", return_value=mock_session)
+        mocker.patch("summarize_links.extract.fetching._create_session", return_value=mock_session)
 
         content, content_type = fetch_content("https://example.com")
         assert content == "<html><body>Success</body></html>"
@@ -630,7 +630,7 @@ class TestFetchContentRetry:
 
         mock_session.get.return_value = mock_response
 
-        mocker.patch("summarize_links.extract._create_session", return_value=mock_session)
+        mocker.patch("summarize_links.extract.fetching._create_session", return_value=mock_session)
 
         with pytest.raises(ContentFetchError) as exc_info:
             fetch_content("https://example.com/missing")
@@ -657,7 +657,7 @@ class TestFetchContentRetry:
         # First call returns 500, second succeeds
         mock_session.get.side_effect = [mock_response_500, mock_response_ok]
 
-        mocker.patch("summarize_links.extract._create_session", return_value=mock_session)
+        mocker.patch("summarize_links.extract.fetching._create_session", return_value=mock_session)
 
         content, content_type = fetch_content("https://example.com")
         assert content == "<html><body>Success</body></html>"
@@ -675,7 +675,7 @@ class TestFetchContentRetry:
         mock_session = mocker.MagicMock()
         mock_session.get.side_effect = requests.exceptions.ConnectionError("Network down")
 
-        mocker.patch("summarize_links.extract._create_session", return_value=mock_session)
+        mocker.patch("summarize_links.extract.fetching._create_session", return_value=mock_session)
 
         with pytest.raises(ContentFetchError) as exc_info:
             fetch_content("https://example.com")
