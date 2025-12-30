@@ -4,6 +4,69 @@ This document tracks completed development tasks for the Obsidian Link Summarize
 
 ---
 
+## 2025-12-30: Set up Copilot Instructions
+
+**Goal:** Configure GitHub Copilot coding agent instructions following best practices documented at https://gh.io/copilot-coding-agent-tips.
+
+**Changes:**
+
+### Created `.github/copilot-instructions.md` (373 lines)
+Comprehensive guidance document for GitHub Copilot coding agent including:
+
+**Project Understanding:**
+- Project overview and key features
+- Architecture explanation (modules, design patterns, data flow)
+- Technology stack (Python 3.11+, uv, pytest, ruff, mypy)
+
+**Development Workflow:**
+- Environment setup commands
+- Building and testing procedures (pytest, coverage)
+- Mandatory linting workflow (ruff check, ruff format, mypy)
+- Common CLI commands for testing
+
+**Code Conventions:**
+- Reference to `/AGENTS.md` for detailed build guidelines
+- Python-specific patterns (type hints, dependency injection, named constants)
+- Custom exceptions for error handling
+- Idempotency and graceful degradation principles
+- Git commit message format (conventional commits)
+
+**Testing Practices:**
+- Test structure and organization
+- Unit test patterns with mocks
+- Integration test approaches
+- Running test commands
+
+**Configuration Management:**
+- Priority order: CLI args > env vars > YAML > defaults
+- Environment variables reference
+- Vault YAML config file format
+
+**Common Patterns:**
+- Adding new LLM providers
+- Adding CLI commands
+- Modifying configuration
+- Error handling patterns
+
+**Development Tips:**
+- Common pitfalls and solutions
+- Security considerations
+- When to use each tool/pattern
+
+**Benefits:**
+- Helps Copilot understand project structure and conventions
+- Reduces need for repetitive explanations
+- Ensures consistent coding patterns across tasks
+- Improves quality of AI-generated code
+- Provides quick reference for human developers too
+
+**Verification:**
+- Fixed spelling consistency (use American "Summarizer" to match codebase)
+- Verified all referenced files and commands are accurate
+- Confirmed alignment with existing documentation (AGENTS.md, README.md)
+
+---
+
 ## 2025-12-29: Send Raw LLM Request/Response to Langfuse
 
 **Issue:** Following user feedback and Langfuse best practices, generation traces should capture the **actual** LLM input/output (raw prompt and response), not metadata about them. This enables true LLM-as-a-Judge evaluation, prompt optimization, and debugging of actual model behavior.
