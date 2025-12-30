@@ -281,7 +281,7 @@ Summary content here.
     results = scan_summaries_for_resummarize(vault, "Summaries")
 
     assert len(results) == 1
-    url, original_date, summary_date = results[0]
+    url, original_date, summary_date, _ = results[0]
     assert url == "https://example.com/article"
     assert original_date == datetime(2024, 1, 15)
     assert summary_date == datetime(2024, 12, 29, 22, 31, 49)
@@ -396,7 +396,7 @@ Summary.
     results = scan_summaries_for_resummarize(vault, "Summaries")
 
     assert len(results) == 1
-    _, original_date, summary_date = results[0]
+    _, original_date, summary_date, _ = results[0]
     assert original_date == datetime(2024, 1, 15)
     assert summary_date == datetime(2024, 12, 29, 14, 30, 45)
 
@@ -426,7 +426,7 @@ Summary.
     results = scan_summaries_for_resummarize(vault, "Summaries")
 
     assert len(results) == 1
-    _, original_date, summary_date = results[0]
+    _, original_date, summary_date, _ = results[0]
     assert original_date == datetime(2024, 1, 15)
     assert summary_date == datetime(2024, 12, 29)
 
@@ -455,7 +455,7 @@ Summary without summary_date.
     results = scan_summaries_for_resummarize(vault, "Summaries")
 
     assert len(results) == 1
-    _, original_date, summary_date = results[0]
+    _, original_date, summary_date, _ = results[0]
     assert original_date == datetime(2024, 1, 15)
     assert summary_date == datetime(2024, 1, 15)  # Fallback to original date
 
@@ -485,7 +485,7 @@ Summary with invalid summary_date.
     results = scan_summaries_for_resummarize(vault, "Summaries")
 
     assert len(results) == 1
-    _, original_date, summary_date = results[0]
+    _, original_date, summary_date, _ = results[0]
     assert original_date == datetime(2024, 1, 15)
     assert summary_date == datetime(2024, 1, 15)  # Fallback to original date
 

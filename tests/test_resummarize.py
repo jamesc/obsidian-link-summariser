@@ -49,7 +49,7 @@ Summary content here.
         results = scan_summaries_for_resummarize(vault, "Summaries")
 
         assert len(results) == 1
-        url, orig_date, summ_date = results[0]
+        url, orig_date, summ_date, _ = results[0]
         assert url == "https://example.com"
         assert orig_date == datetime(2024, 1, 1)
         assert summ_date == datetime(2024, 1, 1, 10, 30, 0)
@@ -135,7 +135,7 @@ Content.
         results = scan_summaries_for_resummarize(vault, "Summaries")
 
         assert len(results) == 1
-        url, orig_date, summ_date = results[0]
+        url, orig_date, summ_date, _ = results[0]
         assert orig_date == datetime(2024, 1, 1)
         assert summ_date == datetime(2024, 1, 15, 14, 25, 33)
 
@@ -161,7 +161,7 @@ Content.
         results = scan_summaries_for_resummarize(vault, "Summaries")
 
         assert len(results) == 1
-        url, orig_date, summ_date = results[0]
+        url, orig_date, summ_date, _ = results[0]
         assert orig_date == datetime(2024, 1, 1)
         assert summ_date == datetime(2024, 1, 10)
 
@@ -186,7 +186,7 @@ Content.
         results = scan_summaries_for_resummarize(vault, "Summaries")
 
         assert len(results) == 1
-        url, orig_date, summ_date = results[0]
+        url, orig_date, summ_date, _ = results[0]
         assert orig_date == datetime(2024, 1, 1)
         assert summ_date == datetime(2024, 1, 1)  # Falls back to original date
 
@@ -235,7 +235,7 @@ Content.
         results = scan_summaries_for_resummarize(vault, "Summaries")
 
         assert len(results) == 1
-        url, orig_date, summ_date = results[0]
+        url, orig_date, summ_date, _ = results[0]
         assert orig_date == datetime(2024, 1, 1)
         assert summ_date == datetime(2024, 1, 1)  # Falls back
 
