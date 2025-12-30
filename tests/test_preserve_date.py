@@ -293,7 +293,7 @@ Some content here.
 
         assert len(summaries) == 1
         source_url, original_date, summary_date, source_note = summaries[0]
-        
+
         assert source_url == url
         assert original_date.strftime("%Y-%m-%d") == "2024-01-15"
         assert source_note == "2024-01-15.md"
@@ -327,7 +327,7 @@ Some content here.
 
         assert len(summaries) == 1
         source_url, original_date, summary_date, source_note = summaries[0]
-        
+
         assert source_url == url
         assert source_note is None
 
