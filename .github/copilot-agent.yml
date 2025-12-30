@@ -1,0 +1,100 @@
+# GitHub Copilot Coding Agent Environment Configuration
+# https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/customize-the-agent-environment
+
+# This configuration customizes which files and directories the Copilot Coding Agent
+# should include in its context when working on this repository.
+
+# Include important documentation and configuration files
+include:
+  # Core documentation
+  - "README.md"
+  - "AGENTS.md"
+  - ".github/copilot-instructions.md"
+  
+  # Project configuration
+  - "pyproject.toml"
+  - ".env.example"
+  - ".gitignore"
+  
+  # Source code
+  - "summarize_links/**/*.py"
+  
+  # Tests (essential for understanding behavior)
+  - "tests/**/*.py"
+  
+  # Documentation and specs
+  - "docs/*.md"
+  
+  # Dev container configuration
+  - ".devcontainer/**/*"
+
+# Exclude files and directories that shouldn't be in the agent's context
+exclude:
+  # Git internals
+  - ".git/**"
+  
+  # Python cache and build artifacts
+  - "**/__pycache__/**"
+  - "**/*.pyc"
+  - "**/*.pyo"
+  - "**/*.egg-info/**"
+  - "build/**"
+  - "dist/**"
+  
+  # Test and linting cache
+  - ".pytest_cache/**"
+  - ".mypy_cache/**"
+  - ".ruff_cache/**"
+  - "htmlcov/**"
+  - ".coverage"
+  
+  # IDE and editor files
+  - ".idea/**"
+  - ".vscode/**"
+  - "*.swp"
+  - "*.swo"
+  
+  # Environment and local config
+  - ".env"
+  - ".venv/**"
+  - "venv/**"
+  - "env/**"
+  - ".uv/**"
+  - "uv.lock"
+  
+  # Rate limit state (user-specific)
+  - "**/.summarizer-rate-limit.json"
+  
+  # OS files
+  - ".DS_Store"
+  - "Thumbs.db"
+
+# Priority files that should always be included in context
+priority:
+  # Core architecture and models
+  - "summarize_links/models.py"
+  - "summarize_links/config.py"
+  - "summarize_links/exceptions.py"
+  
+  # Main entry points
+  - "summarize_links/cli.py"
+  
+  # LLM client implementations
+  - "summarize_links/gemini_client.py"
+  - "summarize_links/ollama_client.py"
+  - "summarize_links/llm_factory.py"
+  
+  # Key functionality
+  - "summarize_links/notes.py"
+  - "summarize_links/extract.py"
+  - "summarize_links/rate_limiter.py"
+  
+  # Build and development guidelines
+  - "AGENTS.md"
+  - ".github/copilot-instructions.md"
+
+# Configuration notes:
+# - The agent will use these rules to build context efficiently
+# - Priority files are always included even if context is limited
+# - Excluded patterns take precedence over includes
+# - Use this to ensure the agent focuses on relevant code and documentation
