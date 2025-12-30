@@ -9,7 +9,7 @@ import logging
 from rich.table import Table
 
 from summarize_links.config import Config
-from summarize_links.llm_factory import detect_provider
+from summarize_links.llm import detect_provider
 from summarize_links.rate_limiter import get_rate_limiter
 from summarize_links.ui import print_message
 

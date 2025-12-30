@@ -235,7 +235,7 @@ class Config:
             ConfigError: If required configuration is missing or invalid.
         """
         # Detect provider from model name
-        from summarize_links.llm_factory import detect_provider
+        from summarize_links.llm import detect_provider
 
         provider = detect_provider(self.model)
 

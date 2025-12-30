@@ -13,8 +13,8 @@ import pytest
 import requests
 
 from summarize_links.exceptions import ModelNotInstalledError, OllamaAPIError, OllamaServerError
+from summarize_links.llm.ollama import OllamaClient, _parse_ollama_response
 from summarize_links.models import SummaryResult
-from summarize_links.ollama_client import OllamaClient, _parse_ollama_response
 
 
 class TestOllamaClient:
@@ -38,7 +38,7 @@ class TestOllamaClient:
         assert client._endpoint == "http://custom-server:8080"
         assert client._timeout == 60
 
-    @patch("summarize_links.ollama_client.requests.get")
+    @patch("summarize_links.llm.ollama.requests.get")
     def test_check_server_success(self, mock_get: Any) -> None:
         """Test successful server connectivity check."""
         mock_get.return_value.status_code = 200
@@ -50,7 +50,7 @@ class TestOllamaClient:
         assert client._server_checked is True
         mock_get.assert_called_once()
 
-    @patch("summarize_links.ollama_client.requests.get")
+    @patch("summarize_links.llm.ollama.requests.get")
     def test_check_server_connection_error(self, mock_get: Any) -> None:
         """Test server check with connection error."""
         mock_get.side_effect = requests.exceptions.ConnectionError("Connection refused")
@@ -59,7 +59,7 @@ class TestOllamaClient:
         with pytest.raises(OllamaServerError, match="Cannot connect to Ollama server"):
             client._check_server()
 
-    @patch("summarize_links.ollama_client.requests.get")
+    @patch("summarize_links.llm.ollama.requests.get")
     def test_check_server_timeout(self, mock_get: Any) -> None:
         """Test server check with timeout."""
         mock_get.side_effect = requests.exceptions.Timeout("Timeout")
@@ -68,7 +68,7 @@ class TestOllamaClient:
         with pytest.raises(OllamaServerError, match="timed out"):
             client._check_server()
 
-    @patch("summarize_links.ollama_client.requests.get")
+    @patch("summarize_links.llm.ollama.requests.get")
     def test_check_model_installed_success(self, mock_get: Any) -> None:
         """Test successful model installation check."""
         mock_get.return_value.status_code = 200
@@ -84,7 +84,7 @@ class TestOllamaClient:
 
         assert client._model_checked is True
 
-    @patch("summarize_links.ollama_client.requests.get")
+    @patch("summarize_links.llm.ollama.requests.get")
     def test_check_model_not_installed(self, mock_get: Any) -> None:
         """Test model check when model is not installed."""
         mock_get.return_value.status_code = 200
@@ -98,8 +98,8 @@ class TestOllamaClient:
         with pytest.raises(ModelNotInstalledError, match="not installed"):
             client._check_model_installed()
 
-    @patch("summarize_links.ollama_client.requests.post")
-    @patch("summarize_links.ollama_client.requests.get")
+    @patch("summarize_links.llm.ollama.requests.post")
+    @patch("summarize_links.llm.ollama.requests.get")
     def test_summarize_success(self, mock_get: Any, mock_post: Any) -> None:
         """Test successful summarization."""
         # Mock server and model checks
@@ -126,8 +126,8 @@ class TestOllamaClient:
         assert client._server_checked is True
         assert client._model_checked is True
 
-    @patch("summarize_links.ollama_client.requests.post")
-    @patch("summarize_links.ollama_client.requests.get")
+    @patch("summarize_links.llm.ollama.requests.post")
+    @patch("summarize_links.llm.ollama.requests.get")
     def test_summarize_timeout(self, mock_get: Any, mock_post: Any) -> None:
         """Test summarization with timeout."""
         # Mock server and model checks
@@ -141,8 +141,8 @@ class TestOllamaClient:
         with pytest.raises(OllamaAPIError, match="timed out"):
             client.summarize("Test content", "https://example.com")
 
-    @patch("summarize_links.ollama_client.requests.post")
-    @patch("summarize_links.ollama_client.requests.get")
+    @patch("summarize_links.llm.ollama.requests.post")
+    @patch("summarize_links.llm.ollama.requests.get")
     def test_summarize_empty_response(self, mock_get: Any, mock_post: Any) -> None:
         """Test summarization with empty response."""
         # Mock server and model checks
@@ -161,8 +161,8 @@ class TestOllamaClient:
         with pytest.raises(OllamaAPIError, match="Empty response"):
             client.summarize("Test content", "https://example.com")
 
-    @patch("summarize_links.ollama_client.requests.post")
-    @patch("summarize_links.ollama_client.requests.get")
+    @patch("summarize_links.llm.ollama.requests.post")
+    @patch("summarize_links.llm.ollama.requests.get")
     def test_summarize_with_metadata(self, mock_get: Any, mock_post: Any) -> None:
         """Test summarization with structured metadata."""
         # Mock server and model checks

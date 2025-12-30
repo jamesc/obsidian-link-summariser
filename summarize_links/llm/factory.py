@@ -9,8 +9,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from summarize_links.gemini_client import GeminiClient, MockGeminiClient, SummarizerProtocol
-from summarize_links.ollama_client import DEFAULT_OLLAMA_ENDPOINT, OllamaClient
+from summarize_links.llm.gemini import GeminiClient, MockGeminiClient
+from summarize_links.llm.ollama import DEFAULT_OLLAMA_ENDPOINT, OllamaClient
+from summarize_links.llm.protocol import SummarizerProtocol
 
 __all__ = [
     "detect_provider",
