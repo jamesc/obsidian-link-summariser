@@ -1,10 +1,10 @@
-# Copilot Instructions for Obsidian Link Summariser
+# Copilot Instructions for Obsidian Link Summarizer
 
-This document provides guidance for GitHub Copilot coding agent when working on the Obsidian Link Summariser project.
+This document provides guidance for GitHub Copilot coding agent when working on the Obsidian Link Summarizer project.
 
 ## Project Overview
 
-**Obsidian Link Summariser** is a lightweight Python CLI tool that reads URLs from Obsidian daily notes, fetches web pages, generates AI summaries using Google's Gemini API or local Ollama models, and creates formatted Markdown summary notes in an Obsidian vault.
+**Obsidian Link Summarizer** is a lightweight Python CLI tool that reads URLs from Obsidian daily notes, fetches web pages, generates AI summaries using Google's Gemini API or local Ollama models, and creates formatted Markdown summary notes in an Obsidian vault.
 
 ### Key Features
 - Extract URLs from Obsidian daily notes (Markdown links and bare URLs)
