@@ -49,6 +49,86 @@ langfuse:
   # Keys should be in .env for security
 ```
 
+### Prompt Storage Implementation
+
+**Status**: ⏳ Planned for next iteration
+
+LLM clients (Gemini and Ollama) will use **Langfuse Prompt Management** to fetch and compile prompts:
+
+```python
+# In gemini_client.py and ollama_client.py
+class GeminiClient:
+    def __init__(self, ...):
+        # Initialize Langfuse client for prompt fetching
+        self._langfuse_client = Langfuse() if langfuse_enabled else None
+        self._system_prompt_cache = None
+        self._user_prompt_template_cache = None
+    
+    def _get_prompts(self):
+        """Fetch Langfuse prompt templates (with caching)."""
+        if not self._langfuse_client:
+            # Fallback to hardcoded prompts if Langfuse not configured
+            return self._get_fallback_prompts()
+        
+        if not self._system_prompt_cache:
+            self._system_prompt_cache = self._langfuse_client.get_prompt(
+                "summarize-document/system"
+            )
+        if not self._user_prompt_template_cache:
+            self._user_prompt_template_cache = self._langfuse_client.get_prompt(
+                "summarize-document/user"
+            )
+        
+        return self._system_prompt_cache, self._user_prompt_template_cache
+    
+    def summarize_with_metadata(self, content: str, url: str, title: str | None):
+        # Get prompts from Langfuse
+        system_prompt, user_prompt_template = self._get_prompts()
+        
+        # Compile user prompt with variables
+        compiled_user = user_prompt_template.compile(
+            title=title or "Unknown",
+            url=url,
+            content=content
+        )
+        
+        # Use prompts in API call
+        response = self._model.generate_content(
+            [system_prompt.prompt, compiled_user]
+        )
+        
+        # Return with prompt info for tracing
+        return SummaryResult(
+            ...,
+            prompt_info={
+                "system_prompt_name": "summarize-document/system",
+                "user_prompt_name": "summarize-document/user",
+                "system_version": system_prompt.version,
+                "user_version": user_prompt_template.version,
+            }
+        )
+```
+
+**Benefits:**
+- **Centralized Management**: Edit prompts in Langfuse UI without code changes
+- **Automatic Versioning**: Every prompt change gets a new version
+- **A/B Testing**: Deploy different prompt versions to different users
+- **Instant Rollback**: Revert to previous prompt version with one click
+- **Cross-Model Consistency**: Same prompts used by Gemini and Ollama
+- **Hot-Swap**: Update prompts in production without redeploying code
+
+**Implementation Tasks:**
+1. Create prompts in Langfuse UI:
+   - `summarize-document/system` with base instructions
+   - `summarize-document/user` with `{{title}}`, `{{url}}`, `{{content}}` variables
+2. Add Langfuse client initialization to LLM clients
+3. Implement `_get_prompts()` method with caching
+4. Add fallback to hardcoded prompts when Langfuse unavailable
+5. Update API calls to use fetched prompts
+6. Link prompt versions to generation observations
+7. Test prompt fetching and compilation
+8. Document prompt management workflow
+
 ### Tracer Module (`summarize_links/langfuse_tracer.py`)
 
 Implemented `LangfuseTracer` class using **OpenTelemetry API**:
@@ -118,6 +198,71 @@ trace: process_url
   ├─ span: fetch
   ├─ generation: summarize (with token usage)
   └─ span: write
+```
+
+### Prompt Storage and Versioning
+
+To enable prompt debugging, A/B testing, and version tracking, the integration uses **Langfuse Prompt Management** to reference reusable prompt templates:
+
+#### Langfuse Prompt Templates
+
+**System Prompt**: `summarize-document/system`
+- Contains the base instruction defining the summarization agent's behavior
+- Managed in Langfuse UI for easy updates
+- Automatic versioning on changes
+
+**User Prompt**: `summarize-document/user`
+- Contains the template with variables: `{{title}}`, `{{url}}`, `{{content}}`
+- Variables are substituted at runtime
+- Version-tracked in Langfuse
+
+#### Implementation in LLM Clients
+
+Both Gemini and Ollama clients reference these prompts:
+- **Fetch prompts**: Load from Langfuse by name
+- **Compile with variables**: Substitute title, url, content
+- **Link to generation**: Associate prompt version with trace
+
+This allows:
+- ✅ Centralized prompt management in Langfuse UI
+- ✅ Automatic version tracking on prompt changes
+- ✅ A/B testing different prompt versions
+- ✅ Understanding model behavior differences
+- ✅ Hot-swapping prompts without code deployment
+
+**Example in generation observation:**
+```python
+# Fetch and compile Langfuse prompts
+from langfuse import Langfuse
+
+langfuse_client = Langfuse()
+
+# Get prompt templates from Langfuse
+system_prompt = langfuse_client.get_prompt("summarize-document/system")
+user_prompt = langfuse_client.get_prompt("summarize-document/user")
+
+# Compile user prompt with variables
+compiled_user_prompt = user_prompt.compile(
+    title=title,
+    url=url,
+    content=content
+)
+
+# Link prompt to generation observation
+with tracer.trace_generation(trace_id, "summarize", model=config.model) as generation:
+    if generation:
+        generation.update(
+            prompt=user_prompt,  # Links prompt version to trace
+            input={
+                "title": title,
+                "url": url,
+                "content_length": len(content),
+            },
+            metadata={
+                "model": config.model,
+                "provider": provider,
+            }
+        )
 ```
 
 ### Token Usage Tracking
@@ -335,6 +480,184 @@ INFO: Trace flushed to Langfuse
 
 6. `docs: Add Ollama token usage tracking to tasks.md` (41514a8)
    - Documented Ollama-specific token tracking
+
+---
+
+## Phase 1.5: Prompt Storage (Next Step)
+
+**Status:** ⏳ Ready to implement  
+**Estimated Time:** 1-2 hours  
+**Priority:** High (improves debugging and observability)
+
+### Tasks
+
+- [ ] Create prompts in Langfuse UI
+  - [ ] Create `summarize-document/system` prompt with base instructions
+  - [ ] Create `summarize-document/user` prompt with variables: `{{title}}`, `{{url}}`, `{{content}}`
+  - [ ] Publish initial versions (v1)
+- [ ] Add Langfuse client to LLM clients
+  - [ ] Initialize Langfuse client in `__init__`
+  - [ ] Implement `_get_langfuse_prompts()` with caching
+  - [ ] Implement `_get_fallback_prompts()` for when Langfuse unavailable
+- [ ] Update Gemini client to use Langfuse prompts
+  - [ ] Fetch prompts in `summarize_with_metadata()`
+  - [ ] Compile user prompt with title, url, content variables
+  - [ ] Return prompt metadata in SummaryResult
+- [ ] Update Ollama client to use Langfuse prompts
+  - [ ] Fetch prompts in `summarize_with_metadata()`
+  - [ ] Compile user prompt with title, url, content variables
+  - [ ] Return prompt metadata in SummaryResult
+- [ ] Update models.py to include prompt_info field
+  - [ ] Add `prompt_info: dict[str, Any] | None` to SummaryResult
+- [ ] Update CLI to link prompts to traces
+  - [ ] Pass prompt names and versions to generation metadata
+  - [ ] Link prompt object to generation observation
+- [ ] Add tests for prompt fetching
+  - [ ] Test prompt fetching from Langfuse
+  - [ ] Test prompt compilation with variables
+  - [ ] Test fallback when Langfuse unavailable
+  - [ ] Verify prompt linking in traces
+- [ ] Document prompt management workflow
+  - [ ] How to create/edit prompts in Langfuse UI
+  - [ ] How to deploy new prompt versions
+  - [ ] How to A/B test prompts
+
+### Implementation Example
+
+**In gemini_client.py:**
+```python
+from langfuse import Langfuse
+
+class GeminiClient:
+    def __init__(self, model_name: str, api_key: str, langfuse_enabled: bool = False):
+        self._model_name = model_name
+        self._model = genai.GenerativeModel(model_name)
+        
+        # Initialize Langfuse for prompt management
+        self._langfuse_enabled = langfuse_enabled
+        self._langfuse_client = Langfuse() if langfuse_enabled else None
+        self._prompt_cache = {}
+    
+    def _get_langfuse_prompts(self):
+        """Fetch prompts from Langfuse (with caching)."""
+        if not self._langfuse_enabled or not self._langfuse_client:
+            # Use hardcoded fallback prompts
+            return self._get_fallback_prompts()
+        
+        try:
+            # Cache prompts to avoid repeated API calls
+            if "system" not in self._prompt_cache:
+                self._prompt_cache["system"] = self._langfuse_client.get_prompt(
+                    "summarize-document/system"
+                )
+            if "user" not in self._prompt_cache:
+                self._prompt_cache["user"] = self._langfuse_client.get_prompt(
+                    "summarize-document/user"
+                )
+            
+            return self._prompt_cache["system"], self._prompt_cache["user"]
+        
+        except Exception as e:
+            logger.warning(f"Failed to fetch Langfuse prompts: {e}, using fallbacks")
+            return self._get_fallback_prompts()
+    
+    def summarize_with_metadata(self, content: str, url: str, title: str | None) -> SummaryResult:
+        # Fetch prompts from Langfuse
+        system_prompt_obj, user_prompt_obj = self._get_langfuse_prompts()
+        
+        # Compile user prompt with variables
+        user_prompt_text = user_prompt_obj.compile(
+            title=title or "Unknown",
+            url=url,
+            content=content
+        )
+        
+        # Generate with Gemini API
+        response = self._model.generate_content(
+            [
+                {"role": "system", "content": system_prompt_obj.prompt},
+                {"role": "user", "content": user_prompt_text},
+            ]
+        )
+        
+        # Parse response and return with prompt metadata
+        return SummaryResult(
+            content=summary_content,
+            suggested_tags=tags,
+            content_type=content_type,
+            usage_details=usage_details,
+            prompt_info={  # NEW field
+                "system_prompt_name": "summarize-document/system",
+                "user_prompt_name": "summarize-document/user",
+                "system_version": system_prompt_obj.version,
+                "user_version": user_prompt_obj.version,
+            }
+        )
+```
+
+**In cli.py (generation observation):**
+```python
+with tracer.trace_generation(trace_id, "summarize", model=config.model) as generation:
+    summary = client.summarize_with_metadata(...)
+    
+    if generation and hasattr(generation, "update"):
+        generation.update(
+            input={
+                "title": page_metadata.title,
+                "url": url,
+                "content_length": len(page_metadata.content),
+            },
+            output={
+                "summary_length": len(summary.content),
+                "tags": summary.suggested_tags,
+                "content_type": summary.content_type,
+            },
+            usage_details=summary.usage_details,
+            metadata={
+                "system_prompt_name": "summarize-document/system",
+                "user_prompt_name": "summarize-document/user",
+                "system_prompt_version": summary.prompt_info["system_version"],
+                "user_prompt_version": summary.prompt_info["user_version"],
+            }
+        )
+```
+
+### Verification
+
+After implementation, verify in Langfuse dashboard:
+
+**1. Create Prompts in Langfuse UI:**
+   - Navigate to "Prompts" section
+   - Create `summarize-document/system` prompt
+   - Create `summarize-document/user` prompt with variables: `{{title}}`, `{{url}}`, `{{content}}`
+   - Publish initial versions
+
+**2. Verify Prompt Linking in Traces:**
+   - Process a URL to create a trace
+   - Open the trace for the processed URL
+   - Click on the "summarize" generation observation
+   - Check that prompt is linked (should show prompt name and version badge)
+   - Click prompt link to view exact prompt version used
+
+**3. Check Input Variables:**
+   - In generation observation "Input" tab, verify:
+     - `title`: Article title
+     - `url`: Source URL
+     - `content_length`: Length of content sent
+
+**4. Check Metadata:**
+   - `system_prompt_name`: "summarize-document/system"
+   - `user_prompt_name`: "summarize-document/user"
+   - `system_prompt_version`: Version number
+   - `user_prompt_version`: Version number
+
+### Benefits
+
+✅ **Debugging**: See exact prompts that caused issues  
+✅ **Versioning**: Track when prompts changed and their impact  
+✅ **A/B Testing**: Compare results from different prompt versions  
+✅ **Model Comparison**: See how Gemini vs Ollama respond to same prompt  
+✅ **Reproducibility**: Recreate exact conditions of a trace
 
 ---
 
