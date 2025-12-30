@@ -120,7 +120,6 @@ class OllamaClient:
         model: str,
         endpoint: str = DEFAULT_OLLAMA_ENDPOINT,
         timeout: int = DEFAULT_TIMEOUT,
-        langfuse_enabled: bool = False,
     ) -> None:
         """
         Initialize the Ollama client.
@@ -129,46 +128,39 @@ class OllamaClient:
             model: Ollama model name (e.g., "llama3:latest", "mistral").
             endpoint: Ollama server endpoint URL.
             timeout: Request timeout in seconds.
-            langfuse_enabled: Whether to fetch prompts from Langfuse (requires Langfuse configured).
         """
         self._model = model
         self._endpoint = endpoint.rstrip("/")
         self._timeout = timeout
         self._server_checked = False
         self._model_checked = False
-        self._langfuse_enabled = langfuse_enabled
-        self._langfuse_client = None
         self._prompt_cache: dict[str, object] = {}
 
-        # Initialize Langfuse client if enabled
-        if self._langfuse_enabled:
-            try:
-                from langfuse import Langfuse
+        # Initialize Langfuse client (REQUIRED)
+        try:
+            from langfuse import Langfuse
 
-                self._langfuse_client = Langfuse()
-                logger.debug("Langfuse client initialized for prompt management")
-            except Exception as e:
-                logger.warning(f"Failed to initialize Langfuse for prompt management: {e}")
-                self._langfuse_enabled = False
+            self._langfuse_client = Langfuse()
+            logger.debug("Langfuse client initialized for prompt management")
+        except Exception as e:
+            raise OllamaAPIError(f"Failed to initialize Langfuse (required): {e}") from e
 
         logger.debug(
-            "Initialized OllamaClient with model: %s, endpoint: %s%s",
+            "Initialized OllamaClient with model: %s, endpoint: %s [Langfuse prompts required]",
             model,
             endpoint,
-            " [Langfuse prompts enabled]" if self._langfuse_enabled else "",
         )
 
-    def _get_langfuse_prompts(self) -> tuple[str, str] | None:
+    def _get_langfuse_prompts(self) -> tuple[str, str]:
         """
         Fetch prompts from Langfuse with caching.
 
         Returns:
-            Tuple of (system_prompt_text, user_prompt_template_text) if successful, None otherwise.
-            Returns None to signal fallback to hardcoded prompts.
-        """
-        if not self._langfuse_enabled or not self._langfuse_client:
-            return None
+            Tuple of (system_prompt_text, user_prompt_template_text).
 
+        Raises:
+            OllamaAPIError: If prompts cannot be fetched from Langfuse.
+        """
         try:
             # Check cache first
             if "system" in self._prompt_cache and "user" in self._prompt_cache:
@@ -195,8 +187,7 @@ class OllamaClient:
             return system_obj.prompt, user_obj.prompt
 
         except Exception as e:
-            logger.warning(f"Failed to fetch Langfuse prompts, using fallback: {e}")
-            return None
+            raise OllamaAPIError(f"Failed to fetch prompts from Langfuse (required): {e}") from e
 
     def _compile_user_prompt(self, template: str, content: str, url: str, title: str | None) -> str:
         """
@@ -428,44 +419,29 @@ class OllamaClient:
         self._check_server()
         self._check_model_installed()
 
-        # Try to fetch prompts from Langfuse first, fallback to filesystem
-        system_prompt = _get_system_prompt()
-        user_prompt_template = None
+        # Fetch prompts from Langfuse (REQUIRED)
+        system_prompt, user_prompt_template = self._get_langfuse_prompts()
+
+        # Build prompt_metadata from cached prompt objects
         prompt_metadata = None
-        using_langfuse = False
+        if "system" in self._prompt_cache and "user" in self._prompt_cache:
+            sys_obj = self._prompt_cache["system"]
+            user_obj = self._prompt_cache["user"]
+            prompt_metadata = {
+                "system_prompt_name": "summarize-document/system",
+                "system_prompt_version": getattr(sys_obj, "version", None),
+                "user_prompt_name": "summarize-document/user",
+                "user_prompt_version": getattr(user_obj, "version", None),
+                "source": "langfuse",
+            }
+            logger.debug(
+                "Using Langfuse prompts: system v%s, user v%s",
+                prompt_metadata["system_prompt_version"],
+                prompt_metadata["user_prompt_version"],
+            )
 
-        langfuse_prompts = self._get_langfuse_prompts()
-        if langfuse_prompts:
-            langfuse_system, langfuse_user = langfuse_prompts
-            system_prompt = langfuse_system
-            user_prompt_template = langfuse_user
-            using_langfuse = True
-
-            # Build prompt_metadata from cached prompt objects
-            if "system" in self._prompt_cache and "user" in self._prompt_cache:
-                sys_obj = self._prompt_cache["system"]
-                user_obj = self._prompt_cache["user"]
-                prompt_metadata = {
-                    "system_prompt_name": "summarize-document/system",
-                    "system_prompt_version": getattr(sys_obj, "version", None),
-                    "user_prompt_name": "summarize-document/user",
-                    "user_prompt_version": getattr(user_obj, "version", None),
-                    "source": "langfuse",
-                }
-                logger.debug(
-                    "Using Langfuse prompts: system v%s, user v%s",
-                    prompt_metadata["system_prompt_version"],
-                    prompt_metadata["user_prompt_version"],
-                )
-        else:
-            logger.debug("Using hardcoded fallback prompts")
-
-        # Build the user prompt (with or without Langfuse template)
-        if using_langfuse and user_prompt_template:
-            prompt = self._compile_user_prompt(user_prompt_template, content, url, title)
-        else:
-            prompt = _build_prompt(content, url, title)
-
+        # Build the user prompt using Langfuse template
+        prompt = self._compile_user_prompt(user_prompt_template, content, url, title)
         full_prompt = f"{system_prompt}\n\n{prompt}"
 
         logger.debug("Sending request to Ollama API for metadata")

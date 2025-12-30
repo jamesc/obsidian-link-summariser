@@ -2,6 +2,9 @@
 
 from unittest.mock import Mock, patch
 
+import pytest
+
+from summarize_links.exceptions import GeminiAPIError, OllamaAPIError
 from summarize_links.llm.gemini import GeminiClient
 from summarize_links.llm.ollama import OllamaClient
 from summarize_links.models import SummaryResult
@@ -10,33 +13,24 @@ from summarize_links.models import SummaryResult
 class TestGeminiLangfusePrompts:
     """Test Langfuse prompt management in Gemini client."""
 
-    def test_client_initializes_without_langfuse(self) -> None:
-        """Test that client initializes normally when langfuse_enabled=False."""
-        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash", langfuse_enabled=False)
-
-        assert client._langfuse_enabled is False
-        assert client._langfuse_client is None
-        assert client._prompt_cache == {}
-
     @patch("langfuse.Langfuse")
     def test_client_initializes_with_langfuse(self, mock_langfuse: Mock) -> None:
-        """Test that client initializes Langfuse client when enabled."""
+        """Test that client initializes Langfuse client (required)."""
         mock_lf_instance = Mock()
         mock_langfuse.return_value = mock_lf_instance
 
-        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash", langfuse_enabled=True)
+        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash")
 
-        assert client._langfuse_enabled is True
         assert client._langfuse_client == mock_lf_instance
         mock_langfuse.assert_called_once()
 
-    def test_get_langfuse_prompts_returns_none_when_disabled(self) -> None:
-        """Test that _get_langfuse_prompts returns None when Langfuse is disabled."""
-        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash", langfuse_enabled=False)
+    @patch("langfuse.Langfuse")
+    def test_client_initialization_fails_without_langfuse(self, mock_langfuse: Mock) -> None:
+        """Test that client fails to initialize if Langfuse is not available."""
+        mock_langfuse.side_effect = Exception("Langfuse not available")
 
-        result = client._get_langfuse_prompts()
-
-        assert result is None
+        with pytest.raises(GeminiAPIError, match="Failed to initialize Langfuse"):
+            GeminiClient(api_key="test-key", model="gemini-2.5-flash")
 
     @patch("langfuse.Langfuse")
     def test_get_langfuse_prompts_fetches_and_caches(self, mock_langfuse: Mock) -> None:
@@ -55,7 +49,7 @@ class TestGeminiLangfusePrompts:
 
         mock_lf_instance.get_prompt.side_effect = [mock_system_prompt, mock_user_prompt]
 
-        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash", langfuse_enabled=True)
+        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash")
 
         # First call should fetch
         result = client._get_langfuse_prompts()
@@ -73,23 +67,26 @@ class TestGeminiLangfusePrompts:
 
     @patch("langfuse.Langfuse")
     def test_get_langfuse_prompts_handles_errors(self, mock_langfuse: Mock) -> None:
-        """Test that errors during prompt fetching are handled gracefully."""
+        """Test that errors during prompt fetching are raised as GeminiAPIError."""
         mock_lf_instance = Mock()
         mock_langfuse.return_value = mock_lf_instance
 
         # Simulate error during fetch
         mock_lf_instance.get_prompt.side_effect = Exception("Network error")
 
-        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash", langfuse_enabled=True)
+        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash")
 
-        result = client._get_langfuse_prompts()
+        # Should raise GeminiAPIError
+        with pytest.raises(GeminiAPIError, match="Failed to fetch prompts from Langfuse"):
+            client._get_langfuse_prompts()
 
-        # Should return None to trigger fallback
-        assert result is None
-
-    def test_compile_user_prompt_with_langfuse_template(self) -> None:
+    @patch("langfuse.Langfuse")
+    def test_compile_user_prompt_with_langfuse_template(self, mock_langfuse: Mock) -> None:
         """Test that user prompt template is compiled with variables."""
-        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash", langfuse_enabled=False)
+        mock_lf_instance = Mock()
+        mock_langfuse.return_value = mock_lf_instance
+
+        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash")
 
         # Mock the cached user prompt
         mock_user_obj = Mock()
@@ -108,9 +105,13 @@ class TestGeminiLangfusePrompts:
             title="Test", url="https://example.com", content="content here"
         )
 
-    def test_compile_user_prompt_fallback_on_error(self) -> None:
+    @patch("langfuse.Langfuse")
+    def test_compile_user_prompt_fallback_on_error(self, mock_langfuse: Mock) -> None:
         """Test that template compilation falls back to string replacement on error."""
-        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash", langfuse_enabled=False)
+        mock_lf_instance = Mock()
+        mock_langfuse.return_value = mock_lf_instance
+
+        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash")
 
         # Mock the cached user prompt with failing compile
         mock_user_obj = Mock()
@@ -127,9 +128,13 @@ class TestGeminiLangfusePrompts:
         assert "URL: https://example.com" in result
         assert "Content: test content" in result
 
-    def test_compile_user_prompt_non_template(self) -> None:
+    @patch("langfuse.Langfuse")
+    def test_compile_user_prompt_non_template(self, mock_langfuse: Mock) -> None:
         """Test that non-template strings are returned as-is."""
-        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash", langfuse_enabled=False)
+        mock_lf_instance = Mock()
+        mock_langfuse.return_value = mock_lf_instance
+
+        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash")
 
         non_template = "This is a regular string without variables"
         result = client._compile_user_prompt(non_template, "content", "url", "title")
@@ -141,33 +146,24 @@ class TestGeminiLangfusePrompts:
 class TestOllamaLangfusePrompts:
     """Test Langfuse prompt management in Ollama client."""
 
-    def test_client_initializes_without_langfuse(self) -> None:
-        """Test that client initializes normally when langfuse_enabled=False."""
-        client = OllamaClient(model="llama3:latest", langfuse_enabled=False)
-
-        assert client._langfuse_enabled is False
-        assert client._langfuse_client is None
-        assert client._prompt_cache == {}
-
     @patch("langfuse.Langfuse")
     def test_client_initializes_with_langfuse(self, mock_langfuse: Mock) -> None:
-        """Test that client initializes Langfuse client when enabled."""
+        """Test that client initializes Langfuse client (required)."""
         mock_lf_instance = Mock()
         mock_langfuse.return_value = mock_lf_instance
 
-        client = OllamaClient(model="llama3:latest", langfuse_enabled=True)
+        client = OllamaClient(model="llama3:latest")
 
-        assert client._langfuse_enabled is True
         assert client._langfuse_client == mock_lf_instance
         mock_langfuse.assert_called_once()
 
-    def test_get_langfuse_prompts_returns_none_when_disabled(self) -> None:
-        """Test that _get_langfuse_prompts returns None when Langfuse is disabled."""
-        client = OllamaClient(model="llama3:latest", langfuse_enabled=False)
+    @patch("langfuse.Langfuse")
+    def test_client_initialization_fails_without_langfuse(self, mock_langfuse: Mock) -> None:
+        """Test that client fails to initialize if Langfuse is not available."""
+        mock_langfuse.side_effect = Exception("Langfuse not available")
 
-        result = client._get_langfuse_prompts()
-
-        assert result is None
+        with pytest.raises(OllamaAPIError, match="Failed to initialize Langfuse"):
+            OllamaClient(model="llama3:latest")
 
     @patch("langfuse.Langfuse")
     def test_get_langfuse_prompts_fetches_and_caches(self, mock_langfuse: Mock) -> None:
@@ -186,7 +182,7 @@ class TestOllamaLangfusePrompts:
 
         mock_lf_instance.get_prompt.side_effect = [mock_system_prompt, mock_user_prompt]
 
-        client = OllamaClient(model="llama3:latest", langfuse_enabled=True)
+        client = OllamaClient(model="llama3:latest")
 
         # First call should fetch
         result = client._get_langfuse_prompts()
@@ -196,9 +192,13 @@ class TestOllamaLangfusePrompts:
         assert client._prompt_cache["system"] == mock_system_prompt
         assert client._prompt_cache["user"] == mock_user_prompt
 
-    def test_compile_user_prompt_with_template(self) -> None:
+    @patch("langfuse.Langfuse")
+    def test_compile_user_prompt_with_template(self, mock_langfuse: Mock) -> None:
         """Test that user prompt template is compiled with variables."""
-        client = OllamaClient(model="llama3:latest", langfuse_enabled=False)
+        mock_lf_instance = Mock()
+        mock_langfuse.return_value = mock_lf_instance
+
+        client = OllamaClient(model="llama3:latest")
 
         # Mock the cached user prompt
         mock_user_obj = Mock()

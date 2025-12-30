@@ -115,7 +115,6 @@ class GeminiClient:
         rpm_limit: int | None = None,
         tpm_limit: int | None = None,
         daily_limit: int | None = None,
-        langfuse_enabled: bool = False,
     ) -> None:
         """
         Initialize the Gemini client.
@@ -130,25 +129,20 @@ class GeminiClient:
             rpm_limit: Legacy: Requests per minute limit (ignored if model_limits provided).
             tpm_limit: Legacy: Tokens per minute limit (ignored if model_limits provided).
             daily_limit: Legacy: Requests per day limit (ignored if model_limits provided).
-            langfuse_enabled: Whether to fetch prompts from Langfuse (requires Langfuse configured).
         """
         self._api_key = api_key
         self._model_name = model
         self._client: Any = None
-        self._langfuse_enabled = langfuse_enabled
-        self._langfuse_client: Any = None
         self._prompt_cache: dict[str, Any] = {}
 
-        # Initialize Langfuse client if enabled
-        if self._langfuse_enabled:
-            try:
-                from langfuse import Langfuse
+        # Initialize Langfuse client (REQUIRED)
+        try:
+            from langfuse import Langfuse
 
-                self._langfuse_client = Langfuse()
-                logger.debug("Langfuse client initialized for prompt management")
-            except Exception as e:
-                logger.warning(f"Failed to initialize Langfuse for prompt management: {e}")
-                self._langfuse_enabled = False
+            self._langfuse_client = Langfuse()
+            logger.debug("Langfuse client initialized for prompt management")
+        except Exception as e:
+            raise GeminiAPIError(f"Failed to initialize Langfuse (required): {e}") from e
 
         # Get model-specific rate limits
         if model_limits is not None:
@@ -175,12 +169,12 @@ class GeminiClient:
             )
 
         logger.debug(
-            "Initialized GeminiClient with model: %s (RPM=%d, TPM=%d, Daily=%d)%s",
+            "Initialized GeminiClient with model: %s (RPM=%d, TPM=%d, Daily=%d) "
+            "[Langfuse prompts required]",
             model,
             self._rate_limiter.rpm_limit,
             self._rate_limiter.tpm_limit,
             self._rate_limiter.daily_limit,
-            " [Langfuse prompts enabled]" if self._langfuse_enabled else "",
         )
 
     def _get_client(self) -> Any:
@@ -195,17 +189,16 @@ class GeminiClient:
             logger.debug("Created Client instance")
         return self._client
 
-    def _get_langfuse_prompts(self) -> tuple[str, str] | None:
+    def _get_langfuse_prompts(self) -> tuple[str, str]:
         """
         Fetch prompts from Langfuse with caching.
 
         Returns:
-            Tuple of (system_prompt_text, user_prompt_template_text) if successful, None otherwise.
-            Returns None to signal fallback to hardcoded prompts.
-        """
-        if not self._langfuse_enabled or not self._langfuse_client:
-            return None
+            Tuple of (system_prompt_text, user_prompt_template_text).
 
+        Raises:
+            GeminiAPIError: If prompts cannot be fetched from Langfuse.
+        """
         try:
             # Check cache first
             if "system" in self._prompt_cache and "user" in self._prompt_cache:
@@ -232,8 +225,7 @@ class GeminiClient:
             return system_obj.prompt, user_obj.prompt
 
         except Exception as e:
-            logger.warning(f"Failed to fetch Langfuse prompts, using fallback: {e}")
-            return None
+            raise GeminiAPIError(f"Failed to fetch prompts from Langfuse (required): {e}") from e
 
     def _compile_user_prompt(self, template: str, content: str, url: str, title: str | None) -> str:
         """
@@ -520,32 +512,21 @@ class GeminiClient:
             RateLimitError: When rate limited after all retries exhausted.
             GeminiAPIError: When API returns an error.
         """
-        # Try to get prompts from Langfuse, fallback to hardcoded
-        langfuse_prompts = self._get_langfuse_prompts()
-        prompt_metadata = None
+        # Fetch prompts from Langfuse (required)
+        system_prompt_text, user_prompt_template = self._get_langfuse_prompts()
+        user_prompt_text = self._compile_user_prompt(user_prompt_template, content, url, title)
 
-        if langfuse_prompts:
-            system_prompt_text, user_prompt_template = langfuse_prompts
-            user_prompt_text = self._compile_user_prompt(user_prompt_template, content, url, title)
-
-            # Store prompt metadata if using Langfuse
-            if "system" in self._prompt_cache and "user" in self._prompt_cache:
-                system_obj = self._prompt_cache["system"]
-                user_obj = self._prompt_cache["user"]
-                prompt_metadata = {
-                    "system_prompt_name": "summarize-document/system",
-                    "user_prompt_name": "summarize-document/user",
-                    "system_version": getattr(system_obj, "version", None),
-                    "user_version": getattr(user_obj, "version", None),
-                    "source": "langfuse",
-                }
-            logger.debug("Using Langfuse-managed prompts")
-        else:
-            # Fallback to filesystem prompts
-            system_prompt_text = _get_system_prompt()
-            user_prompt_text = _build_prompt(content, url, title)
-            prompt_metadata = {"source": "filesystem"}
-            logger.debug("Using filesystem prompts (Langfuse unavailable or disabled)")
+        # Store prompt metadata from Langfuse
+        system_obj = self._prompt_cache["system"]
+        user_obj = self._prompt_cache["user"]
+        prompt_metadata = {
+            "system_prompt_name": "summarize-document/system",
+            "user_prompt_name": "summarize-document/user",
+            "system_version": getattr(system_obj, "version", None),
+            "user_version": getattr(user_obj, "version", None),
+            "source": "langfuse",
+        }
+        logger.debug("Using Langfuse-managed prompts")
 
         client = self._get_client()
 
@@ -750,7 +731,6 @@ def create_client(
     rpm_limit: int | None = None,
     tpm_limit: int | None = None,
     daily_limit: int | None = None,
-    langfuse_enabled: bool = False,
 ) -> GeminiClient | MockGeminiClient:
     """
     Factory function to create appropriate client based on mode.
@@ -765,7 +745,6 @@ def create_client(
         rpm_limit: Legacy: Requests per minute limit (uses default if None).
         tpm_limit: Legacy: Tokens per minute limit (uses default if None).
         daily_limit: Legacy: Requests per day limit (uses default if None).
-        langfuse_enabled: Whether to fetch prompts from Langfuse.
 
     Returns:
         Configured client instance.
@@ -790,5 +769,4 @@ def create_client(
         rpm_limit=rpm_limit,
         tpm_limit=tpm_limit,
         daily_limit=daily_limit,
-        langfuse_enabled=langfuse_enabled,
     )

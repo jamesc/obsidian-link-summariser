@@ -99,7 +99,6 @@ def create_llm_client(
     ollama_endpoint: str | None = None,
     mock_mode: bool = False,
     state_path: Path | None = None,
-    langfuse_enabled: bool = False,
     **kwargs: Any,
 ) -> SummarizerProtocol:
     """
@@ -114,7 +113,6 @@ def create_llm_client(
         ollama_endpoint: Ollama server endpoint (defaults to localhost).
         mock_mode: Use mock client for testing.
         state_path: Path for rate limiter state (Gemini only).
-        langfuse_enabled: Whether to fetch prompts from Langfuse.
         **kwargs: Additional provider-specific arguments.
 
     Returns:
@@ -137,7 +135,6 @@ def create_llm_client(
         return OllamaClient(
             model=model,
             endpoint=endpoint,
-            langfuse_enabled=langfuse_enabled,
         )
     else:  # gemini
         if not gemini_api_key:
@@ -151,6 +148,5 @@ def create_llm_client(
             api_key=gemini_api_key,
             model=model,
             state_path=state_path,
-            langfuse_enabled=langfuse_enabled,
             **kwargs,
         )

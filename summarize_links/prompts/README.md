@@ -1,6 +1,8 @@
 # Prompts for Obsidian Link Summarizer
 
-This directory contains the fallback prompts used when Langfuse is unavailable or disabled.
+This directory contains prompt templates for version control and upload to Langfuse.
+
+**IMPORTANT:** These files are NOT used at runtime. Langfuse is REQUIRED for all operations.
 
 ## Files
 
@@ -11,16 +13,14 @@ This directory contains the fallback prompts used when Langfuse is unavailable o
 - **`user.txt`** - User prompt template
   - Template with variables: `{{title}}`, `{{url}}`, `{{content}}`
   - Variables are replaced with actual values at runtime
-  - When using Langfuse, this template is fetched from Langfuse UI instead
 
-## Langfuse Integration
+## Langfuse Integration (REQUIRED)
 
-When Langfuse is enabled (`langfuse_enabled=True`), the application:
-1. First tries to fetch prompts from Langfuse UI:
-   - `summarize-document/system` (maps to `system.txt`)
-   - `summarize-document/user` (maps to `user.txt`)
-2. If Langfuse is unavailable, falls back to these local files
-3. Prompts are cached in-memory for the session duration
+The application REQUIRES valid Langfuse credentials and will fetch prompts from:
+- `summarize-document/system` (corresponds to `system.txt`)
+- `summarize-document/user` (corresponds to `user.txt`)
+
+**No Fallback:** If Langfuse prompts are not available, the application will raise an error.
 
 ## Uploading to Langfuse
 
@@ -38,13 +38,18 @@ This will:
 
 ## Editing Prompts
 
-**For Development (using fallback prompts):**
-1. Edit `system.txt` or `user.txt` directly
-2. Test changes locally
-3. Upload to Langfuse when ready
+**For Version Control:**
+1. Edit `system.txt` or `user.txt` in this directory
+2. Commit changes to git
+3. Upload to Langfuse using `scripts/upload_prompts.py`
 
-**For Production (using Langfuse):**
-1. Edit prompts directly in Langfuse UI
+**For Production (Langfuse UI):**
+1. Edit prompts directly in Langfuse UI at https://cloud.langfuse.com
 2. Changes take effect immediately (hot-swapping)
 3. Automatic versioning tracks all changes
 4. Can rollback to any previous version
+5. Sync changes back to filesystem files for version control
+
+**Recommended Workflow:**
+- Edit in filesystem → upload → test → commit to git
+- For quick iterations: edit directly in Langfuse UI → sync back to filesystem when stable

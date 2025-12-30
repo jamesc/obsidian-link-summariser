@@ -1,9 +1,9 @@
 # Langfuse Integration - Implementation Status
 
-**Date**: 2025-12-30 (Updated)  
-**Status**: ✅ Phase 1 Complete | ⏳ Phase 2 Planned | 📋 Phase 3 Optional  
-**Current**: Core tracing with raw prompt storage  
-**Next**: Langfuse Prompt Management (Phase 2)
+**Date**: 2025-01-02 (Updated)  
+**Status**: ✅ Phase 1 Complete | ✅ Phase 2 Complete (REQUIRED) | 📋 Phase 3 Optional  
+**Current**: Langfuse prompts and tracing REQUIRED for all operations  
+**Next**: Phase 3 Evaluation Framework (Optional)
 
 ---
 
@@ -24,81 +24,43 @@
 - Error tracking in generation observations
 
 **Production Ready:**
-- Graceful degradation when not configured (all no-ops)
+- All operations require valid Langfuse credentials
 - Safe update calls with `contextlib.suppress(Exception)`
 - HTTP logging suppression for clean output
-- 496 tests passing with 20 Langfuse-specific tests
+- Comprehensive test coverage
 
 **Configuration:**
 - Environment variables and YAML config support
-- Auto-enable when keys provided
 - CLI initialization via `initialize_tracer(config)`
 
-**What's Stored:** Prompts are **inline** in code and sent to Langfuse traces for debugging.
+**What's Stored:** Prompts fetched from Langfuse and sent to traces for debugging.
 
 ---
 
-### ✅ Phase 2: Langfuse Prompt Management (COMPLETE)
+### ✅ Phase 2: Langfuse Prompt Management (COMPLETE - REQUIRED)
 
-**Goal:** Migrate from hardcoded prompts to centralized Langfuse Prompt Management
+**Goal:** Centralized Langfuse Prompt Management - REQUIRED for all operations
 
-**Status**: ✅ **Implemented** - Prompts fetched from Langfuse with fallback to filesystem
+**Status**: ✅ **Implemented and REQUIRED** - All prompts MUST come from Langfuse
+
+**Breaking Change (2025-01-02):** Langfuse is now REQUIRED. No fallback prompts, no optional tracing.
 
 **What Was Implemented:**
-- ✅ Filesystem-based fallback prompts in `summarize_links/prompts/`
-  - `system.txt` - System instructions with content type descriptions
-  - `user.txt` - User prompt template with `{{title}}`, `{{url}}`, `{{content}}` variables
-  - `README.md` - Documentation for prompt management
-  - `prompts.py` - Utility module for loading prompts from filesystem
-- ✅ Fetch prompts from Langfuse UI using `langfuse.get_prompt()` API (when enabled)
+- ✅ Mandatory prompt fetching from Langfuse UI using `langfuse.get_prompt()` API
 - ✅ Two managed prompts:
   - `summarize-document/system` - System instructions
   - `summarize-document/user` - User prompt with variables
 - ✅ Prompt caching to avoid repeated API calls within session
-- ✅ Graceful fallback hierarchy: Langfuse → Filesystem → (no hardcoded fallback)
 - ✅ Link prompt versions to generation observations via `prompt_metadata`
 - ✅ Template variable compilation with `{{title}}` → ` titled 'X'` or empty
-- ✅ Upload script to sync filesystem prompts to Langfuse
-- ✅ Added to both Gemini and Ollama clients
+- ✅ Upload script to sync prompts to Langfuse (`scripts/upload_prompts.py`)
+- ✅ Implemented in both Gemini and Ollama clients
+- ✅ Config validation requires Langfuse credentials (except mock mode)
 
-**Implementation Details:**
-
-Both clients (`GeminiClient` and `OllamaClient`) now support:
-
-```python
-# Initialize with langfuse_enabled flag
-client = GeminiClient(
-    api_key="...",
-    model="gemini-2.5-flash",
-    langfuse_enabled=True  # Enable prompt management
-)
-
-# Client automatically:
-# 1. Fetches prompts from Langfuse on first use (if enabled)
-# 2. Falls back to filesystem prompts if Langfuse unavailable
-# 3. Caches prompt objects for reuse
-# 4. Compiles templates with variables
-```
-
-**Filesystem Prompt Structure:**
-
-```
-summarize_links/
-  prompts/
-    system.txt          # System instructions (fallback)
-    user.txt            # User template with {{variables}} (fallback)
-    README.md           # Documentation
-  llm/
-    prompts.py          # Prompt loading utilities
-```
-
-**Prompt Loading Priority:**
-
-1. **Langfuse** (if enabled and configured): Fetch from Langfuse API
-2. **Filesystem**: Load from `summarize_links/prompts/` directory
-3. **Error**: Raise exception if neither available
-
-**Upload Script:**
+**Filesystem Prompts (Development Reference Only):**
+- Located in `summarize_links/prompts/` for version control
+- NOT used at runtime (Langfuse is required)
+- Can be uploaded to Langfuse using `scripts/upload_prompts.py`
 
 ```bash
 # Upload filesystem prompts to Langfuse
@@ -153,14 +115,14 @@ prompt_metadata = {
 - ✅ Instant rollback to previous prompt versions
 - ✅ Compare model responses using same prompt version
 
-**Setup Instructions:**
+**Setup Instructions (REQUIRED):**
 
 1. **Create prompts in Langfuse UI:**
    - Name: `summarize-document/system`
-   - Content: Copy from `SUMMARY_SYSTEM_PROMPT` in code
+   - Content: Copy from `summarize_links/prompts/system.txt` or use `scripts/upload_prompts.py`
    
    - Name: `summarize-document/user`
-   - Content:
+   - Content: Copy from `summarize_links/prompts/user.txt` with variables:
      ```
      # Web Page Summary
      
@@ -171,7 +133,7 @@ prompt_metadata = {
      {{content}}
      ```
 
-2. **Enable in config:**
+2. **Configure Langfuse credentials (REQUIRED):**
    ```bash
    # .env
    LANGFUSE_PUBLIC_KEY=pk-lf-xxx
@@ -179,7 +141,13 @@ prompt_metadata = {
    LANGFUSE_BASE_URL=https://cloud.langfuse.com
    ```
 
-3. **Prompts auto-fetched on next run** - logs will show versions used
+3. **Application will fail to start without valid Langfuse credentials** (except in mock mode)
+
+4. **Verify setup:**
+   ```bash
+   uv run summarize-links from-note --vault ~/Notes
+   # Logs will show: "Fetched prompts from Langfuse: system vX, user vY"
+   ```
 
 ---
 

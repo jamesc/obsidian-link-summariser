@@ -76,7 +76,7 @@ def upload_prompts() -> None:
             name="summarize-document/system",
             prompt=system_prompt,
             type="text",
-            labels=["system"],
+            labels=["system", "production"],
         )
         logger.info("✓ System prompt uploaded successfully")
     except Exception as e:
@@ -90,7 +90,7 @@ def upload_prompts() -> None:
             name="summarize-document/user",
             prompt=user_prompt_template,
             type="text",
-            labels=["user", "template"],
+            labels=["user", "template", "production"],
         )
         logger.info("✓ User prompt template uploaded successfully")
     except Exception as e:

@@ -7,10 +7,12 @@ including temporary vault directories and sample content.
 
 from __future__ import annotations
 
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
-from unittest.mock import Mock
+from typing import TYPE_CHECKING, Any
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -22,6 +24,41 @@ if TYPE_CHECKING:
 def mock_load_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
     """Mock load_dotenv globally to prevent .env file from interfering with tests."""
     monkeypatch.setattr("summarize_links.config.load_dotenv", Mock())
+
+
+@pytest.fixture(autouse=True)
+def mock_langfuse_globally(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
+    """Mock Langfuse class globally to prevent authentication attempts in tests."""
+    # Don't set env vars for tests that specifically test Langfuse configuration
+    test_name = request.node.name
+    # Get the full node ID which includes class name
+    node_id = request.node.nodeid
+
+    # Set environment variables for all tests except those specifically testing langfuse config
+    # Check both test name and node ID (which includes class name like
+    # "test_config.py::TestLangfuseConfig::test_name")
+    if "TestLangfuseConfig" not in node_id and "langfuse_requires" not in test_name:
+        monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test-auto")
+        monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test-auto")
+
+    # Create a comprehensive mock
+    mock_lf = Mock()
+    mock_lf.auth_check.return_value = True
+    mock_lf.get_prompt.return_value = Mock(
+        prompt="mock prompt", version=1, compile=Mock(return_value="compiled")
+    )
+    mock_lf.start_as_current_observation.return_value.__enter__ = Mock(return_value=Mock())
+    mock_lf.start_as_current_observation.return_value.__exit__ = Mock(return_value=False)
+    mock_lf.flush.return_value = None
+    mock_lf.score.return_value = None
+
+    def mock_langfuse_class(*args: Any, **kwargs: Any) -> Mock:
+        """Mock Langfuse class constructor."""
+        return mock_lf
+
+    # Mock at both the module level and the import location in langfuse_tracer
+    monkeypatch.setattr("langfuse.Langfuse", mock_langfuse_class)
+    monkeypatch.setattr("summarize_links.langfuse_tracer.Langfuse", mock_langfuse_class)
 
 
 @pytest.fixture
@@ -179,8 +216,134 @@ def mock_config(tmp_path: Path) -> Config:
         dry_run=False,
         verbose=False,
         force=False,
-        langfuse_enabled=False,
-        langfuse_public_key="",
-        langfuse_secret_key="",
+        langfuse_public_key="pk-lf-test",
+        langfuse_secret_key="sk-lf-test",
         langfuse_base_url="https://cloud.langfuse.com",
     )
+
+
+class MockLangfuseTracer:
+    """
+    Mock Langfuse tracer for testing.
+
+    Records all method calls for assertions while providing no-op implementations.
+    """
+
+    def __init__(self) -> None:
+        """Initialize mock tracer with call tracking."""
+        self.trace_calls: list[dict[str, Any]] = []
+        self.span_calls: list[dict[str, Any]] = []
+        self.generation_calls: list[dict[str, Any]] = []
+        self.score_calls: list[dict[str, Any]] = []
+        self.flush_calls: int = 0
+
+    @contextmanager
+    def trace_url_processing(
+        self,
+        url: str,
+        name: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Generator[MagicMock, None, None]:
+        """Mock trace - records call and yields a mock object."""
+        self.trace_calls.append(
+            {
+                "url": url,
+                "name": name,
+                "metadata": metadata,
+            }
+        )
+        mock_trace = MagicMock()
+        mock_trace.update = MagicMock()
+        yield mock_trace
+
+    @contextmanager
+    def trace_span(
+        self,
+        name: str,
+        input_data: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Generator[MagicMock, None, None]:
+        """Mock span - records call and yields a mock object."""
+        self.span_calls.append(
+            {
+                "name": name,
+                "input_data": input_data,
+                "metadata": metadata,
+            }
+        )
+        mock_span = MagicMock()
+        mock_span.update = MagicMock()
+        yield mock_span
+
+    @contextmanager
+    def trace_generation(
+        self,
+        name: str,
+        input_data: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+        model: str | None = None,
+    ) -> Generator[MagicMock, None, None]:
+        """Mock generation - records call and yields a mock object."""
+        self.generation_calls.append(
+            {
+                "name": name,
+                "input_data": input_data,
+                "metadata": metadata,
+                "model": model,
+            }
+        )
+        mock_generation = MagicMock()
+        mock_generation.update = MagicMock()
+        yield mock_generation
+
+    def score_trace(
+        self,
+        trace_id: str,
+        name: str,
+        value: float,
+        comment: str | None = None,
+    ) -> None:
+        """Mock score - records call."""
+        self.score_calls.append(
+            {
+                "trace_id": trace_id,
+                "name": name,
+                "value": value,
+                "comment": comment,
+            }
+        )
+
+    def flush(self) -> None:
+        """Mock flush - records call."""
+        self.flush_calls += 1
+
+
+@pytest.fixture
+def mock_tracer() -> MockLangfuseTracer:
+    """Provide a mock Langfuse tracer for tests."""
+    return MockLangfuseTracer()
+
+
+@pytest.fixture
+def mock_langfuse_client(
+    monkeypatch: pytest.MonkeyPatch, mock_tracer: MockLangfuseTracer
+) -> MockLangfuseTracer:
+    """
+    Mock the global Langfuse tracer for tests.
+
+    This fixture patches the global tracer so tests can run without
+    actual Langfuse credentials.
+    """
+    # Patch get_tracer to return our mock
+    monkeypatch.setattr(
+        "summarize_links.langfuse_tracer.get_tracer",
+        lambda: mock_tracer,
+    )
+
+    # Also patch _global_tracer directly
+    monkeypatch.setattr(
+        "summarize_links.langfuse_tracer._global_tracer",
+        mock_tracer,
+    )
+
+    return mock_tracer

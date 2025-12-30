@@ -182,6 +182,7 @@ class TestMain:
         mock_config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
+            mock_mode=True,  # Use mock mode to skip Langfuse
         )
         mock_load_config.return_value = mock_config
         mock_cmd.return_value = EXIT_SUCCESS
@@ -203,6 +204,7 @@ class TestMain:
         mock_config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
+            mock_mode=True,  # Use mock mode to skip Langfuse
         )
         mock_load_config.return_value = mock_config
         mock_cmd.return_value = EXIT_SUCCESS
