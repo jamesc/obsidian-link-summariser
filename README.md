@@ -22,14 +22,34 @@ A lightweight Python CLI tool that reads URLs from Obsidian daily notes, fetches
 
 ## Installation
 
-### Prerequisites
+### Option 1: Dev Container (Recommended for Contributors)
+
+The fastest way to get started with development is using VS Code Dev Containers:
+
+1. **Prerequisites**: [Docker Desktop](https://www.docker.com/products/docker-desktop), [VS Code](https://code.visualstudio.com/), and [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+
+2. **Setup**:
+   ```bash
+   git clone https://github.com/jamesc/obsidian-link-summariser.git
+   cd obsidian-link-summariser
+   cp .env.example .env
+   # Edit .env with your configuration
+   code .
+   # Then: Command Palette → "Dev Containers: Reopen in Container"
+   ```
+
+See [.devcontainer/README.md](.devcontainer/README.md) for detailed setup instructions and troubleshooting.
+
+### Option 2: Local Setup
+
+#### Prerequisites
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) package manager
 - **For Gemini**: Google AI Studio API key ([get one free](https://aistudio.google.com/apikey))
 - **For Ollama** (optional): [Ollama](https://ollama.ai) installed and running
 
-### Setup
+#### Setup
 
 ```bash
 # Clone the repository
