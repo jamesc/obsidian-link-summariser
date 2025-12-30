@@ -1879,6 +1879,88 @@ This enables:
 
 ---
 
+## 2025-12-30: Setup Devcontainer and Copilot Environment
+
+**Goal:** Configure VS Code Dev Container and GitHub Copilot instructions to streamline onboarding and provide consistent development environment.
+
+**Changes:**
+
+1. **Created `.devcontainer/devcontainer.json`**:
+   - Base image: Python 3.11 from Microsoft
+   - Auto-installed features: uv package manager (latest)
+   - VS Code extensions:
+     - Python language support (ms-python.python)
+     - Pylance language server (ms-python.vscode-pylance)
+     - Ruff linter/formatter (charliermarsh.ruff)
+     - MyPy type checker (ms-python.mypy-type-checker)
+     - GitHub Copilot and Copilot Chat
+     - TOML and YAML language support
+   - Editor configuration:
+     - Format on save with Ruff
+     - Auto-organize imports
+     - Strict type checking mode
+     - Pytest integration
+   - Post-create command: `uv sync --all-extras`
+   - .env file mounted as read-only from host
+   - Python virtual environment configured in container
+
+2. **Created `.devcontainer/README.md`**:
+   - Comprehensive setup guide for dev containers
+   - Prerequisites (Docker Desktop, VS Code, Dev Containers extension)
+   - Step-by-step instructions for opening project in container
+   - Troubleshooting section for common issues
+   - Benefits of using dev containers
+   - Alternative local setup instructions
+
+3. **Created `.github/copilot-instructions.md`**:
+   - Project overview and technology stack
+   - Code style standards and architecture patterns
+   - Development workflow (linting, building, testing)
+   - Package management with uv
+   - Environment variable configuration
+   - Project structure overview
+   - Key features explanation (multi-provider support, rate limiting, URL cleaning)
+   - Common commands reference
+   - Git commit conventions
+   - Guidelines for Copilot when suggesting code
+
+4. **Updated main `README.md`**:
+   - Added "Option 1: Dev Container (Recommended for Contributors)" section
+   - Reorganized installation instructions
+   - Links to devcontainer README for detailed setup
+   - Preserves existing "Option 2: Local Setup" instructions
+
+**Benefits:**
+
+- **Fast Onboarding**: New contributors can start coding in minutes with pre-configured environment
+- **Consistency**: Everyone uses same Python version, tools, and dependencies
+- **Isolated Development**: Container environment doesn't affect host system
+- **Pre-configured Tools**: All linters, formatters, and type checkers ready to use
+- **Cross-platform**: Works identically on Windows, Mac, and Linux
+- **Copilot Context**: GitHub Copilot has project-specific guidelines and conventions
+- **Better Suggestions**: Copilot understands project architecture and standards
+
+**Files Created:**
+- `.devcontainer/devcontainer.json` (77 lines)
+- `.devcontainer/README.md` (170 lines)
+- `.github/copilot-instructions.md` (206 lines)
+
+**Files Modified:**
+- `README.md` (added devcontainer setup option)
+
+**Testing:**
+- JSON syntax validated
+- All configuration paths checked
+- Documentation reviewed for accuracy
+- Ready for manual testing in VS Code
+
+**Next Steps:**
+- Users can test by opening project in VS Code and selecting "Reopen in Container"
+- Container will build and install dependencies automatically
+- Copilot will use instructions for context-aware suggestions
+
+---
+
 ## 2025-12-29: Implement Langfuse Best Practices for Tracing
 
 **Issue:** Following Langfuse documentation and best practices, implemented three high-priority improvements to enhance tracing capabilities:
