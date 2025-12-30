@@ -12,20 +12,19 @@ Key components:
 
 Usage:
     from summarize_links.llm import create_llm_client, SummarizerProtocol
-    
+
     client = create_llm_client(model="gemini-2.5-flash", gemini_api_key="...")
     result = client.summarize_with_metadata(content, url, title)
 """
 
 # Protocol interface
-from summarize_links.llm.protocol import SummarizerProtocol
+# Factory
+from summarize_links.llm.factory import create_llm_client, detect_provider
 
 # Client implementations
 from summarize_links.llm.gemini import GeminiClient, MockGeminiClient
 from summarize_links.llm.ollama import OllamaClient
-
-# Factory
-from summarize_links.llm.factory import create_llm_client, detect_provider
+from summarize_links.llm.protocol import SummarizerProtocol
 
 __all__ = [
     # Protocol
