@@ -10,7 +10,7 @@ import contextlib
 import logging
 import signal
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from rich.console import Console
@@ -332,6 +332,10 @@ def _process_url_with_metadata(
     # If we're reprocessing (summary exists but incomplete), we need to overwrite
     needs_overwrite = config.force or not existing_summary_complete
 
+    # Store whether we had a successful summary before processing
+    # Used to prevent overwriting successful summaries with error stubs
+    had_successful_summary = existing_summary_complete
+
     if config.dry_run:
         return True, f"Would process: {url} -> {slug}.md", False
 
@@ -558,7 +562,8 @@ def _process_url_with_metadata(
 
             except ContentFetchError as e:
                 logger.warning("Failed to fetch %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -571,7 +576,8 @@ def _process_url_with_metadata(
 
             except ContentExtractionError as e:
                 logger.warning("Failed to extract content from %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -584,7 +590,8 @@ def _process_url_with_metadata(
 
             except RateLimitError as e:
                 logger.error("Rate limited while processing %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -597,7 +604,8 @@ def _process_url_with_metadata(
 
             except OllamaServerError as e:
                 logger.error("Ollama server error for %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -610,7 +618,8 @@ def _process_url_with_metadata(
 
             except ModelNotInstalledError as e:
                 logger.error("Model not installed for %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -623,7 +632,8 @@ def _process_url_with_metadata(
 
             except OllamaAPIError as e:
                 logger.error("Ollama API error for %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -636,7 +646,8 @@ def _process_url_with_metadata(
 
             except GeminiAPIError as e:
                 logger.error("Gemini API error for %s: %s", url, e)
-                if not config.dry_run:
+                # Only write error stub if we didn't have a successful summary before
+                if not config.dry_run and not had_successful_summary:
                     write_stub_note(
                         vault_path=config.vault_path,
                         out_folder=config.out_folder,
@@ -1093,14 +1104,12 @@ def cmd_resummarize(config: Config, age_days: int | None = None) -> int:
 
     # Filter by age if specified (based on summary_date)
     if age_days is not None:
-        from datetime import timedelta
-
         cutoff_date = datetime.now() - timedelta(days=age_days)
         original_count = len(summaries)
         # Filter based on summary_date (3rd element in tuple)
         summaries = [
-            (url, orig_date, summ_date)
-            for url, orig_date, summ_date in summaries
+            (url, orig_date, summ_date, source_note)
+            for url, orig_date, summ_date, source_note in summaries
             if summ_date < cutoff_date
         ]
         filtered_count = original_count - len(summaries)
@@ -1122,30 +1131,32 @@ def cmd_resummarize(config: Config, age_days: int | None = None) -> int:
         _print(f"[green]Found {len(summaries)} summaries to re-summarize[/]")
 
     # Convert to UrlWithContext (no user tags for resummarize)
-    url_contexts = [UrlWithContext(url=url) for url, _, _ in summaries]
+    url_contexts = [UrlWithContext(url=url) for url, _, _, _ in summaries]
 
-    # Extract original dates for each URL (preserve original dates in filenames)
-    url_dates = {url: orig_date for url, orig_date, _ in summaries}
+    # Extract original dates and source notes for each URL
+    url_dates = {url: orig_date for url, orig_date, _, _ in summaries}
+    url_source_notes = {url: source_note for url, _, _, source_note in summaries}
 
-    # Process URLs with the preserved dates
-    # We need to pass each URL with its original date
-    return _process_resummarize_batch(url_contexts, url_dates, config)
+    # Process URLs with the preserved dates and source notes
+    return _process_resummarize_batch(url_contexts, url_dates, url_source_notes, config)
 
 
 def _process_resummarize_batch(
     url_contexts: list[UrlWithContext],
     url_dates: dict[str, datetime],
+    url_source_notes: dict[str, str | None],
     config: Config,
 ) -> int:
     """
     Process a batch of URLs for resummarization.
 
     Similar to _process_urls_batch but preserves original dates
-    and doesn't attempt to link to daily notes or remove URLs.
+    and source notes, and doesn't attempt to remove URLs from daily notes.
 
     Args:
         url_contexts: URLs with context (no user tags for resummarize).
         url_dates: Mapping of URL to its original summary date.
+        url_source_notes: Mapping of URL to its source note filename (from 'from' field).
         config: Application configuration.
 
     Returns:
@@ -1197,17 +1208,18 @@ def _process_resummarize_batch(
                     _print(f"[yellow]Stopping early. {remaining} URLs not processed.[/]")
                     break
 
-                # Get the original date for this URL
+                # Get the original date and source note for this URL
                 original_date = url_dates.get(url_context.url)
+                source_note = url_source_notes.get(url_context.url)
 
-                # Process URL (no daily note filename, but with preserved date)
+                # Process URL with preserved date and source note (for 'from' field)
                 success, message, _ = _process_url_with_metadata(
                     url_context,
                     config,
                     client,
                     progress,
                     task,
-                    daily_note_filename=None,  # No daily note linking for resummarize
+                    daily_note_filename=source_note,  # Preserve 'from' field
                     source_date=original_date,
                 )
                 results.append((success, message))

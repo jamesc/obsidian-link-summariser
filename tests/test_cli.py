@@ -132,7 +132,7 @@ class TestCreateParser:
         assert args.command == "resummarize"
         assert args.age is None
 
-        # With age option
+        # With --age option
         args = parser.parse_args(["resummarize", "--age", "30"])
         assert args.command == "resummarize"
         assert args.age == 30
@@ -793,6 +793,80 @@ class TestProcessUrlWithMetadata:
 
             mock_stub.assert_not_called()
             assert should_delete is False
+
+    @patch("summarize_links.cli.write_stub_note")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
+    @patch("summarize_links.cli.summary_exists")
+    def test_error_during_resummarize_preserves_successful_summary(
+        self,
+        mock_exists: MagicMock,
+        mock_fetch: MagicMock,
+        mock_stub: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Should NOT overwrite successful summary with error stub during resummarization."""
+        # Simulate that a successful summary already exists
+        mock_exists.return_value = True
+        # Force mode is enabled (as in resummarize)
+        mock_fetch.side_effect = ContentFetchError("Connection refused")
+
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+            force=True,  # Force mode is enabled during resummarization
+        )
+
+        url_context = UrlWithContext(url="https://example.com")
+
+        success, message, should_delete = _process_url_with_metadata(
+            url_context,
+            config,
+            MagicMock(),
+        )
+
+        # Should return error
+        assert success is False
+        assert "Fetch error" in message
+        assert should_delete is False
+
+        # CRITICAL: Should NOT write stub note because a successful summary already existed
+        mock_stub.assert_not_called()
+
+    @patch("summarize_links.cli.write_stub_note")
+    @patch("summarize_links.cli.fetch_and_extract_metadata")
+    @patch("summarize_links.cli.summary_exists")
+    def test_error_on_first_try_creates_stub(
+        self,
+        mock_exists: MagicMock,
+        mock_fetch: MagicMock,
+        mock_stub: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Should create stub on error for URLs that never had a successful summary."""
+        # No existing summary
+        mock_exists.return_value = False
+        mock_fetch.side_effect = ContentFetchError("Connection refused")
+
+        config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+        )
+
+        url_context = UrlWithContext(url="https://example.com")
+
+        success, message, should_delete = _process_url_with_metadata(
+            url_context,
+            config,
+            MagicMock(),
+        )
+
+        # Should return error
+        assert success is False
+        assert "Fetch error" in message
+        assert should_delete is False
+
+        # Should write stub note because this is the first attempt
+        mock_stub.assert_called_once()
 
 
 class TestPrintResults:
