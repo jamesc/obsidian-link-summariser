@@ -142,6 +142,49 @@ class TestGeminiLangfusePrompts:
         # Should return the string as-is since it's not a template
         assert result == non_template
 
+    @patch("langfuse.Langfuse")
+    def test_compile_user_prompt_with_none_title_langfuse(self, mock_langfuse: Mock) -> None:
+        """Test that title=None is handled correctly with Langfuse compilation."""
+        mock_lf_instance = Mock()
+        mock_langfuse.return_value = mock_lf_instance
+
+        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash")
+
+        # Mock the cached user prompt
+        mock_user_obj = Mock()
+        mock_user_obj.compile.return_value = "Compiled prompt from https://example.com"
+        client._prompt_cache["user"] = mock_user_obj
+
+        template = "Summarize web page{{title}}: {{url}}"
+        result = client._compile_user_prompt(template, "content here", "https://example.com", None)
+
+        # Should pass "Unknown" to Langfuse compile when title is None
+        mock_user_obj.compile.assert_called_once_with(
+            title="Unknown", url="https://example.com", content="content here"
+        )
+        assert "Compiled prompt" in result
+
+    @patch("langfuse.Langfuse")
+    def test_compile_user_prompt_with_none_title_fallback(self, mock_langfuse: Mock) -> None:
+        """Test that title=None produces correct output with fallback replacement."""
+        mock_lf_instance = Mock()
+        mock_langfuse.return_value = mock_lf_instance
+
+        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash")
+
+        # Mock the cached user prompt with failing compile to trigger fallback
+        mock_user_obj = Mock()
+        mock_user_obj.compile.side_effect = Exception("Compilation error")
+        client._prompt_cache["user"] = mock_user_obj
+
+        template = "Summarize web page{{title}}: {{url}}\n\nContent: {{content}}"
+        result = client._compile_user_prompt(template, "test content", "https://example.com", None)
+
+        # Should use "Unknown" as fallback replacement for None title
+        assert "web pageUnknown:" in result
+        assert "https://example.com" in result
+        assert "test content" in result
+
 
 class TestOllamaLangfusePrompts:
     """Test Langfuse prompt management in Ollama client."""
@@ -214,6 +257,48 @@ class TestOllamaLangfusePrompts:
         mock_user_obj.compile.assert_called_once_with(
             title="My Title", url="https://test.com", content="content here"
         )
+
+    @patch("langfuse.Langfuse")
+    def test_compile_user_prompt_with_none_title_langfuse(self, mock_langfuse: Mock) -> None:
+        """Test that title=None is handled correctly with Langfuse compilation."""
+        mock_lf_instance = Mock()
+        mock_langfuse.return_value = mock_lf_instance
+
+        client = OllamaClient(model="llama3:latest")
+
+        # Mock the cached user prompt
+        mock_user_obj = Mock()
+        mock_user_obj.compile.return_value = "Summarize from https://test.com: content"
+        client._prompt_cache["user"] = mock_user_obj
+
+        template = "Summarize{{title}} from {{url}}: {{content}}"
+        result = client._compile_user_prompt(template, "content", "https://test.com", None)
+
+        # Should pass "Unknown" to Langfuse compile when title is None
+        mock_user_obj.compile.assert_called_once_with(
+            title="Unknown", url="https://test.com", content="content"
+        )
+        assert "Summarize from" in result
+
+    @patch("langfuse.Langfuse")
+    def test_compile_user_prompt_with_none_title_fallback(self, mock_langfuse: Mock) -> None:
+        """Test that title=None produces correct output with fallback replacement."""
+        mock_lf_instance = Mock()
+        mock_langfuse.return_value = mock_lf_instance
+
+        client = OllamaClient(model="llama3:latest")
+
+        # Mock the cached user prompt with failing compile to trigger fallback
+        mock_user_obj = Mock()
+        mock_user_obj.compile.side_effect = Exception("Compilation error")
+        client._prompt_cache["user"] = mock_user_obj
+
+        template = "Read{{title}} at {{url}}: {{content}}"
+        result = client._compile_user_prompt(template, "page content", "https://example.org", None)
+
+        # Should use "Unknown" as fallback replacement for None title
+        assert "ReadUnknown at https://example.org" in result
+        assert "page content" in result
 
 
 class TestPromptMetadata:
