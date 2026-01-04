@@ -1,6 +1,7 @@
 Summarize the following web page content.
 
-Please summarize the following web page{{title}}:
+Please summarize the following web page:
+Title: {{title}}
 
 Source URL: {{url}}
 
