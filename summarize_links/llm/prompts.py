@@ -1,7 +1,8 @@
 """
 Prompt loading utilities for LLM clients.
 
-Loads fallback prompts from filesystem when Langfuse is unavailable.
+Reads prompt files from the local prompts directory, primarily for use by
+the scripts/upload_prompts.py helper to upload prompts to Langfuse.
 """
 
 import logging
