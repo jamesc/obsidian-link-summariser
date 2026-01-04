@@ -43,7 +43,7 @@
 
 **Status**: ✅ **Implemented and REQUIRED** - All prompts MUST come from Langfuse
 
-**Breaking Change (2025-01-02):** Langfuse is now REQUIRED. No fallback prompts, no optional tracing.
+**Breaking Change (2025-01-02):** Langfuse is now REQUIRED as the sole prompt source. No non-Langfuse prompt sources or optional tracing; only limited compilation/filesystem fallbacks exist as documented below.
 
 **What Was Implemented:**
 - ✅ Mandatory prompt fetching from Langfuse UI using `langfuse.get_prompt()` API
