@@ -70,7 +70,7 @@ def build_user_prompt_from_template(
     Returns:
         Compiled prompt with variables replaced.
     """
-    # Handle title: use "Unknown" if None
+    # Handle title: use "Unknown" if title is falsy (None, empty string, etc.)
     title_text = title if title else "Unknown"
 
     return (
