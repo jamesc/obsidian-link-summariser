@@ -142,6 +142,53 @@ class TestGeminiLangfusePrompts:
         # Should return the string as-is since it's not a template
         assert result == non_template
 
+    @patch("langfuse.Langfuse")
+    def test_compile_user_prompt_with_none_title(self, mock_langfuse: Mock) -> None:
+        """Test that None title is handled gracefully with 'Unknown'."""
+        mock_lf_instance = Mock()
+        mock_langfuse.return_value = mock_lf_instance
+
+        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash")
+
+        # Mock the cached user prompt
+        mock_user_obj = Mock()
+        mock_user_obj.compile.return_value = "Title: Unknown, URL: https://example.com"
+        client._prompt_cache["user"] = mock_user_obj
+
+        template = "Title: {{title}}, URL: {{url}}"
+        result = client._compile_user_prompt(
+            template, "test content", "https://example.com", None
+        )
+
+        # Should compile with "Unknown" for None title
+        assert "Unknown" in result
+        mock_user_obj.compile.assert_called_once_with(
+            title="Unknown", url="https://example.com", content="test content"
+        )
+
+    @patch("langfuse.Langfuse")
+    def test_compile_user_prompt_fallback_with_none_title(self, mock_langfuse: Mock) -> None:
+        """Test that fallback string replacement handles None title correctly."""
+        mock_lf_instance = Mock()
+        mock_langfuse.return_value = mock_lf_instance
+
+        client = GeminiClient(api_key="test-key", model="gemini-2.5-flash")
+
+        # Mock the cached user prompt with failing compile
+        mock_user_obj = Mock()
+        mock_user_obj.compile.side_effect = Exception("Compilation error")
+        client._prompt_cache["user"] = mock_user_obj
+
+        template = "Title: {{title}}\nURL: {{url}}\nContent: {{content}}"
+        result = client._compile_user_prompt(
+            template, "test content", "https://example.com", None
+        )
+
+        # Should use simple string replacement with "Unknown"
+        assert "Title: Unknown" in result
+        assert "URL: https://example.com" in result
+        assert "Content: test content" in result
+
 
 class TestOllamaLangfusePrompts:
     """Test Langfuse prompt management in Ollama client."""

@@ -70,8 +70,8 @@ def build_user_prompt_from_template(
     Returns:
         Compiled prompt with variables replaced.
     """
-    # Handle inline title format: "{{title}}" becomes " titled 'X'" or empty
-    title_text = f" titled '{title}'" if title else ""
+    # Handle title: use "Unknown" if None
+    title_text = title if title else "Unknown"
 
     return (
         template.replace("{{title}}", title_text)
