@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Upload fallback prompts to Langfuse.
+Upload prompts to Langfuse.
 
 This script reads the system and user prompts from the filesystem
 and creates/updates them in Langfuse for centralized prompt management.
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 def upload_prompts() -> None:
     """
-    Upload fallback prompts to Langfuse.
+    Upload prompts to Langfuse.
 
     Reads system.txt and user.txt from the prompts directory and creates/updates
     them in Langfuse as "summarize-document/system" and "summarize-document/user".
