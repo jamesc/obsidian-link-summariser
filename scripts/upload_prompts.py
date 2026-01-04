@@ -101,8 +101,10 @@ def upload_prompts() -> None:
     langfuse.flush()
 
     logger.info("\n✓ All prompts uploaded successfully!")
-    logger.info("\nYou can now view and manage your prompts in the Langfuse UI:")
-    logger.info(f"  {base_url}")
+    logger.info(
+        "\nYou can now view and manage your prompts in the Langfuse UI "
+        "(using your configured Langfuse project)."
+    )
 
 
 if __name__ == "__main__":
