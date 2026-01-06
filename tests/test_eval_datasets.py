@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from summarize_links.eval_datasets import EvalDataset, EvalExample, create_sample_dataset
+from summarize_links.eval import EvalDataset, EvalExample, create_sample_dataset
 from summarize_links.exceptions import ConfigError
 
 

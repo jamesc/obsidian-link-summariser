@@ -2,7 +2,7 @@
 
 import pytest
 
-from summarize_links.eval_metrics import (
+from summarize_links.eval import (
     ContentTypeAccuracyMetric,
     MetricResult,
     TagAccuracyMetric,

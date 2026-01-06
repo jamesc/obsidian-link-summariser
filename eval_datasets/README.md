@@ -62,7 +62,7 @@ summarize-links eval eval_datasets/sample.yaml --model llama3:latest
 You can also use the `create_sample_dataset()` function in Python:
 
 ```python
-from summarize_links.eval_datasets import create_sample_dataset
+from summarize_links.eval import create_sample_dataset
 
 dataset = create_sample_dataset()
 dataset.to_yaml(Path("my_dataset.yaml"))

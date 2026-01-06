@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from summarize_links.commands.eval import cmd_eval
 from summarize_links.config import Config
+from summarize_links.eval import cmd_eval
 from summarize_links.models import SummaryResult
 
 
@@ -47,12 +47,12 @@ class TestCmdEval:
 
     def test_eval_loads_dataset(self, mock_config: Config, sample_dataset: Path) -> None:
         """Test that eval command loads the dataset."""
-        with patch("summarize_links.commands.eval.create_llm_client") as mock_create:
+        with patch("summarize_links.eval.command.create_llm_client") as mock_create:
             mock_client = Mock()
             mock_create.return_value = mock_client
 
             # Mock the fetch and summarize methods
-            with patch("summarize_links.commands.eval.fetch_and_extract_metadata") as mock_fetch:
+            with patch("summarize_links.eval.command.fetch_and_extract_metadata") as mock_fetch:
                 mock_page = Mock()
                 mock_page.content = "Test content"
                 mock_page.title = "Test Title"
@@ -87,11 +87,11 @@ class TestCmdEval:
 
     def test_eval_handles_fetch_errors(self, mock_config: Config, sample_dataset: Path) -> None:
         """Test that eval handles fetch errors gracefully."""
-        with patch("summarize_links.commands.eval.create_llm_client") as mock_create:
+        with patch("summarize_links.eval.command.create_llm_client") as mock_create:
             mock_client = Mock()
             mock_create.return_value = mock_client
 
-            with patch("summarize_links.commands.eval.fetch_and_extract_metadata") as mock_fetch:
+            with patch("summarize_links.eval.command.fetch_and_extract_metadata") as mock_fetch:
                 from summarize_links.exceptions import ContentFetchError
 
                 mock_fetch.side_effect = ContentFetchError("Network error")
@@ -107,11 +107,11 @@ class TestCmdEval:
         """Test that eval saves results when output path provided."""
         output_file = tmp_path / "results.yaml"
 
-        with patch("summarize_links.commands.eval.create_llm_client") as mock_create:
+        with patch("summarize_links.eval.command.create_llm_client") as mock_create:
             mock_client = Mock()
             mock_create.return_value = mock_client
 
-            with patch("summarize_links.commands.eval.fetch_and_extract_metadata") as mock_fetch:
+            with patch("summarize_links.eval.command.fetch_and_extract_metadata") as mock_fetch:
                 mock_page = Mock()
                 mock_page.content = "Test content"
                 mock_page.title = "Test Title"
@@ -130,11 +130,11 @@ class TestCmdEval:
 
     def test_eval_calculates_metrics(self, mock_config: Config, sample_dataset: Path) -> None:
         """Test that eval calculates metrics correctly."""
-        with patch("summarize_links.commands.eval.create_llm_client") as mock_create:
+        with patch("summarize_links.eval.command.create_llm_client") as mock_create:
             mock_client = Mock()
             mock_create.return_value = mock_client
 
-            with patch("summarize_links.commands.eval.fetch_and_extract_metadata") as mock_fetch:
+            with patch("summarize_links.eval.command.fetch_and_extract_metadata") as mock_fetch:
                 mock_page = Mock()
                 mock_page.content = "Test content"
                 mock_page.title = "Test Title"
@@ -155,11 +155,11 @@ class TestCmdEval:
         """Test that eval works in mock mode."""
         mock_config.mock_mode = True
 
-        with patch("summarize_links.commands.eval.create_llm_client") as mock_create:
+        with patch("summarize_links.eval.command.create_llm_client") as mock_create:
             mock_client = Mock()
             mock_create.return_value = mock_client
 
-            with patch("summarize_links.commands.eval.fetch_and_extract_metadata") as mock_fetch:
+            with patch("summarize_links.eval.command.fetch_and_extract_metadata") as mock_fetch:
                 mock_page = Mock()
                 mock_page.content = "Test content"
                 mock_page.title = "Test Title"
