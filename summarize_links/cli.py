@@ -16,6 +16,7 @@ from rich.logging import RichHandler
 
 from summarize_links.commands import (
     cmd_clean,
+    cmd_eval,
     cmd_from_note,
     cmd_from_note_all,
     cmd_list,
@@ -72,6 +73,12 @@ Examples:
 
   # Re-summarize only summaries older than 30 days
   summarize-links resummarize --age 30
+
+  # Evaluate summarization quality on a dataset
+  summarize-links eval my_dataset.yaml
+
+  # Evaluate and save results
+  summarize-links eval my_dataset.yaml --output results.yaml
 
   # Dry run - show what would be done
   summarize-links from-note --dry-run
@@ -199,6 +206,23 @@ Examples:
         description="Remove extra blank lines and trim whitespace from daily notes.",
     )
 
+    # eval command
+    eval_cmd = subparsers.add_parser(
+        "eval",
+        help="Evaluate summarization on a dataset",
+        description="Run evaluation on a dataset of URLs and report metrics.",
+    )
+    eval_cmd.add_argument(
+        "dataset",
+        type=str,
+        help="Path to evaluation dataset YAML file",
+    )
+    eval_cmd.add_argument(
+        "--output",
+        type=str,
+        help="Path to save evaluation results YAML file",
+    )
+
     return parser
 
 
@@ -269,6 +293,12 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_resummarize(config, age_days=getattr(args, "age", None))
         elif args.command == "clean":
             return cmd_clean(config)
+        elif args.command == "eval":
+            return cmd_eval(
+                config,
+                dataset_path=args.dataset,
+                output_path=getattr(args, "output", None),
+            )
         else:
             print_error(f"[red]Unknown command: {args.command}[/]")
             return EXIT_ERROR

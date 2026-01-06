@@ -7,6 +7,7 @@ exit code (0 for success, non-zero for errors).
 """
 
 from summarize_links.commands.clean import cmd_clean
+from summarize_links.commands.eval import cmd_eval
 from summarize_links.commands.from_note import cmd_from_note, cmd_from_note_all
 from summarize_links.commands.list import cmd_list
 from summarize_links.commands.resummarize import cmd_resummarize
@@ -16,6 +17,7 @@ from summarize_links.commands.urls import cmd_urls
 
 __all__ = [
     "cmd_clean",
+    "cmd_eval",
     "cmd_from_note",
     "cmd_from_note_all",
     "cmd_urls",
