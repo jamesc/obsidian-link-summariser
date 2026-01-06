@@ -47,9 +47,15 @@ def clean_whitespace(content: str) -> str:
         cleaned_lines.append(line)
         prev_blank = is_blank
 
-    # Remove leading blank lines
-    while cleaned_lines and cleaned_lines[0].strip() == "":
-        cleaned_lines.pop(0)
+    # Remove leading blank lines (efficiently, without repeated pop(0))
+    start_index = 0
+    for line in cleaned_lines:
+        if line.strip() == "":
+            start_index += 1
+        else:
+            break
+    if start_index:
+        cleaned_lines = cleaned_lines[start_index:]
 
     # Remove trailing blank lines
     while cleaned_lines and cleaned_lines[-1].strip() == "":
