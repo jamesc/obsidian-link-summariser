@@ -373,7 +373,6 @@ class GeminiClient(BaseLLMClient):
         # Fetch prompts from Langfuse (required)
         system_prompt_text, user_prompt_template = self._get_langfuse_prompts()
         user_prompt_text = self._compile_user_prompt(user_prompt_template, content, url, title)
-        logger.debug("Using Langfuse-managed prompts")
 
         client = self._get_client()
 
