@@ -21,12 +21,34 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Add parent directory to path to import project modules
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from summarize_links.llm.prompts import load_system_prompt, load_user_prompt_template
-
 logger = logging.getLogger(__name__)
+
+# Path to prompts directory (relative to scripts/ location)
+PROMPTS_DIR = Path(__file__).parent.parent / "summarize_links" / "prompts"
+SYSTEM_PROMPT_PATH = PROMPTS_DIR / "system.txt"
+USER_PROMPT_PATH = PROMPTS_DIR / "user.txt"
+
+
+def load_system_prompt() -> str:
+    """Load system prompt from filesystem."""
+    try:
+        prompt = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
+        logger.debug(f"Loaded system prompt from {SYSTEM_PROMPT_PATH}")
+        return prompt
+    except FileNotFoundError:
+        logger.error(f"System prompt file not found: {SYSTEM_PROMPT_PATH}")
+        raise
+
+
+def load_user_prompt_template() -> str:
+    """Load user prompt template from filesystem."""
+    try:
+        template = USER_PROMPT_PATH.read_text(encoding="utf-8")
+        logger.debug(f"Loaded user prompt template from {USER_PROMPT_PATH}")
+        return template
+    except FileNotFoundError:
+        logger.error(f"User prompt template file not found: {USER_PROMPT_PATH}")
+        raise
 
 
 def upload_prompts() -> None:

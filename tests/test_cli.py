@@ -140,6 +140,12 @@ class TestCreateParser:
         assert args.command == "resummarize"
         assert args.age == 30
 
+    def test_clean_command(self) -> None:
+        """Should parse clean command."""
+        parser = create_parser()
+        args = parser.parse_args(["clean"])
+        assert args.command == "clean"
+
     def test_short_options(self) -> None:
         """Should support short option forms."""
         parser = create_parser()
@@ -210,6 +216,28 @@ class TestMain:
         mock_cmd.return_value = EXIT_SUCCESS
 
         result = main(["urls", "https://example.com"])
+
+        mock_cmd.assert_called_once()
+        assert result == EXIT_SUCCESS
+
+    @patch("summarize_links.cli.load_config")
+    @patch("summarize_links.cli.cmd_clean")
+    def test_clean_command_dispatched(
+        self,
+        mock_cmd: MagicMock,
+        mock_load_config: MagicMock,
+        mock_vault: Path,
+    ) -> None:
+        """Should dispatch to cmd_clean for clean command."""
+        mock_config = Config(
+            vault_path=mock_vault,
+            gemini_api_key="test-key",
+            mock_mode=True,  # Use mock mode to skip Langfuse
+        )
+        mock_load_config.return_value = mock_config
+        mock_cmd.return_value = EXIT_SUCCESS
+
+        result = main(["clean"])
 
         mock_cmd.assert_called_once()
         assert result == EXIT_SUCCESS

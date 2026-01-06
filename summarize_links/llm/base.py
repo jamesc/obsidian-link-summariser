@@ -6,7 +6,10 @@ from Langfuse, used by both Gemini and Ollama clients.
 """
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from summarize_links.models import SummaryResult
 
 __all__ = ["BaseLLMClient"]
 
@@ -117,3 +120,49 @@ class BaseLLMClient:
             content=content,
         )
         return compiled
+
+    def _build_prompt_metadata(self) -> dict[str, Any] | None:
+        """
+        Build prompt metadata dictionary from cached Langfuse prompts.
+
+        Returns:
+            Dictionary with prompt names, versions, and source.
+            None if prompts not cached.
+        """
+        if "system" not in self._prompt_cache or "user" not in self._prompt_cache:
+            return None
+
+        system_obj = self._prompt_cache["system"]
+        user_obj = self._prompt_cache["user"]
+
+        return {
+            "system_prompt_name": "summarize-document/system",
+            "user_prompt_name": "summarize-document/user",
+            "system_prompt_version": getattr(system_obj, "version", None),
+            "user_prompt_version": getattr(user_obj, "version", None),
+            "source": "langfuse",
+        }
+
+    def _populate_result_metadata(
+        self,
+        result: "SummaryResult",
+        system_prompt: str,
+        user_prompt: str,
+        raw_response: str,
+        usage_details: dict[str, int] | None = None,
+    ) -> None:
+        """
+        Populate SummaryResult with prompt and usage metadata.
+
+        Args:
+            result: SummaryResult object to populate.
+            system_prompt: System prompt text used.
+            user_prompt: User prompt text used.
+            raw_response: Raw response from LLM.
+            usage_details: Optional token usage details.
+        """
+        result.system_prompt = system_prompt
+        result.raw_prompt = user_prompt
+        result.raw_response = raw_response
+        result.usage_details = usage_details
+        result.prompt_metadata = self._build_prompt_metadata()

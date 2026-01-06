@@ -278,24 +278,6 @@ class OllamaClient(BaseLLMClient):
         # Fetch prompts from Langfuse (REQUIRED)
         system_prompt, user_prompt_template = self._get_langfuse_prompts()
 
-        # Build prompt_metadata from cached prompt objects
-        prompt_metadata = None
-        if "system" in self._prompt_cache and "user" in self._prompt_cache:
-            sys_obj = self._prompt_cache["system"]
-            user_obj = self._prompt_cache["user"]
-            prompt_metadata = {
-                "system_prompt_name": "summarize-document/system",
-                "system_prompt_version": getattr(sys_obj, "version", None),
-                "user_prompt_name": "summarize-document/user",
-                "user_prompt_version": getattr(user_obj, "version", None),
-                "source": "langfuse",
-            }
-            logger.debug(
-                "Using Langfuse prompts: system v%s, user v%s",
-                prompt_metadata["system_prompt_version"],
-                prompt_metadata["user_prompt_version"],
-            )
-
         # Build the user prompt using Langfuse template
         prompt = self._compile_user_prompt(user_prompt_template, content, url, title)
         full_prompt = f"{system_prompt}\n\n{prompt}"
@@ -342,14 +324,11 @@ class OllamaClient(BaseLLMClient):
 
             # Parse the JSON response into SummaryResult
             result = _parse_ollama_response(raw_response)
-            # Add usage details to result
-            result.usage_details = usage_details
 
-            # Store system prompt, user prompt (combined), and response for tracing
-            result.system_prompt = system_prompt  # Use Langfuse or fallback
-            result.raw_prompt = prompt  # Store user prompt separately
-            result.raw_response = raw_response
-            result.prompt_metadata = prompt_metadata  # Store Langfuse prompt metadata
+            # Populate result with prompt and usage metadata using base class helper
+            self._populate_result_metadata(
+                result, system_prompt, prompt, raw_response, usage_details
+            )
 
             logger.info(
                 "Successfully generated summary with metadata (%d chars, %d tags)",

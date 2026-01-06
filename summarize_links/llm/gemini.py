@@ -374,18 +374,6 @@ class GeminiClient(BaseLLMClient):
         system_prompt_text, user_prompt_template = self._get_langfuse_prompts()
         user_prompt_text = self._compile_user_prompt(user_prompt_template, content, url, title)
 
-        # Store prompt metadata from Langfuse
-        system_obj = self._prompt_cache["system"]
-        user_obj = self._prompt_cache["user"]
-        prompt_metadata = {
-            "system_prompt_name": "summarize-document/system",
-            "user_prompt_name": "summarize-document/user",
-            "system_prompt_version": getattr(system_obj, "version", None),
-            "user_prompt_version": getattr(user_obj, "version", None),
-            "source": "langfuse",
-        }
-        logger.debug("Using Langfuse-managed prompts")
-
         client = self._get_client()
 
         # Estimate tokens for rate limiting
@@ -435,13 +423,11 @@ class GeminiClient(BaseLLMClient):
 
         # Parse the JSON response into SummaryResult
         result = parse_llm_json_response(raw_response)
-        result.usage_details = usage_details
 
-        # Store system prompt, user prompt, and response for tracing
-        result.system_prompt = system_prompt_text
-        result.raw_prompt = user_prompt_text
-        result.raw_response = raw_response
-        result.prompt_metadata = prompt_metadata
+        # Populate result with prompt and usage metadata using base class helper
+        self._populate_result_metadata(
+            result, system_prompt_text, user_prompt_text, raw_response, usage_details
+        )
 
         return result
 
