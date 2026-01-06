@@ -6,6 +6,7 @@ Runs evaluation on a dataset of URLs and reports metrics.
 
 import logging
 from pathlib import Path
+from typing import Any
 
 from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
 from rich.table import Table
@@ -82,7 +83,7 @@ def cmd_eval(config: Config, dataset_path: str, output_path: str | None = None) 
     tracer = get_tracer()
 
     # Run evaluation
-    results: list[dict] = []
+    results: list[dict[str, Any]] = []
 
     with Progress(
         SpinnerColumn(),
@@ -135,41 +136,49 @@ def cmd_eval(config: Config, dataset_path: str, output_path: str | None = None) 
                     except Exception as score_error:
                         logger.debug("Failed to score trace: %s", score_error)
 
-                results.append({
-                    "url": url,
-                    "title": example.title or page_metadata.title,
-                    "metrics": metrics,
-                    "success": True,
-                    "summary_tags": summary_result.suggested_tags,
-                    "summary_content_type": summary_result.content_type,
-                })
+                results.append(
+                    {
+                        "url": url,
+                        "title": example.title or page_metadata.title,
+                        "metrics": metrics,
+                        "success": True,
+                        "summary_tags": summary_result.suggested_tags,
+                        "summary_content_type": summary_result.content_type,
+                    }
+                )
 
             except (ContentFetchError, ContentExtractionError) as e:
                 logger.warning("Fetch/extraction error for %s: %s", url, e)
-                results.append({
-                    "url": url,
-                    "error": str(e),
-                    "error_type": "fetch_error",
-                    "success": False,
-                })
+                results.append(
+                    {
+                        "url": url,
+                        "error": str(e),
+                        "error_type": "fetch_error",
+                        "success": False,
+                    }
+                )
 
             except (GeminiAPIError, OllamaAPIError, RateLimitError) as e:
                 logger.error("API error for %s: %s", url, e)
-                results.append({
-                    "url": url,
-                    "error": str(e),
-                    "error_type": "api_error",
-                    "success": False,
-                })
+                results.append(
+                    {
+                        "url": url,
+                        "error": str(e),
+                        "error_type": "api_error",
+                        "success": False,
+                    }
+                )
 
             except Exception as e:
                 logger.error("Unexpected error for %s: %s", url, e, exc_info=True)
-                results.append({
-                    "url": url,
-                    "error": str(e),
-                    "error_type": "unexpected_error",
-                    "success": False,
-                })
+                results.append(
+                    {
+                        "url": url,
+                        "error": str(e),
+                        "error_type": "unexpected_error",
+                        "success": False,
+                    }
+                )
 
             progress.advance(task)
 
@@ -187,7 +196,7 @@ def cmd_eval(config: Config, dataset_path: str, output_path: str | None = None) 
     return EXIT_SUCCESS
 
 
-def _display_eval_results(results: list[dict], dataset_name: str, model: str) -> None:
+def _display_eval_results(results: list[dict[str, Any]], dataset_name: str, model: str) -> None:
     """Display evaluation results in a formatted table."""
     # Collect aggregate metrics
     tag_precisions: list[float] = []
@@ -282,23 +291,25 @@ def _display_eval_results(results: list[dict], dataset_name: str, model: str) ->
         print_message(f"[red]Failed:[/] {failure_count}")
 
 
-def _save_eval_results(results: list[dict], dataset_name: str, output_path: str) -> None:
+def _save_eval_results(results: list[dict[str, Any]], dataset_name: str, output_path: str) -> None:
     """Save evaluation results to a YAML file."""
-    import yaml
     from datetime import datetime
 
+    import yaml
+
     # Convert MetricResult objects to dictionaries
-    output_data = {
+    output_results: list[dict[str, Any]] = []
+    output_data: dict[str, Any] = {
         "dataset_name": dataset_name,
         "evaluation_date": datetime.now().isoformat(),
         "total_examples": len(results),
         "successful": sum(1 for r in results if r["success"]),
         "failed": sum(1 for r in results if not r["success"]),
-        "results": [],
+        "results": output_results,
     }
 
     for result in results:
-        result_entry = {
+        result_entry: dict[str, Any] = {
             "url": result["url"],
             "success": result["success"],
         }
@@ -319,7 +330,7 @@ def _save_eval_results(results: list[dict], dataset_name: str, output_path: str)
             result_entry["error"] = result.get("error", "Unknown error")
             result_entry["error_type"] = result.get("error_type", "unknown")
 
-        output_data["results"].append(result_entry)
+        output_results.append(result_entry)
 
     # Calculate aggregates
     successful_results = [r for r in results if r["success"]]
@@ -327,16 +338,20 @@ def _save_eval_results(results: list[dict], dataset_name: str, output_path: str)
         output_data["aggregates"] = {
             "avg_tag_precision": sum(
                 r["metrics"]["tag_accuracy"].scores["precision"] for r in successful_results
-            ) / len(successful_results),
+            )
+            / len(successful_results),
             "avg_tag_recall": sum(
                 r["metrics"]["tag_accuracy"].scores["recall"] for r in successful_results
-            ) / len(successful_results),
+            )
+            / len(successful_results),
             "avg_tag_f1": sum(
                 r["metrics"]["tag_accuracy"].scores["f1_score"] for r in successful_results
-            ) / len(successful_results),
+            )
+            / len(successful_results),
             "avg_content_type_accuracy": sum(
                 r["metrics"]["content_type_accuracy"].scores["accuracy"] for r in successful_results
-            ) / len(successful_results),
+            )
+            / len(successful_results),
         }
 
     # Write to file

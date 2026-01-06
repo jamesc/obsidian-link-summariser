@@ -84,8 +84,8 @@ class TagAccuracyMetric:
                 name="tag_accuracy",
                 scores={
                     "precision": 1.0,  # Assume all suggested tags are valid
-                    "recall": 0.0,     # Can't compute recall without expected
-                    "f1_score": 0.0,   # Can't compute F1 without expected
+                    "recall": 0.0,  # Can't compute recall without expected
+                    "f1_score": 0.0,  # Can't compute F1 without expected
                 },
                 details={
                     "suggested_tags": suggested_tags,

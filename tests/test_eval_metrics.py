@@ -194,7 +194,8 @@ class TestTagAccuracyMetric:
         assert "true_positives" in result.details
         assert "ai" in result.details["true_positives"]
         assert "false_positives" in result.details
-        assert "ml" in result.details["false_positives"] or "web" in result.details["false_positives"]
+        false_pos = result.details["false_positives"]
+        assert "ml" in false_pos or "web" in false_pos
         assert "false_negatives" in result.details
         assert "python" in result.details["false_negatives"]
 

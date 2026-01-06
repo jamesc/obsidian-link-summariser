@@ -1,9 +1,9 @@
 # Langfuse Integration - Implementation Status
 
-**Date**: 2025-01-06 (Updated)
-**Status**: ✅ Phase 1 Complete | ✅ Phase 2 Complete (REQUIRED) | 📋 Phase 3 Optional
-**Current**: Langfuse prompts and tracing REQUIRED for all operations (no fallback)
-**Next**: Phase 3 Evaluation Framework (Optional)
+**Date**: 2026-01-06 (Updated)
+**Status**: ✅ Phase 1 Complete | ✅ Phase 2 Complete (REQUIRED) | ✅ Phase 3 Complete
+**Current**: Full Langfuse integration with evaluation framework
+**Completed**: All phases implemented
 
 ---
 
@@ -152,18 +152,56 @@ prompt_metadata = {
 
 ---
 
-### 📋 Phase 3: Evaluation Framework (OPTIONAL)
+### ✅ Phase 3: Evaluation Framework (COMPLETE)
 
 **Goal:** Automated quality assessment and model comparison
 
-**Features to Implement:**
-- YAML-based evaluation datasets with expected outputs
-- Automated metrics: tag accuracy, content type accuracy
-- LLM-as-judge for summary quality evaluation
-- Eval CLI command: `summarize-links eval --dataset file.yaml`
-- Results sync to Langfuse as scores
+**Status**: ✅ **Implemented**
 
-**Estimated Time:** 6-8 hours
+**What Was Implemented:**
+- ✅ YAML-based evaluation datasets (`summarize_links/eval_datasets.py`)
+- ✅ Automated metrics: tag accuracy (precision, recall, F1), content type accuracy
+- ✅ Eval CLI command: `summarize-links eval <dataset.yaml>`
+- ✅ Results output to console with summary tables
+- ✅ Optional YAML results export with `--output`
+- ✅ Score syncing to Langfuse traces
+- ✅ Sample evaluation dataset (`eval_datasets/sample.yaml`)
+
+**Modules Created:**
+- `summarize_links/eval_datasets.py` - Dataset loading/saving
+- `summarize_links/eval_metrics.py` - Metric calculations
+- `summarize_links/commands/eval.py` - CLI command handler
+
+**Usage:**
+```bash
+# Run evaluation on a dataset
+summarize-links eval eval_datasets/sample.yaml
+
+# Save results to file
+summarize-links eval eval_datasets/sample.yaml --output results.yaml
+
+# Use a different model
+summarize-links eval eval_datasets/sample.yaml --model llama3:latest
+
+# Use mock mode for testing
+summarize-links eval eval_datasets/sample.yaml --mock
+```
+
+**Dataset Format:**
+```yaml
+name: "My Dataset"
+description: "Test dataset for evaluation"
+examples:
+  - url: "https://example.com/article"
+    expected_tags: ["ai", "tutorial"]
+    expected_content_type: "tutorial"
+```
+
+**Metrics Calculated:**
+- **Tag Precision**: Fraction of suggested tags in expected tags
+- **Tag Recall**: Fraction of expected tags that were suggested
+- **Tag F1 Score**: Harmonic mean of precision and recall
+- **Content Type Accuracy**: Binary match of content type classification
 
 ---
 

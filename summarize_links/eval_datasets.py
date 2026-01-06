@@ -7,6 +7,7 @@ and can be used to systematically evaluate summarization quality.
 """
 
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -106,7 +107,9 @@ class EvalDataset:
                 raise ConfigError(f"Invalid eval dataset format: {path} (missing 'examples' key)")
 
             if not isinstance(data["examples"], list):
-                raise ConfigError(f"Invalid eval dataset format: {path} ('examples' must be a list)")
+                raise ConfigError(
+                    f"Invalid eval dataset format: {path} ('examples' must be a list)"
+                )
 
             examples = []
             for i, ex in enumerate(data["examples"]):
@@ -132,7 +135,12 @@ class EvalDataset:
                 examples=examples,
             )
 
-            logger.info("Loaded eval dataset '%s' with %d examples from %s", dataset.name, len(examples), path)
+            logger.info(
+                "Loaded eval dataset '%s' with %d examples from %s",
+                dataset.name,
+                len(examples),
+                path,
+            )
             return dataset
 
         except yaml.YAMLError as e:
@@ -165,7 +173,7 @@ class EvalDataset:
         """Return number of examples in dataset."""
         return len(self.examples)
 
-    def __iter__(self):
+    def __iter__(self) -> "Iterator[EvalExample]":
         """Iterate over examples."""
         return iter(self.examples)
 

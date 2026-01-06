@@ -279,7 +279,7 @@ examples:
         assert loaded.description == original.description
         assert len(loaded) == len(original)
 
-        for orig_ex, load_ex in zip(original.examples, loaded.examples):
+        for orig_ex, load_ex in zip(original.examples, loaded.examples, strict=True):
             assert load_ex.url == orig_ex.url
             assert load_ex.title == orig_ex.title
             assert load_ex.expected_tags == orig_ex.expected_tags
