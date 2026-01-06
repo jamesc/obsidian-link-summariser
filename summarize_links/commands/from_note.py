@@ -96,7 +96,7 @@ def cmd_from_note_all(config: Config) -> int:
     """
     Process URLs from all daily notes that contain URLs.
 
-    Iterates through all daily notes with URLs (oldest first) and processes
+    Iterates through all daily notes with URLs (newest first) and processes
     each one in sequence, respecting the max_links limit across all notes.
 
     Args:
@@ -120,8 +120,8 @@ def cmd_from_note_all(config: Config) -> int:
         print_message("[yellow]No daily notes with URLs found.[/]")
         return EXIT_SUCCESS
 
-    # Reverse to process oldest first (chronological order)
-    notes_with_urls = list(reversed(notes_with_urls))
+    # Notes are returned newest first - process most recent first
+    # (no reversal needed)
 
     total_urls = sum(count for _, count in notes_with_urls)
     print_message(

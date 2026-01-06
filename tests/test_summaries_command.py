@@ -491,7 +491,7 @@ Summary with invalid summary_date.
 
 
 def test_scan_summaries_for_resummarize_sorting_by_original_date(tmp_path: Path) -> None:
-    """Test proper sorting by original date (oldest first)."""
+    """Test proper sorting by original date (newest first)."""
     vault = tmp_path / "vault"
     summaries = vault / "Summaries"
     summaries.mkdir(parents=True)
@@ -529,14 +529,14 @@ summary_status: success
 
     results = scan_summaries_for_resummarize(vault, "Summaries")
 
-    # Should be sorted by original date (oldest first)
+    # Should be sorted by original date (newest first)
     assert len(results) == 3
-    assert results[0][0] == "https://example.com/oldest"
-    assert results[0][1] == datetime(2024, 1, 1)
+    assert results[0][0] == "https://example.com/newest"
+    assert results[0][1] == datetime(2024, 12, 31)
     assert results[1][0] == "https://example.com/middle"
     assert results[1][1] == datetime(2024, 6, 15)
-    assert results[2][0] == "https://example.com/newest"
-    assert results[2][1] == datetime(2024, 12, 31)
+    assert results[2][0] == "https://example.com/oldest"
+    assert results[2][1] == datetime(2024, 1, 1)
 
 
 def test_scan_summaries_for_resummarize_skips_summaries_without_source(tmp_path: Path) -> None:

@@ -335,8 +335,8 @@ class TestCmdFromNoteAll:
         mock_process: MagicMock,
         mock_vault: Path,
     ) -> None:
-        """Should process all notes in chronological order."""
-        # Returns newest first, function should process oldest first
+        """Should process all notes with newest first."""
+        # Returns newest first, function should process newest first
         mock_find.return_value = [
             ("2025-12-16", 2),
             ("2025-12-15", 1),
@@ -354,9 +354,9 @@ class TestCmdFromNoteAll:
 
         assert result == EXIT_SUCCESS
         assert mock_process.call_count == 2
-        # First call should be for oldest date (2025-12-15)
+        # First call should be for newest date (2025-12-16)
         first_call = mock_process.call_args_list[0]
-        assert first_call[1]["daily_note_filename"] == "2025-12-15.md"
+        assert first_call[1]["daily_note_filename"] == "2025-12-16.md"
 
     @patch("summarize_links.commands.from_note.process_urls_batch")
     @patch("summarize_links.commands.from_note.extract_urls_with_context")

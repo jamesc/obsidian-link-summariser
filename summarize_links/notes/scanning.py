@@ -164,7 +164,7 @@ def scan_summaries_for_resummarize(
         List of tuples (source_url, original_date, summary_date, source_note) for
         summaries to reprocess. For summaries without summary_date, the original date
         is used as summary_date. source_note is the 'from' field value (without
-        brackets), or None if not present. Sorted by original date (oldest first).
+        brackets), or None if not present. Sorted by original date (newest first).
     """
     summaries_path = vault_path / out_folder
 
@@ -240,8 +240,8 @@ def scan_summaries_for_resummarize(
             logger.warning(f"Failed to read summary {filepath}: {e}")
             continue
 
-    # Sort by original date (oldest first) to maintain chronological order
-    results.sort(key=lambda x: x[1])
+    # Sort by original date (newest first) to prioritize recent content
+    results.sort(key=lambda x: x[1], reverse=True)
 
     logger.info(f"Found {len(results)} summaries for resummarization")
     return results

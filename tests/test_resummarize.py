@@ -279,10 +279,10 @@ summary_status: success
         results = scan_summaries_for_resummarize(vault, "Summaries")
 
         assert len(results) == 3
-        # Check chronological order (oldest first)
-        assert results[0][1] == datetime(2024, 1, 1)
+        # Check order (newest first)
+        assert results[0][1] == datetime(2024, 3, 15)
         assert results[1][1] == datetime(2024, 2, 10)
-        assert results[2][1] == datetime(2024, 3, 15)
+        assert results[2][1] == datetime(2024, 1, 1)
 
     def test_mixed_statuses(self, tmp_path: Path) -> None:
         """Test filtering with mixed summary statuses."""
@@ -337,8 +337,8 @@ summary_status: success
         results = scan_summaries_for_resummarize(vault, "Summaries")
 
         assert len(results) == 2
-        assert results[0][0] == "https://example1.com"
-        assert results[1][0] == "https://example4.com"
+        assert results[0][0] == "https://example4.com"  # 2024-01-04 (newest)
+        assert results[1][0] == "https://example1.com"  # 2024-01-01 (oldest)
 
     def test_missing_source_url_skips_file(self, tmp_path: Path) -> None:
         """Test that files without source URL are skipped."""
