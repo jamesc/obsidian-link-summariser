@@ -2,7 +2,7 @@
 Langfuse integration for tracing and evaluation.
 
 Provides a context manager for tracing LLM operations and pipeline stages.
-Gracefully degrades if Langfuse is not configured.
+Langfuse is REQUIRED - the application will not run without valid credentials.
 
 ## Data Capture Best Practices
 
@@ -55,37 +55,80 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
+class MockLangfuseTracer:
+    """No-op tracer for mock mode."""
+
+    @contextmanager
+    def trace_url_processing(
+        self,
+        url: str,
+        name: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Generator[None, None, None]:
+        """No-op trace - yields None."""
+        yield None
+
+    @contextmanager
+    def trace_span(
+        self,
+        name: str,
+        input_data: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Generator[None, None, None]:
+        """No-op span - yields None."""
+        yield None
+
+    @contextmanager
+    def trace_generation(
+        self,
+        name: str,
+        input_data: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+        model: str | None = None,
+    ) -> Generator[None, None, None]:
+        """No-op generation - yields None."""
+        yield None
+
+    def score_trace(
+        self,
+        trace_id: str,
+        name: str,
+        value: float,
+        comment: str | None = None,
+    ) -> None:
+        """No-op score."""
+        pass
+
+    def flush(self) -> None:
+        """No-op flush."""
+        pass
+
+
 class LangfuseTracer:
     """
-    Wrapper for Langfuse tracing with graceful degradation.
+    Wrapper for Langfuse tracing (REQUIRED).
 
-    If Langfuse is not configured or unavailable, all operations
-    become no-ops, allowing the application to function normally.
+    All operations require valid Langfuse credentials.
+    The application will fail to start if Langfuse is not properly configured.
     """
 
     def __init__(
         self,
-        public_key: str | None = None,
-        secret_key: str | None = None,
+        public_key: str,
+        secret_key: str,
         base_url: str | None = None,
-        enabled: bool = True,
     ) -> None:
         """
         Initialize Langfuse tracer.
 
         Args:
-            public_key: Langfuse public API key (required if enabled).
-            secret_key: Langfuse secret API key (required if enabled).
+            public_key: Langfuse public API key (required).
+            secret_key: Langfuse secret API key (required).
             base_url: Langfuse server URL.
-            enabled: Whether tracing is enabled.
+
+        Raises:
+            RuntimeError: If Langfuse initialization or authentication fails.
         """
-        self._enabled = enabled and public_key is not None and secret_key is not None
-        self._client: Any = None
-
-        if not self._enabled:
-            logger.debug("Langfuse tracing disabled")
-            return
-
         try:
             # Initialize Langfuse client directly with parameters
             # This avoids modifying global environment variables
@@ -96,19 +139,12 @@ class LangfuseTracer:
             )
 
             # Verify authentication
-            if self._client.auth_check():
-                logger.info(f"Langfuse tracing enabled (host: {base_url})")
-            else:
-                logger.warning("Langfuse authentication failed")
-                self._enabled = False
-        except Exception as e:
-            logger.warning(f"Failed to initialize Langfuse: {e}")
-            self._enabled = False
+            if not self._client.auth_check():
+                raise RuntimeError("Langfuse authentication failed - check your credentials")
 
-    @property
-    def enabled(self) -> bool:
-        """Whether tracing is enabled and available."""
-        return self._enabled
+            logger.info(f"Langfuse tracing enabled (host: {base_url})")
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize Langfuse (required): {e}") from e
 
     @contextmanager
     def trace_url_processing(
@@ -126,12 +162,8 @@ class LangfuseTracer:
             metadata: Additional metadata to attach to trace.
 
         Yields:
-            Trace object (or None if tracing disabled).
+            Trace object.
         """
-        if not self.enabled or not self._client:
-            yield None
-            return
-
         trace_metadata = {
             "source_url": url,
             "timestamp": datetime.now().isoformat(),
@@ -155,8 +187,7 @@ class LangfuseTracer:
         finally:
             # Flush to ensure trace is sent (even if exception occurred)
             try:
-                if self._client:
-                    self._client.flush()
+                self._client.flush()
             except Exception as flush_error:
                 logger.debug(f"Failed to flush Langfuse client: {flush_error}")
 
@@ -179,12 +210,8 @@ class LangfuseTracer:
             metadata: Additional metadata.
 
         Yields:
-            Span object (or None if tracing disabled).
+            Span object.
         """
-        if not self.enabled or not self._client:
-            yield None
-            return
-
         try:
             # Use the new OpenTelemetry-based API
             with self._client.start_as_current_observation(
@@ -229,13 +256,9 @@ class LangfuseTracer:
             model: Model name used for generation.
 
         Yields:
-            Generation object (or None if tracing disabled).
+            Generation object.
             Call generation.update(output=..., usage_details=...) to capture results.
         """
-        if not self.enabled or not self._client:
-            yield None
-            return
-
         try:
             # Use the new OpenTelemetry-based API
             generation_metadata = {**(metadata or {})}
@@ -257,7 +280,7 @@ class LangfuseTracer:
 
     def score_trace(
         self,
-        trace_id: str | None,
+        trace_id: str,
         name: str,
         value: float,
         comment: str | None = None,
@@ -266,17 +289,14 @@ class LangfuseTracer:
         Add a score to a trace (used in evaluation).
 
         Args:
-            trace_id: The trace ID to score (None if tracing disabled).
+            trace_id: The trace ID to score.
             name: Score name (e.g., "relevance", "tag_accuracy").
             value: Numeric score (typically 0.0-1.0).
             comment: Optional text comment.
         """
-        if not self.enabled or not self._client or trace_id is None:
-            return
-
         try:
             # Use the scoring API (this remains the same in the new SDK)
-            self._client.score(
+            self._client.score(  # type: ignore[attr-defined]
                 trace_id=trace_id,
                 name=name,
                 value=value,
@@ -287,15 +307,14 @@ class LangfuseTracer:
 
     def flush(self) -> None:
         """Flush any pending traces to Langfuse."""
-        if self.enabled and self._client:
-            try:
-                self._client.flush()
-            except Exception as e:
-                logger.warning(f"Failed to flush Langfuse client: {e}")
+        try:
+            self._client.flush()
+        except Exception as e:
+            logger.warning(f"Failed to flush Langfuse client: {e}")
 
 
 # Global tracer instance (initialized in CLI)
-_global_tracer: LangfuseTracer | None = None
+_global_tracer: LangfuseTracer | MockLangfuseTracer | None = None
 
 
 def initialize_tracer(config: Any) -> LangfuseTracer:
@@ -307,6 +326,9 @@ def initialize_tracer(config: Any) -> LangfuseTracer:
 
     Returns:
         Initialized tracer instance.
+
+    Raises:
+        RuntimeError: If tracer initialization fails.
     """
     global _global_tracer
 
@@ -314,21 +336,20 @@ def initialize_tracer(config: Any) -> LangfuseTracer:
         public_key=config.langfuse_public_key,
         secret_key=config.langfuse_secret_key,
         base_url=config.langfuse_base_url,
-        enabled=config.langfuse_enabled,
     )
 
     return _global_tracer
 
 
-def get_tracer() -> LangfuseTracer:
+def get_tracer() -> LangfuseTracer | MockLangfuseTracer:
     """
     Get the global tracer instance.
 
     Returns:
-        Global tracer (or a disabled tracer if not initialized).
+        Global tracer (real or mock).
     """
     if _global_tracer is None:
-        # Return a disabled tracer as fallback
-        return LangfuseTracer(enabled=False)
+        # Return a mock tracer as fallback (for tests or mock mode)
+        return MockLangfuseTracer()
 
     return _global_tracer

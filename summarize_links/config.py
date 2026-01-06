@@ -199,9 +199,8 @@ class Config:
         tpm_limit: Gemini API tokens per minute limit (legacy, per-model preferred)
         daily_limit: Gemini API requests per day limit (legacy, per-model preferred)
         model_limits: Per-model rate limit configuration from YAML
-        langfuse_enabled: If True, enable Langfuse tracing
-        langfuse_public_key: Langfuse public API key
-        langfuse_secret_key: Langfuse secret API key
+        langfuse_public_key: Langfuse public API key (required)
+        langfuse_secret_key: Langfuse secret API key (required)
         langfuse_base_url: Langfuse server URL
     """
 
@@ -222,7 +221,6 @@ class Config:
     tpm_limit: int = GEMINI_TPM_LIMIT
     daily_limit: int = GEMINI_DAILY_LIMIT
     model_limits: dict[str, dict[str, int]] | None = None
-    langfuse_enabled: bool = False
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_base_url: str = "https://cloud.langfuse.com"
@@ -259,6 +257,13 @@ class Config:
         # Max links must be positive
         if self.max_links < 1:
             raise ConfigError(f"max_links must be at least 1, got {self.max_links}")
+
+        # Langfuse credentials are required (not in mock mode)
+        if not self.mock_mode and (not self.langfuse_public_key or not self.langfuse_secret_key):
+            raise ConfigError(
+                "Langfuse credentials are required. Set LANGFUSE_PUBLIC_KEY and "
+                "LANGFUSE_SECRET_KEY environment variables or configure in YAML."
+            )
 
         logger.debug("Configuration validated successfully (provider: %s)", provider)
 
@@ -430,13 +435,11 @@ def load_config(
     elif "daily_limit" in yaml_config:
         config.daily_limit = int(yaml_config["daily_limit"])
 
-    # Langfuse configuration (env vars > YAML > defaults)
+    # Langfuse configuration (env vars > YAML > defaults) - REQUIRED
     if os.getenv("LANGFUSE_PUBLIC_KEY"):
         config.langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "")
-        config.langfuse_enabled = True  # Auto-enable if keys provided
     elif yaml_config.get("langfuse", {}).get("public_key"):
         config.langfuse_public_key = yaml_config["langfuse"]["public_key"]
-        config.langfuse_enabled = True
 
     if os.getenv("LANGFUSE_SECRET_KEY"):
         config.langfuse_secret_key = os.getenv("LANGFUSE_SECRET_KEY", "")
@@ -447,10 +450,6 @@ def load_config(
         config.langfuse_base_url = os.getenv("LANGFUSE_BASE_URL", config.langfuse_base_url)
     elif yaml_config.get("langfuse", {}).get("base_url"):
         config.langfuse_base_url = yaml_config["langfuse"]["base_url"]
-
-    # Check explicit enabled flag in YAML (can disable even if keys present)
-    if "langfuse" in yaml_config and "enabled" in yaml_config["langfuse"]:
-        config.langfuse_enabled = bool(yaml_config["langfuse"]["enabled"])
 
     logger.debug(f"Loaded config: model={config.model}, out_folder={config.out_folder}")
 

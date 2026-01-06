@@ -13,6 +13,7 @@ import logging
 import requests
 
 from summarize_links.exceptions import ModelNotInstalledError, OllamaAPIError, OllamaServerError
+from summarize_links.llm.base import BaseLLMClient
 from summarize_links.models import SummaryResult
 
 __all__ = [
@@ -25,74 +26,6 @@ logger = logging.getLogger(__name__)
 # Default configuration
 DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434"
 DEFAULT_TIMEOUT = 120  # Seconds (local models can be slower)
-
-
-def _build_content_type_list() -> str:
-    """
-    Build the content type list for the system prompt.
-
-    Returns:
-        Formatted string listing all content types with descriptions.
-    """
-    from summarize_links.models import CONTENT_TYPE_DESCRIPTIONS
-
-    lines = []
-    for content_type, description in CONTENT_TYPE_DESCRIPTIONS.items():
-        lines.append(f'- "{content_type}" ({description})')
-    return "\n".join(lines)
-
-
-# System prompt for summarization with structured output (same as Gemini)
-SUMMARY_SYSTEM_PROMPT = f"""You are a summarization assistant. Your task is to create
-concise, informative summaries of web page content for a personal knowledge base.
-
-Guidelines for the summary:
-- Write in clear, direct prose
-- Use Markdown formatting (headers, bullet points, bold/italic as appropriate)
-- Focus on the main ideas and key takeaways
-- Omit advertisements, navigation, and boilerplate content
-- Keep summaries focused and scannable
-- Include relevant quotes if they capture key insights
-- Use a neutral, informative tone
-
-You MUST respond with valid JSON in this exact format:
-{{
-  "summary": "Your markdown-formatted summary here",
-  "suggested_tags": ["tag1", "tag2", "tag3"],
-  "content_type": "article"
-}}
-
-For suggested_tags:
-- Provide 3-5 relevant topic tags
-- Use lowercase, hyphenated format (e.g., "machine-learning", "web-development")
-- Focus on the main topics and technologies discussed
-- Avoid generic tags like "article" or "blog"
-
-For content_type, choose ONE of:
-{_build_content_type_list()}"""
-
-
-def _build_prompt(content: str, url: str, title: str | None = None) -> str:
-    """
-    Build the prompt for the Ollama API.
-
-    Args:
-        content: Web page content to summarize.
-        url: Source URL.
-        title: Optional page title.
-
-    Returns:
-        Formatted prompt string.
-    """
-    title_part = f" titled '{title}'" if title else ""
-    return f"""Summarize the following web page content{title_part}.
-
-Source URL: {url}
-
-Content:
-{content}
-
-Remember to respond with valid JSON containing "summary", "suggested_tags", and "content_type"."""
 
 
 def _parse_ollama_response(response_text: str) -> SummaryResult:
@@ -116,7 +49,7 @@ def _parse_ollama_response(response_text: str) -> SummaryResult:
     return parse_llm_json_response(response_text)
 
 
-class OllamaClient:
+class OllamaClient(BaseLLMClient):
     """
     Client for the Ollama API.
 
@@ -139,6 +72,9 @@ class OllamaClient:
             endpoint: Ollama server endpoint URL.
             timeout: Request timeout in seconds.
         """
+        # Initialize base class with Langfuse support
+        super().__init__(error_class=OllamaAPIError)
+
         self._model = model
         self._endpoint = endpoint.rstrip("/")
         self._timeout = timeout
@@ -146,7 +82,7 @@ class OllamaClient:
         self._model_checked = False
 
         logger.debug(
-            "Initialized OllamaClient with model: %s, endpoint: %s",
+            "Initialized OllamaClient with model: %s, endpoint: %s [Langfuse prompts required]",
             model,
             endpoint,
         )
@@ -256,11 +192,12 @@ class OllamaClient:
         self._check_server()
         self._check_model_installed()
 
-        # Build the prompt
-        prompt = _build_prompt(content, url, title)
+        # Get prompts from Langfuse
+        system_prompt, user_prompt_template = self._get_langfuse_prompts()
+        prompt = self._compile_user_prompt(user_prompt_template, content, url, title)
 
         # Combine system prompt and user prompt
-        full_prompt = f"{SUMMARY_SYSTEM_PROMPT}\n\n{prompt}"
+        full_prompt = f"{system_prompt}\n\n{prompt}"
 
         logger.debug("Sending request to Ollama API")
 
@@ -338,9 +275,30 @@ class OllamaClient:
         self._check_server()
         self._check_model_installed()
 
-        # Build the prompt
-        prompt = _build_prompt(content, url, title)
-        full_prompt = f"{SUMMARY_SYSTEM_PROMPT}\n\n{prompt}"
+        # Fetch prompts from Langfuse (REQUIRED)
+        system_prompt, user_prompt_template = self._get_langfuse_prompts()
+
+        # Build prompt_metadata from cached prompt objects
+        prompt_metadata = None
+        if "system" in self._prompt_cache and "user" in self._prompt_cache:
+            sys_obj = self._prompt_cache["system"]
+            user_obj = self._prompt_cache["user"]
+            prompt_metadata = {
+                "system_prompt_name": "summarize-document/system",
+                "system_prompt_version": getattr(sys_obj, "version", None),
+                "user_prompt_name": "summarize-document/user",
+                "user_prompt_version": getattr(user_obj, "version", None),
+                "source": "langfuse",
+            }
+            logger.debug(
+                "Using Langfuse prompts: system v%s, user v%s",
+                prompt_metadata["system_prompt_version"],
+                prompt_metadata["user_prompt_version"],
+            )
+
+        # Build the user prompt using Langfuse template
+        prompt = self._compile_user_prompt(user_prompt_template, content, url, title)
+        full_prompt = f"{system_prompt}\n\n{prompt}"
 
         logger.debug("Sending request to Ollama API for metadata")
 
@@ -388,9 +346,10 @@ class OllamaClient:
             result.usage_details = usage_details
 
             # Store system prompt, user prompt (combined), and response for tracing
-            result.system_prompt = SUMMARY_SYSTEM_PROMPT
+            result.system_prompt = system_prompt  # Use Langfuse or fallback
             result.raw_prompt = prompt  # Store user prompt separately
             result.raw_response = raw_response
+            result.prompt_metadata = prompt_metadata  # Store Langfuse prompt metadata
 
             logger.info(
                 "Successfully generated summary with metadata (%d chars, %d tags)",
