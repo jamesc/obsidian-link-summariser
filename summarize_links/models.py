@@ -6,6 +6,7 @@ components: URL extraction, web scraping, AI summarization, and note writing.
 """
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from summarize_links.config import DEFAULT_MAX_TAGS
 
@@ -89,6 +90,7 @@ class SummaryResult:
         system_prompt: The system instructions/prompt (for tracing).
         raw_prompt: The raw user prompt sent to the LLM (for tracing).
         raw_response: The raw response from the LLM (for tracing).
+        prompt_metadata: Langfuse prompt info (names, versions) if using managed prompts.
     """
 
     content: str
@@ -98,6 +100,7 @@ class SummaryResult:
     system_prompt: str | None = None
     raw_prompt: str | None = None
     raw_response: str | None = None
+    prompt_metadata: dict[str, Any] | None = None
 
 
 # Valid content types for classification with descriptions

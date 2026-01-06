@@ -1,19 +1,169 @@
-# Langfuse Integration - Completed Implementation
+# Langfuse Integration - Implementation Status
 
-**Date**: 2025-12-29  
-**Status**: ✅ Phase 1 Complete (Core Integration + Token Tracking)  
-**Next**: Phase 2 - Evaluation Framework (Optional)
+**Date**: 2025-01-06 (Updated)
+**Status**: ✅ Phase 1 Complete | ✅ Phase 2 Complete (REQUIRED) | 📋 Phase 3 Optional
+**Current**: Langfuse prompts and tracing REQUIRED for all operations (no fallback)
+**Next**: Phase 3 Evaluation Framework (Optional)
 
 ---
 
-## Overview
+## Implementation Phases
 
-Langfuse integration has been successfully implemented with:
-- ✅ Full tracing of URL processing pipeline (fetch → summarize → write)
-- ✅ Token usage tracking for both Gemini and Ollama models
-- ✅ Graceful degradation (optional, no-op when not configured)
-- ✅ OpenTelemetry-based API (Langfuse SDK v3)
-- ✅ Comprehensive test coverage (496 tests passing)
+### ✅ Phase 1: Core Tracing & Raw Prompt Storage (COMPLETE)
+
+**Core Tracing:**
+- Full pipeline tracing: fetch → summarize (generation) → write
+- OpenTelemetry-based automatic nesting (no manual trace_id passing)
+- Slug-based trace naming for easy Langfuse UI filtering
+- Session grouping via `propagate_attributes()`
+
+**Data Capture:**
+- Raw system prompt, user prompt, and LLM response stored in traces
+- Token usage (input, output, total) from both Gemini and Ollama
+- Comprehensive metadata at each stage (fetch, generation, write)
+- Error tracking in generation observations
+
+**Production Ready:**
+- All operations require valid Langfuse credentials
+- Safe update calls with `contextlib.suppress(Exception)`
+- HTTP logging suppression for clean output
+- Comprehensive test coverage
+
+**Configuration:**
+- Environment variables and YAML config support
+- CLI initialization via `initialize_tracer(config)`
+
+**What's Stored:** Prompts fetched from Langfuse and sent to traces for debugging.
+
+---
+
+### ✅ Phase 2: Langfuse Prompt Management (COMPLETE - REQUIRED)
+
+**Goal:** Centralized Langfuse Prompt Management - REQUIRED for all operations
+
+**Status**: ✅ **Implemented and REQUIRED** - All prompts MUST come from Langfuse
+
+**Breaking Change (2025-01-06):** Langfuse is now REQUIRED as the sole prompt source. **No fallback prompts exist** - if Langfuse is not configured or prompts are unavailable, the application will raise an error and fail.
+
+**What Was Implemented:**
+- ✅ Mandatory prompt fetching from Langfuse UI using `langfuse.get_prompt()` API
+- ✅ Two managed prompts:
+  - `summarize-document/system` - System instructions
+  - `summarize-document/user` - User prompt with variables
+- ✅ Prompt caching to avoid repeated API calls within session
+- ✅ Link prompt versions to generation observations via `prompt_metadata`
+- ✅ Template variable compilation with `{{title}}` → ` titled 'X'` or empty string
+- ✅ Upload script to sync prompts to Langfuse (`scripts/upload_prompts.py`)
+- ✅ Implemented in both Gemini and Ollama clients
+- ✅ Config validation requires Langfuse credentials (except mock mode)
+- ✅ **No fallback** - errors raised if Langfuse prompts unavailable
+
+**Filesystem Prompts (Development Reference Only):**
+- Located in `summarize_links/prompts/` for version control
+- **NOT used at runtime** - only for uploading to Langfuse and git tracking
+- Can be uploaded to Langfuse using `scripts/upload_prompts.py`
+
+```bash
+# Upload filesystem prompts to Langfuse
+uv run python scripts/upload_prompts.py
+```
+
+The script reads `system.txt` and `user.txt`, then creates/updates:
+- `summarize-document/system` in Langfuse
+- `summarize-document/user` in Langfuse
+
+**Benefits Achieved:**
+- ✅ Centralized prompt editing in Langfuse UI (no code changes needed)
+- ✅ Automatic versioning on every prompt change
+- ✅ Hot-swap prompts in production without redeploying
+- ✅ Versioned prompts linked to generation traces
+- ✅ Instant rollback to previous prompt versions
+- ✅ Compare model responses using same prompt version
+- ✅ Version control for filesystem prompts via git
+- ✅ Clear error messages when Langfuse is misconfigured
+
+**Prompt Metadata Tracking:**
+
+The `SummaryResult` now includes `prompt_metadata`:
+
+```python
+@dataclass
+class SummaryResult:
+    content: str
+    suggested_tags: list[str]
+    content_type: ContentType
+    # ... other fields ...
+    prompt_metadata: dict[str, Any] | None = None  # NEW
+```
+
+When Langfuse prompts are used:
+
+```python
+prompt_metadata = {
+    "system_prompt_name": "summarize-document/system",
+    "system_prompt_version": 5,
+    "user_prompt_name": "summarize-document/user",
+    "user_prompt_version": 10,
+    "source": "langfuse"
+}
+```
+
+**Benefits Achieved:**
+- ✅ Centralized prompt editing in Langfuse UI (no code changes needed)
+- ✅ Automatic versioning on every prompt change
+- ✅ Hot-swap prompts in production without redeploying
+- ✅ Versioned prompts linked to generation traces
+- ✅ Instant rollback to previous prompt versions
+- ✅ Compare model responses using same prompt version
+
+**Setup Instructions (REQUIRED):**
+
+1. **Create prompts in Langfuse UI:**
+   - Name: `summarize-document/system`
+   - Content: Copy from `summarize_links/prompts/system.txt` or use `scripts/upload_prompts.py`
+
+   - Name: `summarize-document/user`
+   - Content: Copy from `summarize_links/prompts/user.txt` with variables:
+     ```
+     # Web Page Summary
+
+     Title: {{title}}
+     Source URL: {{url}}
+
+     Content to summarize:
+     {{content}}
+     ```
+
+2. **Configure Langfuse credentials (REQUIRED):**
+   ```bash
+   # .env
+   LANGFUSE_PUBLIC_KEY=pk-lf-xxx
+   LANGFUSE_SECRET_KEY=sk-lf-xxx
+   LANGFUSE_BASE_URL=https://cloud.langfuse.com
+   ```
+
+3. **Application will fail to start without valid Langfuse credentials** (except in mock mode)
+
+4. **Verify setup:**
+   ```bash
+   uv run summarize-links from-note --vault ~/Notes
+   # Logs will show: "Fetched prompts from Langfuse: system vX, user vY"
+   ```
+
+---
+
+### 📋 Phase 3: Evaluation Framework (OPTIONAL)
+
+**Goal:** Automated quality assessment and model comparison
+
+**Features to Implement:**
+- YAML-based evaluation datasets with expected outputs
+- Automated metrics: tag accuracy, content type accuracy
+- LLM-as-judge for summary quality evaluation
+- Eval CLI command: `summarize-links eval --dataset file.yaml`
+- Results sync to Langfuse as scores
+
+**Estimated Time:** 6-8 hours
 
 ---
 
@@ -49,76 +199,306 @@ langfuse:
   # Keys should be in .env for security
 ```
 
+### Raw Prompt Storage (Phase 1 - Current Implementation)
+
+**Status**: ✅ **Implemented** - Prompts stored inline and sent to traces
+
+**What's Done:**
+Both Gemini and Ollama clients store raw prompts and responses in `SummaryResult`:
+
+```python
+# In gemini_client.py and ollama_client.py
+class GeminiClient:
+    def summarize_with_metadata(self, content: str, url: str, title: str | None) -> SummaryResult:
+        # Build prompts
+        system_prompt = SUMMARY_SYSTEM_PROMPT  # Module-level constant
+        user_prompt = _build_prompt(content, url, title)
+
+        # Call API
+        response = client.models.generate_content(
+            model=self._model_name,
+            contents=user_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+            ),
+        )
+
+        raw_response = response.text
+
+        # Parse and return with prompts attached
+        result = parse_llm_json_response(raw_response)
+        result.usage_details = usage_details
+        result.system_prompt = system_prompt      # Store for tracing
+        result.raw_prompt = user_prompt            # Store for tracing
+        result.raw_response = raw_response         # Store for tracing
+
+        return result
+```
+
+**Integration with Langfuse:**
+Prompts and raw responses are sent to Langfuse in processor.py:
+
+```python
+with tracer.trace_generation(name="summarize", model=config.model) as generation:
+    summary_result = client.summarize_with_metadata(...)
+
+    if generation and hasattr(generation, "update"):
+        generation.update(
+            input={
+                "system": summary_result.system_prompt,  # Full system instructions
+                "prompt": summary_result.raw_prompt,     # User prompt with content
+            },
+            output=summary_result.raw_response,  # Raw JSON response from LLM
+            metadata={...},
+            usage_details=summary_result.usage_details,
+        )
+```
+
+**Limitations of Current Approach:**
+- ❌ Prompts are hardcoded in `gemini.py` and `ollama.py`
+- ❌ Changing prompts requires code changes and redeployment
+- ❌ No centralized prompt management
+- ❌ No automatic versioning (must manually track changes)
+- ❌ Cannot A/B test prompts without code changes
+
+**Benefits of Current Approach:**
+- ✅ Simple implementation, no Langfuse prompt API dependency
+- ✅ Complete data capture in traces for debugging
+- ✅ Works offline/without Langfuse configuration
+
+```python
+# In gemini_client.py and ollama_client.py
+class GeminiClient:
+    def __init__(self, ...):
+        # Initialize Langfuse client for prompt fetching
+        self._langfuse_client = Langfuse() if langfuse_enabled else None
+        self._system_prompt_cache = None
+        self._user_prompt_template_cache = None
+
+    def _get_prompts(self):
+        """Fetch Langfuse prompt templates (with caching)."""
+        if not self._langfuse_client:
+            # Fallback to hardcoded prompts if Langfuse not configured
+            return self._get_fallback_prompts()
+
+        if not self._system_prompt_cache:
+            self._system_prompt_cache = self._langfuse_client.get_prompt(
+                "summarize-document/system"
+            )
+        if not self._user_prompt_template_cache:
+            self._user_prompt_template_cache = self._langfuse_client.get_prompt(
+                "summarize-document/user"
+            )
+
+        return self._system_prompt_cache, self._user_prompt_template_cache
+
+    def summarize_with_metadata(self, content: str, url: str, title: str | None):
+        # Get prompts from Langfuse
+        system_prompt, user_prompt_template = self._get_prompts()
+
+        # Compile user prompt with variables
+        compiled_user = user_prompt_template.compile(
+            title=title or "Unknown",
+            url=url,
+            content=content
+        )
+
+        # Use prompts in API call
+        response = self._model.generate_content(
+            [system_prompt.prompt, compiled_user]
+        )
+
+        # Return with prompt info for tracing
+        return SummaryResult(
+            ...,
+            prompt_info={
+                "system_prompt_name": "summarize-document/system",
+                "user_prompt_name": "summarize-document/user",
+                "system_version": system_prompt.version,
+                "user_version": user_prompt_template.version,
+            }
+        )
+```
+
+**Benefits:**
+- **Centralized Management**: Edit prompts in Langfuse UI without code changes
+- **Automatic Versioning**: Every prompt change gets a new version
+- **A/B Testing**: Deploy different prompt versions to different users
+- **Instant Rollback**: Revert to previous prompt version with one click
+- **Cross-Model Consistency**: Same prompts used by Gemini and Ollama
+- **Hot-Swap**: Update prompts in production without redeploying code
+
+**Implementation Tasks:**
+1. Create prompts in Langfuse UI:
+   - `summarize-document/system` with base instructions
+   - `summarize-document/user` with `{{title}}`, `{{url}}`, `{{content}}` variables
+2. Add Langfuse client initialization to LLM clients
+3. Implement `_get_prompts()` method with caching
+4. Add fallback to hardcoded prompts when Langfuse unavailable
+5. Update API calls to use fetched prompts
+6. Link prompt versions to generation observations
+7. Test prompt fetching and compilation
+8. Document prompt management workflow
+
 ### Tracer Module (`summarize_links/langfuse_tracer.py`)
 
-Implemented `LangfuseTracer` class using **OpenTelemetry API**:
+Implemented `LangfuseTracer` class using **OpenTelemetry API** (Langfuse SDK v3):
 
 ```python
 # Key methods using OTel context managers
-def trace_url_processing(url, metadata) -> ContextManager
-def trace_span(trace_id, name, input_data, metadata) -> ContextManager
-def trace_generation(trace_id, name, input_data, metadata, model) -> ContextManager
+def trace_url_processing(url, name, metadata) -> ContextManager[Any]
+    # Creates a trace (top-level observation) using start_as_current_observation
+    # Uses slug as trace name for easy filtering in Langfuse UI
+
+def trace_span(name, input_data, metadata) -> ContextManager[Any]
+    # Creates a span observation within current context
+    # Auto-nests via OpenTelemetry context propagation
+
+def trace_generation(name, input_data, metadata, model) -> ContextManager[Any]
+    # Creates a generation observation for LLM calls
+    # Auto-nests via OpenTelemetry context propagation
+    # Accepts usage_details for token tracking
+
 def score_trace(trace_id, name, value, comment)
+    # Adds evaluation scores to traces
+
 def flush()
+    # Flushes pending traces to Langfuse
 ```
 
 **Features:**
-- ✅ No-op when disabled (graceful degradation)
-- ✅ Context managers for automatic hierarchy
-- ✅ Parent-child relationships via OpenTelemetry
-- ✅ Exception handling and warning logs
-- ✅ Global tracer management
+- ✅ No-op when disabled (graceful degradation via enabled property)
+- ✅ Context managers for automatic nesting (OpenTelemetry-based)
+- ✅ Parent-child relationships via OpenTelemetry context propagation
+- ✅ Exception handling with warning logs (re-raises for proper error handling)
+- ✅ Automatic flushing in trace_url_processing finally block
+- ✅ Global tracer management (initialize_tracer, get_tracer)
+- ✅ Auth check on initialization
+- ✅ Comprehensive docstrings with data capture best practices
 
-**Migration from v2 to v3 API:**
+**OpenTelemetry Context Propagation:**
+The tracer uses `client.start_as_current_observation()` which automatically:
+- Sets the observation as current in OpenTelemetry context
+- Makes subsequent observations children of the current one
+- Requires no manual parent tracking or trace_id passing
+
+### Processor Integration (`summarize_links/processor.py`)
+
+Added comprehensive tracing in `process_url_with_metadata()` function:
+
 ```python
-# Old (doesn't work):
-trace_id = client.trace(name="process-url", input={...})
+# Import tracer and propagate_attributes
+from summarize_links.langfuse_tracer import get_tracer, propagate_attributes
 
-# New (OpenTelemetry-based):
-with client.start_as_current_observation(as_type="span", name="process-url", input={...}) as trace:
-    trace_id = trace.trace_id
-```
+tracer = get_tracer()
 
-### CLI Integration (`summarize_links/cli.py`)
+# Create trace for entire URL processing (slug as trace name)
+with tracer.trace_url_processing(
+    url=url,
+    name=slug,  # Easy filtering in Langfuse UI
+    metadata={
+        "slug": slug,
+        "source_note": daily_note_filename,
+        "user_tags": url_context.tags,
+    },
+) as trace:
+    # Set trace-level attributes for all nested observations
+    with propagate_attributes(
+        session_id=daily_note_filename or "direct-url",
+        tags=[
+            "production" if not config.mock_mode else "mock",
+            config.model.split(":")[0],
+        ],
+        metadata={
+            "vault": str(config.vault_path),
+            "provider": "gemini" if config.model.startswith("gemini") else "ollama",
+        },
+    ):
+        # Fetch span
+        with tracer.trace_span(name="fetch", input_data={"url": url}) as fetch_span:
+            page_metadata = fetch_and_extract_metadata(url)
 
-Added comprehensive tracing in `_process_url_with_metadata()`:
+            # Update with extracted metadata
+            if fetch_span and hasattr(fetch_span, "update"):
+                fetch_span.update(
+                    output={"title": ..., "content_length": ..., ...},
+                    metadata={"author": ..., "published_date": ..., ...},
+                )
 
-```python
-# Create trace for entire URL processing
-with tracer.trace_url_processing(url, metadata={...}) as trace:
-    trace_id = trace.trace_id if trace else None
-    
-    # Fetch span
-    with tracer.trace_span(trace_id, "fetch", ...):
-        content, meta = fetch_and_extract_metadata(url)
-    
-    # Summarize span (generation observation)
-    with tracer.trace_generation(trace_id, "summarize", model=config.model):
-        summary = client.summarize_with_metadata(...)
-        
-        # Update generation with output and usage
-        if generation and hasattr(generation, "update"):
-            generation.update(
-                output={
-                    "summary_length": len(summary.content),
-                    "tags": summary.suggested_tags,
-                    "content_type": summary.content_type,
-                },
-                usage_details=summary.usage_details,
+        # Generate summary with generation observation
+        with tracer.trace_generation(name="summarize", model=config.model) as generation:
+            summary_result = client.summarize_with_metadata(...)
+
+            # Update with raw LLM input/output and usage
+            if generation and hasattr(generation, "update"):
+                generation.update(
+                    input={
+                        "system": summary_result.system_prompt,  # Full system prompt
+                        "prompt": summary_result.raw_prompt,     # User prompt
+                    },
+                    output=summary_result.raw_response,  # Raw LLM response (JSON)
+                    metadata={
+                        "url": url,
+                        "parsed_tags": summary_result.suggested_tags,
+                        "parsed_content_type": summary_result.content_type,
+                        ...
+                    },
+                    usage_details=summary_result.usage_details,
+                )
+
+        # Write span
+        with tracer.trace_span(name="write", input_data={...}) as write_span:
+            summary_path = write_summary_note_with_metadata(...)
+
+            # Update with write metadata
+            if write_span and hasattr(write_span, "update"):
+                write_span.update(
+                    output={"filepath": ..., "overwritten": ..., ...},
+                    metadata={"final_tags": ..., "content_type": ..., ...},
+                )
+
+        # Update trace with final summary
+        if trace and hasattr(trace, "update"):
+            trace.update(
+                input=url,
+                output=summary_result.content,
+                metadata={"success": True, "slug": slug, ...},
             )
-    
-    # Write span
-    with tracer.trace_span(trace_id, "write", ...):
-        write_summary_note_with_metadata(...)
 ```
+
+**Key Features:**
+- ✅ Uses slug as trace name for easy Langfuse UI filtering
+- ✅ **propagate_attributes()** sets session_id, tags, and metadata for all nested observations
+- ✅ **System and user prompts** stored in generation input
+- ✅ **Raw LLM response** stored in generation output (for LLM-as-judge evaluation)
+- ✅ **Parsed results** (tags, content_type) stored in generation metadata
+- ✅ **Token usage** tracked via usage_details
+- ✅ **Error tracking** in generation observations with level="ERROR"
+- ✅ **contextlib.suppress(Exception)** for safe update calls
+- ✅ **Comprehensive metadata** at each stage (fetch, generation, write)
 
 **Trace hierarchy:**
 ```
-trace: process_url
+trace: {slug} (e.g., "google-gemini-api-docs")
   ├─ span: fetch
-  ├─ generation: summarize (with token usage)
+  │  └─ output: {title, content_length, has_author, ...}
+  ├─ generation: summarize
+  │  ├─ input: {system: "...", prompt: "..."}
+  │  ├─ output: "{\"summary\": ..., \"tags\": ..., ...}"
+  │  ├─ metadata: {parsed_tags, parsed_content_type, ...}
+  │  └─ usage_details: {input, output, total}
   └─ span: write
+     └─ output: {filepath, overwritten, final_tag_count, ...}
 ```
+
+### Prompt Storage and Versioning
+
+**Current Implementation (Phase 1):** ✅ Raw prompts stored in SummaryResult
+
+Both Gemini and Ollama clients store system prompt, user prompt, and raw response in `SummaryResult`, which are then sent to Langfuse generation observations. See "Prompt Storage Implementation" section above for details.
+
+**Future Enhancement (Optional):** Langfuse Prompt Management API
+For centralized prompt management, we could migrate to use `langfuse.get_prompt()` to fetch prompts from the Langfuse UI with automatic versioning. This would enable hot-swapping prompts without code changes and A/B testing. However, the current approach of storing raw prompts in traces is sufficient for debugging and evaluation.
 
 ### Token Usage Tracking
 
@@ -129,7 +509,10 @@ class SummaryResult:
     content: str
     suggested_tags: list[str]
     content_type: str
-    usage_details: dict[str, int] | None = None  # NEW
+    usage_details: dict[str, int] | None = None  # Token usage
+    system_prompt: str | None = None              # System instruction
+    raw_prompt: str | None = None                 # User prompt
+    raw_response: str | None = None               # Raw LLM response
 ```
 
 #### Gemini Client (`summarize_links/gemini_client.py`)
@@ -310,38 +693,145 @@ INFO: Trace flushed to Langfuse
 
 ---
 
-## Implementation Commits
+## Implementation Summary
 
-1. `feat: Add Phase 1 Langfuse integration (Core Integration)` (9733a6c)
-   - Initial configuration and tracer module
-   - Decorator-based approach (later replaced)
+**Phase 1: Core Integration** - ✅ **COMPLETE**
+Phase 1 Implementation Summary
 
-2. `fix: migrate Langfuse tracer to OpenTelemetry API` (a9a5556)
-   - Complete rewrite to use `start_as_current_observation()`
-   - Implemented actual trace/span creation in CLI
-   - Removed deprecated decorator approach
+**Status:** ✅ **COMPLETE** (Core Tracing + Raw Prompt Storage)
+1. **Tracer Module** (`langfuse_tracer.py`)
+   - OpenTelemetry-based API using `start_as_current_observation()`
+   - Context managers: `trace_url_processing`, `trace_span`, `trace_generation`
+   - Graceful degradation when not configured
+   - Global tracer management: `initialize_tracer()`, `get_tracer()`
+   - `propagate_attributes()` for setting trace-level metadata
 
-3. `feat: Add token usage tracking to Langfuse integration` (0a260cd)
-   - Added usage_details to SummaryResult
-   - Modified GeminiClient to extract tokens
-   - Updated CLI to send usage to Langfuse
+2. **Processor Integration** (`processor.py`)
+   - Full pipeline tracing in `process_url_with_metadata()`
+   - Trace hierarchy: trace → fetch span → generation → write span
+   - Slug-based trace naming for easy filtering
+   - Error tracking in generation observations
+   - Safe update calls with `contextlib.suppress(Exception)`
 
-4. `feat: Add token usage tracking for Ollama models` (e5e70ae)
-   - Modified OllamaClient to extract tokens
-   - Consistent format across providers
+3. **LLM Client Integration** (`gemini.py`, `ollama.py`)
+   - System prompt, user prompt, and raw response storage in `SummaryResult`
+   - Token usage extraction from API responses
+   - Consistent interface across providers
 
-5. `docs: Document Phase 1.5 Langfuse integration` (f4f57bd)
-   - Updated tasks.md with implementation details
+4. **Data Models** (`models.py`)
+   - Added `usage_details: dict[str, int] | None` to `SummaryResult`
+   - Added `system_prompt: str | None` to `SummaryResult`
+   - Added `raw_prompt: str | None` to `SummaryResult`
+   - Added `raw_response: str | None` to `SummaryResult`
 
-6. `docs: Add Ollama token usage tracking to tasks.md` (41514a8)
-   - Documented Ollama-specific token tracking
+5. **Configuration** (`config.py`)
+   - `langfuse_enabled`, `langfuse_public_key`, `langfuse_secret_key`, `langfuse_base_url`
+   - HTTP logging suppression for cleaner output
+   - CLI initialization in `cli.py`: `initialize_tracer(config)`
 
+6. **Testing** (`test_langfuse_tracer.py`)
+   - 20 tests covering disabled mode, context managers, metadata
+   - Integration tested with 496 total tests passing
+
+### Implementation Approach:
+
+**commit history available in git log** - Key commits include:
+- Initial Langfuse integration with configuration
+- Migration to OpenTelemetry API
+- Token usage tracking for both Gemini and Ollama
+- Prompt and response storage in SummaryResult
+- Processor integration with comprehensive metadata
+- Error tracking and safe update patterns
+
+---
+
+## Phase 1.5: Prompt Storage (Next Step)
 ---
 
 ## Phase 2: Evaluation Framework (Future)
 
 **Status:** Not yet implemented (optional enhancement)
+Langfuse Prompt Management (Next Step)
 
+**Status:** 📋 Not yet implemented (optional enhancement after Phase 2t
+**Estimated Time:** 2-3 hours
+**Priority:** High (enables prompt iteration without code changes)
+
+### Goals
+
+Migrate from hardcoded prompts to **Langfuse Prompt Management** for centralized prompt control.
+
+### Implementation Tasks
+
+#### 1. Create Prompts in Langfuse UI
+- [ ] Navigate to Langfuse dashboard → "Prompts" section
+- [ ] Create `summarize-document/system` prompt
+  - Type: Text prompt
+  - Content: Current `SUMMARY_SYSTEM_PROMPT` from `gemini.py`
+  - Publish as v1
+- [ ] Create `summarize-document/user` prompt
+  - Type: Text prompt with variables
+  - Variables: `{{title}}`, `{{url}}`, `{{content}}`
+  - Content: Current `_build_prompt()` template
+  - Publish as v1
+
+#### 2. Update LLM Clients (Gemini & Ollama)
+- [ ] Add Langfuse client initialization to `__init__`
+  ```python
+  self._langfuse_client = Langfuse() if langfuse_enabled else None
+  self._prompt_cache = {}
+  ```
+- [ ] Implement `_get_langfuse_prompts()` method with caching
+  - Fetch `summarize-document/system` and `summarize-document/user`
+  - Cache to avoid repeated API calls
+  - Fall back to hardcoded prompts on error
+- [ ] Update `summarize_with_metadata()` to use fetched prompts
+  - Fetch prompts via `_get_langfuse_prompts()`
+  - Compile user prompt with variables: `.compile(title=..., url=..., content=...)`
+  - Use compiled prompts in API calls
+  - Store prompt names and versions in result
+
+#### 3. Update Data Models
+- [ ] Add `prompt_metadata` field to `SummaryResult`:
+  ```python
+  prompt_metadata: dict[str, Any] | None = None  # Langfuse prompt info
+  ```
+  - Store: `system_prompt_name`, `user_prompt_name`, versions
+
+#### 4. Update Processor Integration
+- [ ] Modify `processor.py` generation observation update
+- [ ] Add prompt metadata to generation observation
+- [ ] Link prompt objects to observations (if supported by SDK)
+
+#### 5. Testing
+- [ ] Test prompt fetching from Langfuse
+- [ ] Test prompt compilation with variables
+- [ ] Test fallback when Langfuse unavailable or prompts don't exist
+- [ ] Test caching (verify no repeated API calls)
+- [ ] Verify prompt versions appear in Langfuse traces
+
+#### 6. Documentation
+- [ ] Update README with prompt management instructions
+- [ ] Document how to create/edit prompts in Langfuse UI
+- [ ] Document prompt versioning workflow
+- [ ] Add troubleshooting section for prompt fetching
+
+### Implementation Example
+
+See detailed code examples in the "Future Enhancement: Langfuse Prompt Management" section below.
+
+### Verification Checklist
+
+After implementation:
+- [ ] Prompts exist in Langfuse UI with v1 published
+- [ ] Processing a URL creates trace with linked prompt versions
+- [ ] Editing prompt in Langfuse UI changes behavior (after cache clear)
+- [ ] Fallback works when Langfuse unavailable
+- [ ] All 496+ tests still passing
+
+---
+
+## Phase 3:
 ### Proposed Features
 
 1. **Evaluation Datasets** (`eval_datasets.py`):
@@ -518,7 +1008,7 @@ Phase 1 of Langfuse integration is **complete and production-ready**:
 Based on discussion:
 - ✅ **Scope**: Trace entire pipeline (fetch → extract → summarize → write)
 - ✅ **Optional**: Graceful degradation if not configured
-- ✅ **Evaluation Focus**: 
+- ✅ **Evaluation Focus**:
   - Summary quality (relevance, coherence, completeness)
   - Tag accuracy (are suggested tags relevant?)
   - Content type classification (article, tutorial, etc.)
@@ -638,11 +1128,11 @@ logger = logging.getLogger(__name__)
 class LangfuseTracer:
     """
     Wrapper for LangSmith tracing with graceful degradation.
-    
+
     If LangSmith is not configured or unavailable, all operations
     become no-ops, allowing the application to function normally.
     """
-    
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -652,7 +1142,7 @@ class LangfuseTracer:
     ) -> None:
         """
         Initialize LangSmith tracer.
-        
+
         Args:
             api_key: LangSmith API key (required if enabled).
             project: Project name for organizing traces.
@@ -662,16 +1152,16 @@ class LangfuseTracer:
         self._enabled = enabled and api_key is not None
         self._client = None
         self._available = False
-        
+
         if not self._enabled:
             logger.debug("LangSmith tracing disabled")
             return
-        
+
         try:
             # Import langsmith and set environment
             from langsmith import Client
             import os
-            
+
             # Set environment variables for LangChain integration
             os.environ["LANGCHAIN_TRACING_V2"] = "true"
             os.environ["LANGCHAIN_API_KEY"] = api_key
@@ -679,13 +1169,13 @@ class LangfuseTracer:
                 os.environ["LANGCHAIN_PROJECT"] = project
             if endpoint:
                 os.environ["LANGCHAIN_ENDPOINT"] = endpoint
-            
+
             self._client = Client(api_key=api_key, api_url=endpoint)
             self._project = project or "obsidian-link-summariser"
             self._available = True
-            
+
             logger.info(f"LangSmith tracing enabled (project: {self._project})")
-            
+
         except ImportError:
             logger.warning(
                 "LangSmith package not installed. "
@@ -695,12 +1185,12 @@ class LangfuseTracer:
         except Exception as e:
             logger.warning(f"Failed to initialize LangSmith: {e}")
             self._enabled = False
-    
+
     @property
     def enabled(self) -> bool:
         """Whether tracing is enabled and available."""
         return self._enabled and self._available
-    
+
     @contextmanager
     def trace_url_processing(
         self,
@@ -709,37 +1199,37 @@ class LangfuseTracer:
     ) -> Generator[Any, None, None]:
         """
         Create a trace for processing a single URL.
-        
+
         Args:
             url: The URL being processed.
             metadata: Additional metadata to attach to trace.
-            
+
         Yields:
             Trace context (or None if tracing disabled).
         """
         if not self.enabled or not self._client:
             yield None
             return
-        
+
         try:
             trace_metadata = {
                 "source_url": url,
                 "timestamp": datetime.now().isoformat(),
                 **(metadata or {}),
             }
-            
+
             trace = self._client.trace(
                 name="process_url",
                 input={"url": url},
                 metadata=trace_metadata,
             )
-            
+
             yield trace
-            
+
         except Exception as e:
             logger.warning(f"Langfuse trace_url_processing failed: {e}")
             yield None
-    
+
     @contextmanager
     def trace_span(
         self,observation(
@@ -752,21 +1242,21 @@ class LangfuseTracer:
     ) -> Generator[Any, None, None]:
         """
         Create an observation (span) within a trace.
-        
+
         Args:
             trace_id: Parent trace ID.
             name: Observation name (e.g., "fetch", "extract", "summarize", "write").
             input_data: Input data for the observation.
             metadata: Additional metadata.
             observation_type: Type of observation ("span" or "generation" for LLM calls).
-            
+
         Yields:
             Observation context (or None if tracing disabled).
         """
         if not self.enabled or not self._client:
             yield None
             return
-        
+
         try:
             class ObservationContext:
                 def __init__(self, client: Any, trace_id: str, name: str, obs_type: str):
@@ -775,7 +1265,7 @@ class LangfuseTracer:
                     self.name = name
                     self.obs_type = obs_type
                     self.observation = None
-                
+
                 def __enter__(self):
                     if self.obs_type == "generation":
                         self.observation = self.client.generation(
@@ -794,7 +1284,7 @@ class LangfuseTracer:
     ) -> None:
         """
         Add a score to a trace (used in evaluation).
-        
+
         Args:
             trace_id: The trace ID to score.
             name: Score name (e.g., "relevance", "tag_accuracy").
@@ -803,7 +1293,7 @@ class LangfuseTracer:
         """
         if not self.enabled or not self._client:
             return
-        
+
         try:
             self._client.score(
                 trace_id=trace_id,
@@ -822,43 +1312,43 @@ _global_tracer: LangfuseTracer | None = None
 def initialize_tracer(config: Any) -> LangfuseTracer:
     """
     Initialize the global Langfuse tracer from config.
-    
+
     Args:
         config: Application Config object.
-        
+
     Returns:
         Initialized tracer instance.
     """
     global _global_tracer
-    
+
     _global_tracer = LangfuseTracer(
         public_key=config.langfuse_public_key,
         secret_key=config.langfuse_secret_key,
         base_url=config.langfuse_base_url,
         enabled=config.langfuse_enabled,
     )
-    
+
     return _global_tracer
 
 
 def get_tracer() -> LangfuseTracer:
     """
     Get the global tracer instance.
-    
+
     Returns:
         Global tracer (or a disabled tracer if not initialized).
     """
     if _global_tracer is None:
         # Return a disabled tracer as fallback
         return Langfuser
-    
+
     _global_tracer = LangSmithTracer(
         api_key=config.langsmith_api_key,
         project=config.langsmith_project,
         endpoint=config.langsmith_endpoint,
         enabled=config.langsmith_enabled,
     )
-    
+
 - ✅ Support for both spans and generation observations
 
 **1.3 Instrument Pipeline Components**
@@ -877,10 +1367,10 @@ def _process_url_with_metadata(
 ) -> tuple[bool, str, bool]:
     """Process a single URL with full tracing."""
     from summarize_links.langfuse_tracer import get_tracer
-    
+
     tracer = get_tracer()
     url = url_context.url
-    
+
     # Create trace for this URL
     with tracer.trace_url_processing(
         url=url,
@@ -893,7 +1383,7 @@ def _process_url_with_metadata(
     ) as trace:
         if trace:
             trace_id = trace.id
-            
+
             # Fetch and extract with observation
             with tracer.trace_observation(
                 trace_id=trace_id,
@@ -901,7 +1391,7 @@ def _process_url_with_metadata(
                 input_data={"url": url},
             ):
                 page_metadata = fetch_and_extract_metadata(url)
-            
+
             # Summarize with generation observation (LLM call)
             with tracer.trace_observation(
                 trace_id=trace_id,
@@ -921,7 +1411,7 @@ def _process_url_with_metadata(
                     url=url,
                     title=page_metadata.title,
                 )
-            
+
             # Write with observation
             with tracer.trace_observation(
                 trace_id=trace_id,fuse-compatible wrappers for automatic LLM tracing.
@@ -934,7 +1424,7 @@ from langfuse.decorators import observe, langfuse_context
 
 class GeminiClient:
     # ... existing code ...
-    
+
     @observe(as_type="generation")
     def summarize_with_metadata(
         self, content: str, url: str, title: str | None = None
@@ -946,11 +1436,11 @@ class GeminiClient:
             input={"content_length": len(content), "url": url, "title": title},
             metadata={"provider": "gemini"},
         )
-        
+
         # Existing summarization logic
         raw_response = self.summarize(content, url, title)
         result = _parse_gemini_response(raw_response)
-        
+
         # Update with outputs
         langfuse_context.update_current_observation(
             output={
@@ -959,7 +1449,7 @@ class GeminiClient:
                 "content_type": result.content_type,
             },
         )
-        
+
         return result
 
 # Similar for ollama_client.py with provider="ollama"
@@ -968,7 +1458,7 @@ class GeminiClient:
             inputs={"slug": slug_from_url(url)},
         ):
             summary_path = write_summary_note_with_metadata(...)
-    
+
     # Rest of existing logic...
 ```
 
@@ -985,7 +1475,7 @@ def summarize_with_metadata(
 ) -> SummaryResult:
     """Summarize with LangSmith tracing."""
     from langsmith import traceable
-    
+
     @traceable(
 ```
 
@@ -1020,7 +1510,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class EvalExample:
     """A single evaluation example."""
-    
+
     url: str
     title: str | None = None
     expected_tags: list[str] | None = None
@@ -1032,21 +1522,21 @@ class EvalExample:
 @dataclass
 class EvalDataset:
     """Collection of evaluation examples."""
-    
+
     name: str
     description: str
     examples: list[EvalExample]
-    
+
     @classmethod
     def from_yaml(cls, path: Path) -> "EvalDataset":
         """Load dataset from YAML file."""
         try:
             with open(path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
-            
+
             if not data or "examples" not in data:
                 raise ConfigError(f"Invalid eval dataset format: {path}")
-            
+
             examples = [
                 EvalExample(
                     url=ex["url"],
@@ -1058,16 +1548,16 @@ class EvalDataset:
                 )
                 for ex in data["examples"]
             ]
-            
+
             return cls(
                 name=data.get("name", "Untitled Dataset"),
                 description=data.get("description", ""),
                 examples=examples,
             )
-            
+
         except Exception as e:
             raise ConfigError(f"Failed to load eval dataset from {path}: {e}") from e
-    
+
     def to_yaml(self, path: Path) -> None:
         """Save dataset to YAML file."""
         data = {
@@ -1085,10 +1575,10 @@ class EvalDataset:
                 for ex in self.examples
             ],
         }
-        
+
         with open(path, "w", encoding="utf-8") as f:
             yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
-        
+
         logger.info(f"Saved eval dataset to {path}")
 
 
@@ -1140,19 +1630,19 @@ logger = logging.getLogger(__name__)
 class SummaryQualityMetric:
     """
     Evaluate summary quality using LLM-as-judge.
-    
+
     Assesses relevance, coherence, and completeness.
     """
-    
+
     def __init__(self, judge_model: str = "gemini-2.0-flash-exp"):
         """
         Initialize metric.
-        
+
         Args:
             judge_model: Model to use as judge.
         """
         self.judge_model = judge_model
-    
+
     async def evaluate(
         self,
         original_content: str,
@@ -1161,7 +1651,7 @@ class SummaryQualityMetric:
     ) -> dict[str, float]:
         """
         Evaluate summary quality.
-        
+
         Returns scores for:
         - relevance: How well summary captures key points (0-1)
         - coherence: How well-structured and readable (0-1)
@@ -1170,7 +1660,7 @@ class SummaryQualityMetric:
         """
         # TODO: Implement LLM-as-judge evaluation
         # For now, return placeholder scores
-        
+
         prompt = f"""You are evaluating a summary of a web page.
 
 Original URL: {url}
@@ -1187,7 +1677,7 @@ Please rate the summary on these dimensions (0.0 to 1.0):
 
 Respond with JSON: {{"relevance": 0.0, "coherence": 0.0, "completeness": 0.0}}
 """
-        
+
         # Placeholder implementation
         logger.warning("SummaryQualityMetric.evaluate not fully implemented")
         return {
@@ -1200,7 +1690,7 @@ Respond with JSON: {{"relevance": 0.0, "coherence": 0.0, "completeness": 0.0}}
 
 class TagAccuracyMetric:
     """Evaluate accuracy and relevance of suggested tags."""
-    
+
     def evaluate(
         self,
         suggested_tags: list[str],
@@ -1210,7 +1700,7 @@ class TagAccuracyMetric:
     ) -> dict[str, float]:
         """
         Evaluate tag accuracy.
-        
+
         Returns:
         - precision: What % of suggested tags are relevant (0-1)
         - recall: What % of expected tags were suggested (0-1)
@@ -1223,21 +1713,21 @@ class TagAccuracyMetric:
                 "recall": 0.0,
                 "f1_score": 0.0,
             }
-        
+
         # Calculate overlap
         suggested_set = set(tag.lower() for tag in suggested_tags)
         expected_set = set(tag.lower() for tag in expected_tags)
-        
+
         true_positives = len(suggested_set & expected_set)
-        
+
         precision = true_positives / len(suggested_set) if suggested_set else 0.0
         recall = true_positives / len(expected_set) if expected_set else 0.0
-        
+
         if precision + recall > 0:
             f1_score = 2 * (precision * recall) / (precision + recall)
         else:
             f1_score = 0.0
-        
+
         return {
             "precision": precision,
             "recall": recall,
@@ -1247,7 +1737,7 @@ class TagAccuracyMetric:
 
 class ContentTypeAccuracyMetric:
     """Evaluate content type classification accuracy."""
-    
+
     def evaluate(
         self,
         predicted_type: str,
@@ -1255,15 +1745,15 @@ class ContentTypeAccuracyMetric:
     ) -> dict[str, float]:
         """
         Evaluate content type classification.
-        
+
         Returns:
         - accuracy: 1.0 if correct, 0.0 if incorrect
         """
         if not expected_type:
             return {"accuracy": 1.0}  # Assume correct if no expectation
-        
+
         accuracy = 1.0 if predicted_type.lower() == expected_type.lower() else 0.0
-        
+
         return {"accuracy": accuracy}
 
 
@@ -1275,18 +1765,18 @@ def evaluate_summary_result(
 ) -> dict[str, Any]:
     """
     Run all evaluation metrics on a summary result.
-    
+
     Args:
         summary_result: The generated SummaryResult.
         eval_example: The evaluation example with expected outputs.
         original_content: Original page content.
         url: Source URL.
-        
+
     Returns:
         Dictionary of metric scores.
     """
     metrics = {}
-    
+
     # Tag accuracy
     tag_metric = TagAccuracyMetric()
     metrics["tag_accuracy"] = tag_metric.evaluate(
@@ -1295,14 +1785,14 @@ def evaluate_summary_result(
         content=original_content,
         url=url,
     )
-    
+
     # Content type accuracy
     type_metric = ContentTypeAccuracyMetric()
     metrics["content_type_accuracy"] = type_metric.evaluate(
         predicted_type=summary_result.content_type,
         expected_type=eval_example.expected_content_type,
     )
-    
+
     # Summary quality (placeholder - requires async implementation)
     metrics["summary_quality"] = {
         "relevance": 0.8,
@@ -1310,7 +1800,7 @@ def evaluate_summary_result(
         "completeness": 0.7,
         "overall": 0.8,
     }
-    
+
     return metrics
 ```
 
@@ -1322,30 +1812,30 @@ Add `cmd_eval` to `cli.py`:
 def cmd_eval(config: Config, dataset_path: str) -> int:
     """
     Run evaluation on a dataset.
-    
+
     Args:
         config: Application configuration.
         dataset_path: Path to evaluation dataset YAML file.
-        
+
     Returns:
         Exit code.
     """
     from summarize_links.eval_datasets import EvalDataset
     from summarize_links.eval_metrics import evaluate_summary_result
     from summarize_links.langsmith_tracer import get_tracer
-    
+
     _print(f"[bold]Running evaluation on: {dataset_path}[/]")
-    
+
     # Load dataset
     try:
         dataset = EvalDataset.from_yaml(Path(dataset_path))
     except ConfigError as e:
         _print_error(f"[red]Failed to load dataset: {e}[/]")
         return EXIT_ERROR
-    
+
     _print(f"[green]Loaded {len(dataset.examples)} examples from '{dataset.name}'[/]")
     _print(f"[dim]{dataset.description}[/]\n")
-    
+
     # Create LLM client
     client = create_llm_client(
         model=config.model,
@@ -1354,12 +1844,12 @@ def cmd_eval(config: Config, dataset_path: str) -> int:
         mock_mode=config.mock_mode,
         state_path=config.vault_path,
     )
-    
+
     tracer = get_tracer()
-    
+
     # Run evaluation
     results = []
-    
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -1367,19 +1857,19 @@ def cmd_eval(config: Config, dataset_path: str) -> int:
         transient=True,
     ) as progress:
         task = progress.add_task("[cyan]Evaluating...", total=len(dataset.examples))
-        
+
         for example in dataset.examples:
             try:
                 # Fetch content
                 page_metadata = fetch_and_extract_metadata(example.url)
-                
+
                 # Generate summary
                 summary_result = client.summarize_with_metadata(
                     content=page_metadata.content,
                     url=example.url,
                     title=example.title or page_metadata.title,
                 )
-                
+
                 # Evaluate
                 metrics = evaluate_summary_result(
                     summary_result=summary_result,
@@ -1387,13 +1877,13 @@ def cmd_eval(config: Config, dataset_path: str) -> int:
                     original_content=page_metadata.content,
                     url=example.url,
                 )
-                
+
                 results.append({
                     "url": example.url,
                     "metrics": metrics,
                     "success": True,
                 })
-                
+
             except Exception as e:
                 logger.error(f"Evaluation failed for {example.url}: {e}")
                 results.append({
@@ -1401,12 +1891,12 @@ def cmd_eval(config: Config, dataset_path: str) -> int:
                     "error": str(e),
                     "success": False,
                 })
-            
+
             progress.advance(task)
-    
+
     # Display results
     _display_eval_results(results, dataset.name)
-    
+
     return EXIT_SUCCESS if any(r["success"] for r in results) else EXIT_ERROR
 
 
@@ -1417,25 +1907,25 @@ def _display_eval_results(results: list[dict], dataset_name: str) -> None:
     tag_recall = []
     tag_f1 = []
     content_type_acc = []
-    
+
     for result in results:
         if not result["success"]:
             continue
-        
+
         metrics = result["metrics"]
-        
+
         tag_precision.append(metrics["tag_accuracy"]["precision"])
         tag_recall.append(metrics["tag_accuracy"]["recall"])
         tag_f1.append(metrics["tag_accuracy"]["f1_score"])
         content_type_acc.append(metrics["content_type_accuracy"]["accuracy"])
-    
+
     # Display summary table
     table = Table(title=f"Evaluation Results: {dataset_name}")
     table.add_column("Metric", style="cyan")
     table.add_column("Average Score", style="green", justify="right")
     table.add_column("Min", style="white", justify="right")
     table.add_column("Max", style="white", justify="right")
-    
+
     if tag_precision:
         table.add_row(
             "Tag Precision",
@@ -1461,7 +1951,7 @@ def _display_eval_results(results: list[dict], dataset_name: str) -> None:
             f"{min(content_type_acc):.2f}",
             f"{max(content_type_acc):.2f}",
         )
-    
+
     _print(table)
     _print()
     _print(f"[bold]Total examples:[/] {len(results)}")
@@ -1487,13 +1977,13 @@ from summarize_links.langsmith_tracer import LangSmithTracer
 def test_tracer_disabled_mode():
     """Test that tracer works as no-op when disabled."""
     tracer = LangSmithTracer(enabled=False)
-    
+
     assert not tracer.enabled
-    
+
     # Should not raise errors
     with tracer.trace_url_processing("http://example.com"):
         pass
-    
+
     with tracer.trace_span("test_span"):
         pass
 
@@ -1501,7 +1991,7 @@ def test_tracer_disabled_mode():
 def test_tracer_missing_api_key():
     """Test graceful degradation without API key."""
     tracer = LangSmithTracer(api_key=None, enabled=True)
-    
+
     assert not tracer.enabled
 
 
@@ -1520,9 +2010,9 @@ def test_full_pipeline_with_tracing(mock_config, tmp_path):
     """Test that tracing doesn't break the pipeline."""
     # This test requires Langfuse to be installed but not configured
     # It should gracefully degrade
-    
+
     from summarize_links.cli import cmd_urls
-    
+
     mock_config.vault_path = tmp_path
     mock_config.mock_mode = True
     mock_config.langfuse_enabled = True
@@ -1534,7 +2024,7 @@ from summarize_links.eval_datasets import EvalDataset, EvalExample, create_sampl
 def test_create_sample_dataset():
     """Test sample dataset creation."""
     dataset = create_sample_dataset()
-    
+
     assert dataset.name == "Sample Evaluation Dataset"
     assert len(dataset.exampfuse section:
 
@@ -1594,7 +2084,7 @@ examples:
     expected_tags: ["example", "article", "test"]
     expected_content_type: "article"
     notes: "Should extract main concept clearly"
-    
+
   - url: "https://github.com/user/repo"
     expected_tags: ["github", "repository"]
     expected_content_type: "documentation"

@@ -93,7 +93,7 @@ MODEL=llama3:latest
 
 The tool automatically detects which provider to use based on the model name:
 - Models with `:` (e.g., `llama3:latest`) → Ollama
-- Known Ollama models (llama, mistral, phi, qwen, etc.) → Ollama  
+- Known Ollama models (llama, mistral, phi, qwen, etc.) → Ollama
 - Others (e.g., `gemini-2.5-flash`) → Gemini API
 
 ## Usage
@@ -323,8 +323,11 @@ Daily usage is tracked persistently in `.summarizer-rate-limit.json` in your vau
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
+| `LANGFUSE_PUBLIC_KEY` | **Yes*** | - | Langfuse public key for prompt management |
+| `LANGFUSE_SECRET_KEY` | **Yes*** | - | Langfuse secret key for prompt management |
+| `LANGFUSE_BASE_URL` | No | `https://cloud.langfuse.com` | Langfuse API endpoint |
 | `MODEL` | No | `gemini-2.0-flash-exp` | Model to use (auto-detects provider) |
-| `GEMINI_API_KEY` | Conditional* | - | Google AI Studio API key |
+| `GEMINI_API_KEY` | Conditional** | - | Google AI Studio API key |
 | `GEMINI_MODEL` | No | - | **Deprecated:** Use `MODEL` instead |
 | `OLLAMA_ENDPOINT` | No | `http://localhost:11434` | Ollama server endpoint |
 | `DEFAULT_VAULT_PATH` | No | - | Default Obsidian vault path |
@@ -332,7 +335,8 @@ Daily usage is tracked persistently in `.summarizer-rate-limit.json` in your vau
 | `GEMINI_TPM_LIMIT` | No | `250000` | Tokens per minute limit (Gemini only) |
 | `GEMINI_DAILY_LIMIT` | No | `20` | Requests per day limit (Gemini only) |
 
-*\*Required only when using Gemini models*
+*\*Langfuse credentials are required for prompt management (except in `--mock` mode). If Langfuse is not configured and you are not using `--mock`, the CLI will fail to start with an error indicating which Langfuse environment variables are missing. To get started, create a (free) account and project at [Langfuse Cloud](https://cloud.langfuse.com), then set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` (and optionally `LANGFUSE_BASE_URL` if self-hosting) in your environment or `.env` file.*
+*\*\*Required only when using Gemini models*
 
 ### Vault Config File (Optional)
 

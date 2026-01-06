@@ -1,0 +1,10 @@
+Summarize the following web page content.
+
+Please summarize the following web page{{title}}:
+
+Source URL: {{url}}
+
+Content:
+{{content}}
+
+Remember to respond with valid JSON containing "summary", "suggested_tags", and "content_type".

@@ -18,8 +18,9 @@ from google.genai import errors, types
 
 from summarize_links.config import DEFAULT_MODEL, get_model_rate_limits
 from summarize_links.exceptions import GeminiAPIError, RateLimitError
+from summarize_links.llm.base import BaseLLMClient
 from summarize_links.llm.parsing import parse_llm_json_response
-from summarize_links.models import CONTENT_TYPE_DESCRIPTIONS, SummaryResult
+from summarize_links.models import SummaryResult
 from summarize_links.rate_limiter import ModelRateLimits, RateLimiter
 
 __all__ = [
@@ -38,74 +39,7 @@ MIN_RATE_LIMIT_WAIT = 10.0  # Minimum wait when rate limited (seconds)
 MAX_RETRY_DELAY = 120.0  # Maximum delay cap (seconds)
 
 
-def _build_content_type_list() -> str:
-    """
-    Build the content type list for the system prompt from CONTENT_TYPE_DESCRIPTIONS.
-
-    Returns:
-        Formatted string listing all content types with descriptions.
-    """
-    lines = []
-    for content_type, description in CONTENT_TYPE_DESCRIPTIONS.items():
-        lines.append(f'- "{content_type}" ({description})')
-    return "\n".join(lines)
-
-
-# System prompt for summarization with structured output
-# Content types are generated dynamically from CONTENT_TYPE_DESCRIPTIONS
-SUMMARY_SYSTEM_PROMPT = f"""You are a summarization assistant. Your task is to create
-concise, informative summaries of web page content for a personal knowledge base.
-
-Guidelines for the summary:
-- Write in clear, direct prose
-- Use Markdown formatting (headers, bullet points, bold/italic as appropriate)
-- Focus on the main ideas and key takeaways
-- Omit advertisements, navigation, and boilerplate content
-- Keep summaries focused and scannable
-- Include relevant quotes if they capture key insights
-- Use a neutral, informative tone
-
-You MUST respond with valid JSON in this exact format:
-{{
-  "summary": "Your markdown-formatted summary here",
-  "suggested_tags": ["tag1", "tag2", "tag3"],
-  "content_type": "article"
-}}
-
-For suggested_tags:
-- Provide 3-5 relevant topic tags
-- Use lowercase, hyphenated format (e.g., "machine-learning", "web-development")
-- Focus on the main topics and technologies discussed
-- Avoid generic tags like "article" or "blog"
-
-For content_type, choose ONE of:
-{_build_content_type_list()}"""
-
-
-def _build_prompt(content: str, url: str, title: str | None = None) -> str:
-    """
-    Build the prompt for the Gemini API.
-
-    Args:
-        content: Web page content to summarize.
-        url: Source URL.
-        title: Optional page title.
-
-    Returns:
-        Formatted prompt string.
-    """
-    title_part = f" titled '{title}'" if title else ""
-    return f"""Summarize the following web page content{title_part}.
-
-Source URL: {url}
-
-Content:
-{content}
-
-Remember to respond with valid JSON containing "summary", "suggested_tags", and "content_type"."""
-
-
-class GeminiClient:
+class GeminiClient(BaseLLMClient):
     """
     Client for the Google Gemini API.
 
@@ -140,6 +74,9 @@ class GeminiClient:
             tpm_limit: Legacy: Tokens per minute limit (ignored if model_limits provided).
             daily_limit: Legacy: Requests per day limit (ignored if model_limits provided).
         """
+        # Initialize base class with Langfuse prompt management
+        super().__init__(error_class=GeminiAPIError)
+
         self._api_key = api_key
         self._model_name = model
         self._client: Any = None
@@ -169,7 +106,8 @@ class GeminiClient:
             )
 
         logger.debug(
-            "Initialized GeminiClient with model: %s (RPM=%d, TPM=%d, Daily=%d)",
+            "Initialized GeminiClient with model: %s (RPM=%d, TPM=%d, Daily=%d) "
+            "[Langfuse prompts required]",
             model,
             self._rate_limiter.rpm_limit,
             self._rate_limiter.tpm_limit,
@@ -265,7 +203,9 @@ class GeminiClient:
                            or daily limit exceeded.
             GeminiAPIError: When API returns an error.
         """
-        prompt = _build_prompt(content, url, title)
+        # Get prompts from Langfuse
+        system_prompt, user_prompt_template = self._get_langfuse_prompts()
+        prompt = self._compile_user_prompt(user_prompt_template, content, url, title)
         client = self._get_client()
 
         # Estimate tokens for rate limiting
@@ -287,7 +227,7 @@ class GeminiClient:
                     model=self._model_name,
                     contents=prompt,
                     config=types.GenerateContentConfig(
-                        system_instruction=SUMMARY_SYSTEM_PROMPT,
+                        system_instruction=system_prompt,
                     ),
                 )
 
@@ -430,11 +370,26 @@ class GeminiClient:
             RateLimitError: When rate limited after all retries exhausted.
             GeminiAPIError: When API returns an error.
         """
-        prompt = _build_prompt(content, url, title)
+        # Fetch prompts from Langfuse (required)
+        system_prompt_text, user_prompt_template = self._get_langfuse_prompts()
+        user_prompt_text = self._compile_user_prompt(user_prompt_template, content, url, title)
+
+        # Store prompt metadata from Langfuse
+        system_obj = self._prompt_cache["system"]
+        user_obj = self._prompt_cache["user"]
+        prompt_metadata = {
+            "system_prompt_name": "summarize-document/system",
+            "user_prompt_name": "summarize-document/user",
+            "system_prompt_version": getattr(system_obj, "version", None),
+            "user_prompt_version": getattr(user_obj, "version", None),
+            "source": "langfuse",
+        }
+        logger.debug("Using Langfuse-managed prompts")
+
         client = self._get_client()
 
         # Estimate tokens for rate limiting
-        estimated_tokens = self._rate_limiter.estimate_tokens(content + prompt)
+        estimated_tokens = self._rate_limiter.estimate_tokens(content + user_prompt_text)
 
         # Wait if we're near rate limits
         self._rate_limiter.wait_if_needed(estimated_tokens)
@@ -442,9 +397,9 @@ class GeminiClient:
         # Make the API call
         response = client.models.generate_content(
             model=self._model_name,
-            contents=prompt,
+            contents=user_prompt_text,
             config=types.GenerateContentConfig(
-                system_instruction=SUMMARY_SYSTEM_PROMPT,
+                system_instruction=system_prompt_text,
             ),
         )
 
@@ -483,9 +438,10 @@ class GeminiClient:
         result.usage_details = usage_details
 
         # Store system prompt, user prompt, and response for tracing
-        result.system_prompt = SUMMARY_SYSTEM_PROMPT
-        result.raw_prompt = prompt
+        result.system_prompt = system_prompt_text
+        result.raw_prompt = user_prompt_text
         result.raw_response = raw_response
+        result.prompt_metadata = prompt_metadata
 
         return result
 
@@ -610,14 +566,15 @@ This summary was generated by MockGeminiClient for testing the summarization pip
         elif "video" in url_lower or "youtube" in url_lower:
             content_type = "video"
 
-        # Build prompt for tracing consistency
-        prompt = _build_prompt(content, url, title)
+        # Build mock prompts for tracing consistency
+        system_prompt = "Mock system prompt"
+        prompt = f"Mock prompt for URL: {url}"
 
         return SummaryResult(
             content=summary_text,
             suggested_tags=mock_tags,
             content_type=content_type,
-            system_prompt=SUMMARY_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             raw_prompt=prompt,
             raw_response=summary_text,  # Mock: response is the summary itself
         )

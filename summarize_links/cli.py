@@ -238,10 +238,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         setup_logging(config.verbose)
 
-        # Initialize Langfuse tracer if configured
-        from summarize_links.langfuse_tracer import initialize_tracer
+        # Initialize Langfuse tracer (skip in mock mode)
+        if not config.mock_mode:
+            from summarize_links.langfuse_tracer import initialize_tracer
 
-        initialize_tracer(config)
+            initialize_tracer(config)
 
         # Dispatch to command handler
         if args.command == "from-note":
