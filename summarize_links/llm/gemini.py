@@ -373,9 +373,6 @@ class GeminiClient(BaseLLMClient):
         # Fetch prompts from Langfuse (required)
         system_prompt_text, user_prompt_template = self._get_langfuse_prompts()
         user_prompt_text = self._compile_user_prompt(user_prompt_template, content, url, title)
-
-        # Build prompt metadata from cached Langfuse prompts
-        prompt_metadata = self._build_prompt_metadata()
         logger.debug("Using Langfuse-managed prompts")
 
         client = self._get_client()
@@ -427,13 +424,11 @@ class GeminiClient(BaseLLMClient):
 
         # Parse the JSON response into SummaryResult
         result = parse_llm_json_response(raw_response)
-        result.usage_details = usage_details
 
-        # Store system prompt, user prompt, and response for tracing
-        result.system_prompt = system_prompt_text
-        result.raw_prompt = user_prompt_text
-        result.raw_response = raw_response
-        result.prompt_metadata = prompt_metadata
+        # Populate result with prompt and usage metadata using base class helper
+        self._populate_result_metadata(
+            result, system_prompt_text, user_prompt_text, raw_response, usage_details
+        )
 
         return result
 
