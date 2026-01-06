@@ -374,16 +374,8 @@ class GeminiClient(BaseLLMClient):
         system_prompt_text, user_prompt_template = self._get_langfuse_prompts()
         user_prompt_text = self._compile_user_prompt(user_prompt_template, content, url, title)
 
-        # Store prompt metadata from Langfuse
-        system_obj = self._prompt_cache["system"]
-        user_obj = self._prompt_cache["user"]
-        prompt_metadata = {
-            "system_prompt_name": "summarize-document/system",
-            "user_prompt_name": "summarize-document/user",
-            "system_prompt_version": getattr(system_obj, "version", None),
-            "user_prompt_version": getattr(user_obj, "version", None),
-            "source": "langfuse",
-        }
+        # Build prompt metadata from cached Langfuse prompts
+        prompt_metadata = self._build_prompt_metadata()
         logger.debug("Using Langfuse-managed prompts")
 
         client = self._get_client()

@@ -117,3 +117,25 @@ class BaseLLMClient:
             content=content,
         )
         return compiled
+
+    def _build_prompt_metadata(self) -> dict[str, Any] | None:
+        """
+        Build prompt metadata dictionary from cached Langfuse prompts.
+
+        Returns:
+            Dictionary with prompt names, versions, and source.
+            None if prompts not cached.
+        """
+        if "system" not in self._prompt_cache or "user" not in self._prompt_cache:
+            return None
+
+        system_obj = self._prompt_cache["system"]
+        user_obj = self._prompt_cache["user"]
+
+        return {
+            "system_prompt_name": "summarize-document/system",
+            "user_prompt_name": "summarize-document/user",
+            "system_prompt_version": getattr(system_obj, "version", None),
+            "user_prompt_version": getattr(user_obj, "version", None),
+            "source": "langfuse",
+        }

@@ -278,18 +278,9 @@ class OllamaClient(BaseLLMClient):
         # Fetch prompts from Langfuse (REQUIRED)
         system_prompt, user_prompt_template = self._get_langfuse_prompts()
 
-        # Build prompt_metadata from cached prompt objects
-        prompt_metadata = None
-        if "system" in self._prompt_cache and "user" in self._prompt_cache:
-            sys_obj = self._prompt_cache["system"]
-            user_obj = self._prompt_cache["user"]
-            prompt_metadata = {
-                "system_prompt_name": "summarize-document/system",
-                "user_prompt_name": "summarize-document/user",
-                "system_prompt_version": getattr(sys_obj, "version", None),
-                "user_prompt_version": getattr(user_obj, "version", None),
-                "source": "langfuse",
-            }
+        # Build prompt_metadata from base class method
+        prompt_metadata = self._build_prompt_metadata()
+        if prompt_metadata:
             logger.debug(
                 "Using Langfuse prompts: system v%s, user v%s",
                 prompt_metadata["system_prompt_version"],
