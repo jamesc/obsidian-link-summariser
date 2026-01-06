@@ -1537,6 +1537,78 @@ class TestRemoveUrlLineFromNote:
         assert "https://example.com/article" not in content
         assert "Task 2" in content
 
+    def test_removes_consecutive_blank_lines(self, tmp_path: Path) -> None:
+        """Should collapse consecutive blank lines after URL removal."""
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text("# 2025-12-16\n\n- https://example.com\n\n\n- Task 2\n")
+
+        result = remove_url_line_from_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            url="https://example.com",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        # Should have at most one blank line between heading and Task 2
+        assert "\n\n\n" not in content
+        assert "# 2025-12-16" in content
+        assert "Task 2" in content
+
+    def test_removes_leading_blank_lines(self, tmp_path: Path) -> None:
+        """Should remove leading blank lines after URL removal."""
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text("- https://example.com\n\n- Task 2\n")
+
+        result = remove_url_line_from_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            url="https://example.com",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        # Should not start with blank line
+        assert not content.startswith("\n")
+        assert "Task 2" in content
+
+    def test_removes_trailing_blank_lines(self, tmp_path: Path) -> None:
+        """Should remove trailing blank lines after URL removal."""
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text("# 2025-12-16\n\n- Task 1\n\n- https://example.com\n\n\n")
+
+        result = remove_url_line_from_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            url="https://example.com",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        # Should end with single newline, not multiple blank lines
+        assert content.endswith("- Task 1\n")
+        assert not content.endswith("\n\n")
+
+    def test_cleans_whitespace_when_all_urls_removed(self, tmp_path: Path) -> None:
+        """Should handle whitespace cleanup when removing the only URL."""
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text("# 2025-12-16\n\n- https://example.com\n")
+
+        result = remove_url_line_from_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            url="https://example.com",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        # Should just have the heading with newline
+        assert content == "# 2025-12-16\n"
+
 
 class TestFindDailyNotesWithUrls:
     """Tests for finding daily notes containing URLs."""

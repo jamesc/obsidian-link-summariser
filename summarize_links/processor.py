@@ -128,7 +128,8 @@ def process_url_with_metadata(
         config.vault_path, config.out_folder, url, summary_date
     )
     if not config.force and existing_summary_complete:
-        return True, f"Skipped (exists): {slug}", False
+        # Still delete from daily note since summary exists successfully
+        return True, f"Skipped (exists): {slug}", True
 
     # If we're reprocessing (summary exists but incomplete), we need to overwrite
     needs_overwrite = config.force or not existing_summary_complete

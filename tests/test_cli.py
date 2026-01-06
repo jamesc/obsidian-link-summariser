@@ -500,7 +500,7 @@ class TestProcessUrlWithMetadata:
     """Tests for single URL processing with metadata."""
 
     def test_skip_existing_summary(self, mock_vault: Path) -> None:
-        """Should skip URLs with existing summaries."""
+        """Should skip URLs with existing summaries but still mark for deletion."""
         config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
@@ -518,7 +518,8 @@ class TestProcessUrlWithMetadata:
 
         assert success is True
         assert "Skipped" in message
-        assert should_delete is False
+        # URL should still be deleted from daily note since summary exists
+        assert should_delete is True
 
     @patch("summarize_links.processor.write_summary_note_with_metadata")
     @patch("summarize_links.processor.fetch_and_extract_metadata")
@@ -1163,7 +1164,7 @@ class TestUrlLineDeletion:
     @patch("summarize_links.commands.from_note.extract_urls_with_context")
     @patch("summarize_links.commands.from_note.read_daily_note")
     @patch("summarize_links.cli.load_config")
-    def test_skipped_urls_not_deleted(
+    def test_skipped_urls_still_deleted(
         self,
         mock_load_config: MagicMock,
         mock_read: MagicMock,
@@ -1176,7 +1177,7 @@ class TestUrlLineDeletion:
         mock_remove_url: MagicMock,
         mock_vault: Path,
     ) -> None:
-        """Skipped URLs (already exist) should NOT be deleted from daily note."""
+        """Skipped URLs (already exist) should still be deleted from daily note."""
         # Setup mocks - summary already exists
         mock_config = Config(
             vault_path=mock_vault,
@@ -1195,8 +1196,8 @@ class TestUrlLineDeletion:
         result = main(["from-note", "--date", "2025-12-16"])
 
         assert result == EXIT_SUCCESS
-        # URL line should NOT be deleted when summary already exists
-        mock_remove_url.assert_not_called()
+        # URL line SHOULD be deleted even when summary already exists
+        mock_remove_url.assert_called_once()
 
     @patch("summarize_links.processor.write_stub_note")
     @patch("summarize_links.processor.remove_url_line_from_note")

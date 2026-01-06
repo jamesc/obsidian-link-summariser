@@ -269,27 +269,54 @@ def remove_url_line_from_note(
         content = daily_note_path.read_text(encoding="utf-8")
         lines = content.split("\n")
 
-        # Find the line(s) containing the URL
-        new_lines: list[str] = []
-        removed = False
+        # Find the line(s) containing the URL and mark for removal
+        lines_to_remove: set[int] = set()
 
-        for line in lines:
+        for i, line in enumerate(lines):
             if url in line:
                 logger.info(f"Removing line containing URL: {url}")
                 logger.debug(f"Removed line: {line}")
-                removed = True
-                # Skip this line (don't add to new_lines)
-            else:
-                new_lines.append(line)
+                lines_to_remove.add(i)
 
-        if not removed:
+        if not lines_to_remove:
             logger.debug(f"URL not found in note, nothing to remove: {url}")
             return False
 
+        # Build new lines list, cleaning up surrounding whitespace
+        new_lines: list[str] = []
+
+        for i, line in enumerate(lines):
+            if i in lines_to_remove:
+                # Skip this line (URL line being removed)
+                continue
+            else:
+                new_lines.append(line)
+
+        # Clean up consecutive blank lines that may result from removal
+        # Collapse multiple consecutive blank lines into at most one
+        cleaned_lines: list[str] = []
+        prev_blank = False
+
+        for line in new_lines:
+            is_blank = line.strip() == ""
+            if is_blank and prev_blank:
+                # Skip consecutive blank lines
+                continue
+            cleaned_lines.append(line)
+            prev_blank = is_blank
+
+        # Remove leading blank lines (after frontmatter if present)
+        while cleaned_lines and cleaned_lines[0].strip() == "":
+            cleaned_lines.pop(0)
+
+        # Remove trailing blank lines (we'll add one back if needed)
+        while cleaned_lines and cleaned_lines[-1].strip() == "":
+            cleaned_lines.pop()
+
         # Write the updated content
         # Preserve trailing newline if original had one
-        new_content = "\n".join(new_lines)
-        if content.endswith("\n") and not new_content.endswith("\n"):
+        new_content = "\n".join(cleaned_lines)
+        if content.endswith("\n") and new_content:
             new_content += "\n"
 
         daily_note_path.write_text(new_content, encoding="utf-8")
