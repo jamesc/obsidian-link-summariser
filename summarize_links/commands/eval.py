@@ -12,8 +12,7 @@ from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
 from rich.table import Table
 
 from summarize_links.config import Config
-from summarize_links.eval.datasets import EvalDataset
-from summarize_links.eval.metrics import evaluate_summary_result
+from summarize_links.eval import EvalDataset, evaluate_summary_result
 from summarize_links.exceptions import (
     ConfigError,
     ContentExtractionError,
