@@ -17,14 +17,11 @@ Environment Variables (from .env file or environment):
 import logging
 import os
 import sys
-from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Add parent directory to path to import project modules
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from summarize_links.llm.prompts import load_system_prompt, load_user_prompt_template
+# Import from local prompt_loader module (same directory)
+from prompt_loader import load_system_prompt, load_user_prompt_template
 
 logger = logging.getLogger(__name__)
 

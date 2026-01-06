@@ -1,9 +1,10 @@
-"""
-Prompt loading utilities for LLM clients and related tooling.
+"""Prompt loading utilities for management scripts.
 
-Reads prompt files from the local prompts directory so they can be reused
-across the main application and helper scripts (for example, upload tools
-that sync prompts to Langfuse).
+NOTE: This module is used by scripts/upload_prompts.py to load prompts
+from the filesystem for uploading to Langfuse. It is NOT used during
+normal CLI operation - LLM clients fetch prompts directly from Langfuse.
+
+Reads prompt files from summarize_links/prompts/ directory.
 """
 
 import logging
@@ -11,8 +12,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Path to prompts directory
-PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+# Path to prompts directory (relative to scripts/ location)
+PROMPTS_DIR = Path(__file__).parent.parent / "summarize_links" / "prompts"
 SYSTEM_PROMPT_PATH = PROMPTS_DIR / "system.txt"
 USER_PROMPT_PATH = PROMPTS_DIR / "user.txt"
 
