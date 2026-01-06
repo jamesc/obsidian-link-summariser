@@ -1,0 +1,44 @@
+# Sample Evaluation Dataset
+#
+# This dataset demonstrates the expected format for evaluation datasets.
+# You can use this as a template for creating your own datasets.
+#
+# Run with: summarize-links eval eval_datasets/sample.yaml
+
+name: "Sample Evaluation Dataset"
+description: >
+  Example dataset showing the expected format for evaluation.
+  Contains URLs from various content types to test classification accuracy.
+
+examples:
+  # Documentation example
+  - url: "https://docs.python.org/3/library/pathlib.html"
+    title: "pathlib — Object-oriented filesystem paths"
+    expected_tags:
+      - python
+      - documentation
+      - pathlib
+      - filesystem
+    expected_content_type: "documentation"
+    notes: "Should be classified as documentation with Python-related tags"
+
+  # Blog/article example
+  - url: "https://github.blog/changelog/"
+    title: "GitHub Changelog"
+    expected_tags:
+      - github
+      - changelog
+      - updates
+    expected_content_type: "news"
+    notes: "Should recognize as news/changelog content"
+
+  # Tutorial example
+  - url: "https://realpython.com/python-pathlib/"
+    title: "Python's pathlib Module: Taming the File System"
+    expected_tags:
+      - python
+      - tutorial
+      - pathlib
+      - filesystem
+    expected_content_type: "tutorial"
+    notes: "Should be classified as tutorial content"
