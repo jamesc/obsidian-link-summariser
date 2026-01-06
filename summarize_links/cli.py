@@ -15,6 +15,7 @@ import sys
 from rich.logging import RichHandler
 
 from summarize_links.commands import (
+    cmd_clean,
     cmd_from_note,
     cmd_from_note_all,
     cmd_list,
@@ -191,6 +192,13 @@ Examples:
         help="Only resummarize summaries older than DAYS days (based on generation date)",
     )
 
+    # clean command
+    subparsers.add_parser(
+        "clean",
+        help="Clean whitespace in daily notes",
+        description="Remove extra blank lines and trim whitespace from daily notes.",
+    )
+
     return parser
 
 
@@ -259,6 +267,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_summaries(config)
         elif args.command == "resummarize":
             return cmd_resummarize(config, age_days=getattr(args, "age", None))
+        elif args.command == "clean":
+            return cmd_clean(config)
         else:
             print_error(f"[red]Unknown command: {args.command}[/]")
             return EXIT_ERROR

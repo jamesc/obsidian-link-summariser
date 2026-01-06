@@ -285,8 +285,8 @@ class OllamaClient(BaseLLMClient):
             user_obj = self._prompt_cache["user"]
             prompt_metadata = {
                 "system_prompt_name": "summarize-document/system",
-                "system_prompt_version": getattr(sys_obj, "version", None),
                 "user_prompt_name": "summarize-document/user",
+                "system_prompt_version": getattr(sys_obj, "version", None),
                 "user_prompt_version": getattr(user_obj, "version", None),
                 "source": "langfuse",
             }
