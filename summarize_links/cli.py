@@ -100,9 +100,15 @@ Examples:
         help="Path to Obsidian vault (overrides config)",
     )
     parser.add_argument(
+        "--provider",
+        type=str,
+        choices=["google", "ollama", "azure"],
+        help="LLM provider (overrides MODEL_PROVIDER env var)",
+    )
+    parser.add_argument(
         "--model",
         type=str,
-        help="Gemini model to use (overrides config)",
+        help="Model name to use (overrides config)",
     )
     parser.add_argument(
         "--mock",
@@ -237,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
         # Load configuration with CLI overrides
         config = load_config(
             vault_path=args.vault,
+            provider=getattr(args, "provider", None),
             model=args.model,
             max_links=args.max_links,
             mock_mode=args.mock,
