@@ -934,6 +934,73 @@ class TestBuildFrontmatter:
         )
         assert "summary_model: llama3.1:8b" in result3
 
+    def test_summary_provider_included(self) -> None:
+        """Should include summary_provider when provided."""
+        date = datetime(2025, 12, 16)
+        result = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_provider="google",
+        )
+
+        assert "summary_provider: google" in result
+
+    def test_summary_provider_not_included_when_none(self) -> None:
+        """Should not include summary_provider field when None."""
+        date = datetime(2025, 12, 16)
+        result = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_provider=None,
+        )
+
+        assert "summary_provider:" not in result
+
+    def test_summary_provider_with_different_providers(self) -> None:
+        """Should include any provider name provided."""
+        date = datetime(2025, 12, 16)
+
+        # Test with Google provider
+        result1 = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_provider="google",
+        )
+        assert "summary_provider: google" in result1
+
+        # Test with Ollama provider
+        result2 = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_provider="ollama",
+        )
+        assert "summary_provider: ollama" in result2
+
+        # Test with Azure provider
+        result3 = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_provider="azure",
+        )
+        assert "summary_provider: azure" in result3
+
+    def test_summary_model_and_provider_together(self) -> None:
+        """Should include both summary_model and summary_provider when provided."""
+        date = datetime(2025, 12, 16)
+        result = build_frontmatter(
+            url="https://example.com",
+            date=date,
+            summary_model="gpt-4",
+            summary_provider="azure",
+        )
+
+        assert "summary_model: gpt-4" in result
+        assert "summary_provider: azure" in result
+        # Verify provider comes after model
+        model_pos = result.index("summary_model")
+        provider_pos = result.index("summary_provider")
+        assert model_pos < provider_pos
+
     def test_summary_date_default_to_now(self) -> None:
         """Should include summary_date with current time when not provided."""
         date = datetime(2025, 12, 16)
@@ -1326,6 +1393,57 @@ class TestWriteSummaryNoteWithMetadata:
         content = filepath.read_text()
         assert "summary_model: qwen3:latest" in content
 
+    def test_includes_summary_provider_when_provided(self, tmp_path: Path) -> None:
+        """Should include summary_provider field when provided."""
+        date = datetime(2025, 12, 16)
+        summary = SummaryResult(content="Test summary")
+
+        filepath = write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary,
+            date=date,
+            summary_provider="google",
+        )
+
+        content = filepath.read_text()
+        assert "summary_provider: google" in content
+
+    def test_omits_summary_provider_when_none(self, tmp_path: Path) -> None:
+        """Should not include summary_provider field when None."""
+        date = datetime(2025, 12, 16)
+        summary = SummaryResult(content="Test summary")
+
+        filepath = write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary,
+            date=date,
+            summary_provider=None,
+        )
+
+        content = filepath.read_text()
+        assert "summary_provider:" not in content
+
+    def test_includes_summary_provider_azure(self, tmp_path: Path) -> None:
+        """Should include Azure provider name."""
+        date = datetime(2025, 12, 16)
+        summary = SummaryResult(content="Test summary")
+
+        filepath = write_summary_note_with_metadata(
+            vault_path=tmp_path,
+            out_folder="Summaries",
+            url="https://example.com",
+            summary_result=summary,
+            date=date,
+            summary_provider="azure",
+        )
+
+        content = filepath.read_text()
+        assert "summary_provider: azure" in content
+
     def test_includes_summary_date_field(self, tmp_path: Path) -> None:
         """Should include summary_date field with timestamp."""
         date = datetime(2025, 12, 16)
@@ -1378,13 +1496,15 @@ class TestWriteSummaryNoteWithMetadata:
             summary_result=summary,
             date=date,
             summary_status="success",
-            summary_model="gemini-2.5-flash",
+            summary_model="gpt-4",
+            summary_provider="azure",
             summary_date=summary_date,
         )
 
         content = filepath.read_text()
         assert "summary_status: success" in content
-        assert "summary_model: gemini-2.5-flash" in content
+        assert "summary_model: gpt-4" in content
+        assert "summary_provider: azure" in content
         assert "summary_date: 2025-12-16 10:30:00" in content
 
 

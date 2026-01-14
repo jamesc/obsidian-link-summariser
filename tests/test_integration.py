@@ -173,6 +173,7 @@ class TestConfigIntegration:
     ) -> None:
         """Full config should pass validation."""
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("MODEL_PROVIDER", "google")
 
         config = load_config(vault_path=mock_vault)
         config.validate()  # Should not raise

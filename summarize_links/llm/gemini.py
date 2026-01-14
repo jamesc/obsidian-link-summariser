@@ -16,9 +16,14 @@ from typing import Any
 from google import genai
 from google.genai import errors, types
 
-from summarize_links.config import DEFAULT_MODEL, get_model_rate_limits
+from summarize_links.config import DEFAULT_MODEL
 from summarize_links.exceptions import GeminiAPIError, RateLimitError
-from summarize_links.llm.base import BaseLLMClient
+from summarize_links.llm.base import (
+    BASE_RETRY_DELAY,
+    MAX_RETRIES,
+    MAX_RETRY_DELAY,
+    BaseLLMClient,
+)
 from summarize_links.llm.parsing import parse_llm_json_response
 from summarize_links.models import SummaryResult
 from summarize_links.rate_limiter import ModelRateLimits, RateLimiter
@@ -31,12 +36,6 @@ __all__ = [
 
 # Module logger
 logger = logging.getLogger(__name__)
-
-# Retry configuration
-MAX_RETRIES = 5
-BASE_RETRY_DELAY = 2.0  # Base delay for exponential backoff (seconds)
-MIN_RATE_LIMIT_WAIT = 10.0  # Minimum wait when rate limited (seconds)
-MAX_RETRY_DELAY = 120.0  # Maximum delay cap (seconds)
 
 
 class GeminiClient(BaseLLMClient):
@@ -74,36 +73,26 @@ class GeminiClient(BaseLLMClient):
             tpm_limit: Legacy: Tokens per minute limit (ignored if model_limits provided).
             daily_limit: Legacy: Requests per day limit (ignored if model_limits provided).
         """
-        # Initialize base class with Langfuse prompt management
-        super().__init__(error_class=GeminiAPIError)
+        # Initialize base class with Langfuse prompt management and rate limiting
+        super().__init__(
+            error_class=GeminiAPIError,
+            model=model,
+            rate_limiter=rate_limiter,
+            state_path=state_path,
+            model_limits=model_limits,
+            yaml_model_limits=yaml_model_limits,
+            rpm_limit=rpm_limit,
+            tpm_limit=tpm_limit,
+            daily_limit=daily_limit,
+        )
+
+        # GeminiClient always has rate limiting enabled - narrow the type
+        assert self._rate_limiter is not None
+        # Re-declare with non-optional type for mypy
+        self._rate_limiter: RateLimiter = self._rate_limiter
 
         self._api_key = api_key
-        self._model_name = model
         self._client: Any = None
-
-        # Get model-specific rate limits
-        if model_limits is not None:
-            limits = model_limits
-        elif rpm_limit is not None or tpm_limit is not None or daily_limit is not None:
-            # Legacy: create limits from individual parameters
-            limits = ModelRateLimits(
-                rpm_limit=rpm_limit if rpm_limit is not None else 5,
-                tpm_limit=tpm_limit if tpm_limit is not None else 250000,
-                daily_limit=daily_limit if daily_limit is not None else 20,
-            )
-        else:
-            # Use model-specific defaults
-            limits = get_model_rate_limits(model, yaml_model_limits)
-
-        # Use provided rate limiter or create one with model-specific limits
-        if rate_limiter is not None:
-            self._rate_limiter = rate_limiter
-        else:
-            self._rate_limiter = RateLimiter(
-                model=model,
-                limits=limits,
-                state_path=state_path,
-            )
 
         logger.debug(
             "Initialized GeminiClient with model: %s (RPM=%d, TPM=%d, Daily=%d) "
@@ -125,66 +114,6 @@ class GeminiClient(BaseLLMClient):
             self._client = genai.Client(api_key=self._api_key)
             logger.debug("Created Client instance")
         return self._client
-
-    def _calculate_rate_limit_wait(self, attempt: int, error: Exception) -> float:
-        """
-        Calculate wait time when rate limited, respecting actual rate limit windows.
-
-        Uses a combination of:
-        1. Retry-After header from the API response (if available)
-        2. Rate limiter's calculated wait time based on sliding window
-        3. Exponential backoff as a fallback
-
-        Args:
-            attempt: Current retry attempt (0-indexed).
-            error: The rate limit exception from the API.
-
-        Returns:
-            Number of seconds to wait before retrying.
-        """
-        # Mark that we hit a rate limit (syncs internal state)
-        self._rate_limiter.mark_rate_limited()
-
-        # Try to extract Retry-After from the error message or metadata
-        retry_after: float | None = None
-        error_str = str(error)
-
-        # Parse retry delay from error message (Gemini often includes this)
-        # Example: "Resource has been exhausted... Retry after 60 seconds"
-        retry_match = re.search(r"[Rr]etry after (\d+(?:\.\d+)?)", error_str)
-        if retry_match:
-            retry_after = float(retry_match.group(1))
-            logger.debug("Extracted Retry-After from error: %.1fs", retry_after)
-
-        # Get the rate limiter's suggestion based on sliding window
-        rpm_wait = self._rate_limiter.get_time_until_rpm_slot()
-        can_proceed, limiter_wait, reason = self._rate_limiter.check_limits()
-
-        if not can_proceed:
-            logger.debug("Rate limiter suggests waiting %.1fs: %s", limiter_wait, reason)
-
-        # Calculate exponential backoff: BASE * 2^attempt
-        exponential_wait = BASE_RETRY_DELAY * (2**attempt)
-
-        # Choose the appropriate wait time
-        if retry_after is not None:
-            # API told us exactly how long to wait - use that with a small buffer
-            wait_time = retry_after + 1.0
-        elif rpm_wait > 0:
-            # Use the calculated time until an RPM slot opens
-            wait_time = rpm_wait
-        elif limiter_wait > 0:
-            # Use rate limiter's general calculation
-            wait_time = limiter_wait
-        else:
-            # Fallback to exponential backoff with minimum for rate limits
-            wait_time = max(MIN_RATE_LIMIT_WAIT, exponential_wait)
-
-        # Cap at maximum and ensure minimum wait for rate limits
-        wait_time = min(wait_time, MAX_RETRY_DELAY)
-        wait_time = max(wait_time, MIN_RATE_LIMIT_WAIT)
-
-        return wait_time
 
     def summarize(self, content: str, url: str, title: str | None = None) -> str:
         """

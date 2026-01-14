@@ -23,7 +23,7 @@ class TestOllamaClient:
     def test_init(self) -> None:
         """Test client initialization."""
         client = OllamaClient(model="llama3:latest")
-        assert client._model == "llama3:latest"
+        assert client._model_name == "llama3:latest"
         assert client._endpoint == "http://localhost:11434"
         assert client._timeout == 120
 
@@ -34,7 +34,7 @@ class TestOllamaClient:
             endpoint="http://custom-server:8080",
             timeout=60,
         )
-        assert client._model == "mistral"
+        assert client._model_name == "mistral"
         assert client._endpoint == "http://custom-server:8080"
         assert client._timeout == 60
 

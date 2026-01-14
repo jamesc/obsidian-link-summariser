@@ -33,6 +33,11 @@ __all__ = [
     "load_config",
     "load_yaml_config",
     "setup_logging",
+    # Constants - providers
+    "PROVIDER_GOOGLE",
+    "PROVIDER_OLLAMA",
+    "PROVIDER_AZURE",
+    "VALID_PROVIDERS",
     # Constants - defaults
     "DEFAULT_MODEL",
     "DEFAULT_OUT_FOLDER",
@@ -52,12 +57,24 @@ __all__ = [
     # Constants - Ollama
     "DEFAULT_OLLAMA_ENDPOINT",
     "OLLAMA_TIMEOUT",
+    # Constants - Azure
+    "DEFAULT_AZURE_API_VERSION",
+    "AZURE_RPM_LIMIT",
+    "AZURE_TPM_LIMIT",
+    "AZURE_DAILY_LIMIT",
     # Functions
     "get_model_rate_limits",
 ]
 
 # Configure module logger
 logger = logging.getLogger(__name__)
+
+# ----- Provider Constants -----
+# These define the valid LLM providers that can be used
+PROVIDER_GOOGLE = "google"
+PROVIDER_OLLAMA = "ollama"
+PROVIDER_AZURE = "azure"
+VALID_PROVIDERS = {PROVIDER_GOOGLE, PROVIDER_OLLAMA, PROVIDER_AZURE}
 
 # ----- Constants -----
 # These define default values and filenames used throughout the application
@@ -83,6 +100,12 @@ GEMINI_DAILY_LIMIT = 20  # Requests per day
 DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434"
 OLLAMA_TIMEOUT = 120  # Seconds (local models can be slower)
 
+# Azure / Microsoft Foundry configuration
+DEFAULT_AZURE_API_VERSION = "2024-02-15-preview"
+AZURE_RPM_LIMIT = 100  # Requests per minute (varies by tier)
+AZURE_TPM_LIMIT = 90000  # Tokens per minute (varies by tier)
+AZURE_DAILY_LIMIT = 5000  # Requests per day (varies by tier)
+
 # Default rate limits per model (actual API limits before safety margin)
 # These are the raw API limits - the rate limiter applies a 10% safety margin
 # Note: Actual limits vary by usage tier (Free/Tier 1-3) and can be checked
@@ -105,6 +128,43 @@ DEFAULT_MODEL_LIMITS: dict[str, dict[str, int]] = {
         "rpm_limit": 10,
         "tpm_limit": 250000,
         "daily_limit": 20,
+    },
+    # Azure / OpenAI models (standard tier limits)
+    "gpt-4": {
+        "rpm_limit": 100,
+        "tpm_limit": 90000,
+        "daily_limit": 5000,
+    },
+    "gpt-4-turbo": {
+        "rpm_limit": 60,
+        "tpm_limit": 80000,
+        "daily_limit": 3000,
+    },
+    "gpt-4o": {
+        "rpm_limit": 100,
+        "tpm_limit": 90000,
+        "daily_limit": 5000,
+    },
+    "gpt-35-turbo": {
+        "rpm_limit": 350,
+        "tpm_limit": 90000,
+        "daily_limit": 10000,
+    },
+    # GPT-4.1 mini (Azure deployment - various naming conventions)
+    "gpt-4.1-mini": {
+        "rpm_limit": 100,
+        "tpm_limit": 100000,
+        "daily_limit": 1000000,  # Effectively unlimited
+    },
+    "gpt-41-mini": {
+        "rpm_limit": 100,
+        "tpm_limit": 100000,
+        "daily_limit": 1000000,
+    },
+    "gpt4.1-mini": {
+        "rpm_limit": 100,
+        "tpm_limit": 100000,
+        "daily_limit": 1000000,
     },
 }
 
@@ -182,8 +242,9 @@ class Config:
     environment variables and/or YAML config file.
 
     Attributes:
-        gemini_api_key: Google AI Studio API key (required for Gemini models)
-        model: Model to use for summarization (auto-detects provider)
+        model_provider: LLM provider to use (google, ollama, azure) - REQUIRED
+        gemini_api_key: Google AI Studio API key (required for google provider)
+        model: Model to use for summarization
         vault_path: Path to the Obsidian vault
         out_folder: Folder name for summary notes (relative to vault)
         max_links: Maximum number of URLs to process in one run
@@ -195,15 +256,20 @@ class Config:
         default_tags: Tags to add to all summary notes
         max_tags: Maximum number of tags to include in frontmatter
         ollama_endpoint: Ollama server endpoint URL
-        rpm_limit: Gemini API requests per minute limit (legacy, per-model preferred)
-        tpm_limit: Gemini API tokens per minute limit (legacy, per-model preferred)
-        daily_limit: Gemini API requests per day limit (legacy, per-model preferred)
+        azure_api_key: Azure API key (required for azure provider)
+        azure_endpoint: Azure endpoint URL (required for azure provider)
+        azure_api_version: Azure API version
+        azure_deployment_name: Azure deployment name (optional, defaults to model)
+        rpm_limit: API requests per minute limit (legacy, per-model preferred)
+        tpm_limit: API tokens per minute limit (legacy, per-model preferred)
+        daily_limit: API requests per day limit (legacy, per-model preferred)
         model_limits: Per-model rate limit configuration from YAML
         langfuse_public_key: Langfuse public API key (required)
         langfuse_secret_key: Langfuse secret API key (required)
         langfuse_base_url: Langfuse server URL
     """
 
+    model_provider: str = ""  # Required: google, ollama, azure
     gemini_api_key: str = ""
     model: str = DEFAULT_MODEL
     vault_path: Path | None = None
@@ -217,6 +283,10 @@ class Config:
     default_tags: list[str] | None = None
     max_tags: int = DEFAULT_MAX_TAGS
     ollama_endpoint: str = DEFAULT_OLLAMA_ENDPOINT
+    azure_api_key: str = ""
+    azure_endpoint: str = ""
+    azure_api_version: str = DEFAULT_AZURE_API_VERSION
+    azure_deployment_name: str = ""
     rpm_limit: int = GEMINI_RPM_LIMIT
     tpm_limit: int = GEMINI_TPM_LIMIT
     daily_limit: int = GEMINI_DAILY_LIMIT
@@ -232,17 +302,31 @@ class Config:
         Raises:
             ConfigError: If required configuration is missing or invalid.
         """
-        # Detect provider from model name
-        from summarize_links.llm import detect_provider
-
-        provider = detect_provider(self.model)
-
-        # API key is required for Gemini models (unless in mock mode)
-        if not self.mock_mode and provider == "gemini" and not self.gemini_api_key:
+        # Provider is required
+        if not self.model_provider:
             raise ConfigError(
-                "GEMINI_API_KEY environment variable is required for Gemini models. "
-                "Get one at https://aistudio.google.com/apikey"
+                f"MODEL_PROVIDER is required. Set to one of: {', '.join(sorted(VALID_PROVIDERS))}"
             )
+
+        if self.model_provider not in VALID_PROVIDERS:
+            raise ConfigError(
+                f"Invalid MODEL_PROVIDER: {self.model_provider}. "
+                f"Valid options: {', '.join(sorted(VALID_PROVIDERS))}"
+            )
+
+        # Provider-specific validation (unless in mock mode)
+        if not self.mock_mode:
+            if self.model_provider == PROVIDER_GOOGLE and not self.gemini_api_key:
+                raise ConfigError(
+                    "GEMINI_API_KEY is required when MODEL_PROVIDER=google. "
+                    "Get one at https://aistudio.google.com/apikey"
+                )
+
+            if self.model_provider == PROVIDER_AZURE:
+                if not self.azure_api_key:
+                    raise ConfigError("AZURE_API_KEY is required when MODEL_PROVIDER=azure.")
+                if not self.azure_endpoint:
+                    raise ConfigError("AZURE_ENDPOINT is required when MODEL_PROVIDER=azure.")
 
         # Vault path must be set and exist
         if self.vault_path is None:
@@ -265,7 +349,11 @@ class Config:
                 "LANGFUSE_SECRET_KEY environment variables or configure in YAML."
             )
 
-        logger.debug("Configuration validated successfully (provider: %s)", provider)
+        logger.debug(
+            "Configuration validated successfully (provider: %s, model: %s)",
+            self.model_provider,
+            self.model,
+        )
 
 
 def load_yaml_config(vault_path: Path) -> dict[str, Any]:
@@ -301,6 +389,7 @@ def load_yaml_config(vault_path: Path) -> dict[str, Any]:
 def load_config(
     vault_path: Path | str | None = None,
     model: str | None = None,
+    provider: str | None = None,
     out_folder: str | None = None,
     max_links: int | None = None,
     mock_mode: bool = False,
@@ -319,7 +408,8 @@ def load_config(
 
     Args:
         vault_path: Path to Obsidian vault (CLI override).
-        model: Gemini model name (CLI override).
+        model: Model name (CLI override).
+        provider: LLM provider (CLI override): google, ollama, azure.
         out_folder: Output folder name (CLI override).
         max_links: Maximum links to process (CLI override).
         mock_mode: Use mock summarizer.
@@ -344,8 +434,18 @@ def load_config(
         force=force,
     )
 
-    # Load API key from environment (required)
+    # Provider selection: CLI arg > env var > YAML > error
+    if provider:
+        config.model_provider = provider
+    elif os.getenv("MODEL_PROVIDER"):
+        config.model_provider = os.getenv("MODEL_PROVIDER", "")
+
+    # Load API keys from environment
     config.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+    config.azure_api_key = os.getenv("AZURE_API_KEY", "")
+    config.azure_endpoint = os.getenv("AZURE_ENDPOINT", "")
+    config.azure_api_version = os.getenv("AZURE_API_VERSION", DEFAULT_AZURE_API_VERSION)
+    config.azure_deployment_name = os.getenv("AZURE_DEPLOYMENT_NAME", "")
 
     # Resolve vault path: CLI arg > env var > None
     resolved_vault_path: Path | None = None
@@ -361,22 +461,19 @@ def load_config(
     if resolved_vault_path and resolved_vault_path.exists():
         yaml_config = load_yaml_config(resolved_vault_path)
 
+    # Provider from YAML (if not already set)
+    if not config.model_provider and "model_provider" in yaml_config:
+        config.model_provider = yaml_config["model_provider"]
+
     # Merge: CLI args > env vars > YAML config > defaults
-    # Model selection with backward compatibility
-    # Priority: CLI arg > MODEL env > GEMINI_MODEL env > YAML > default
+    # Model selection
+    # Priority: CLI arg > MODEL env > YAML > default
     if model:
         config.model = model
     elif os.getenv("MODEL"):
         config.model = os.getenv("MODEL", DEFAULT_MODEL)
-    elif os.getenv("GEMINI_MODEL"):
-        config.model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
-        logger.warning("GEMINI_MODEL is deprecated, use MODEL environment variable instead")
     elif "summary_model" in yaml_config:
         config.model = yaml_config["summary_model"]
-    elif "model" in yaml_config:
-        # Backward compatibility: support old "model" field
-        config.model = yaml_config["model"]
-        logger.warning("'model' in YAML config is deprecated, use 'summary_model' instead")
 
     # Output folder
     if out_folder:
@@ -411,6 +508,15 @@ def load_config(
         config.ollama_endpoint = os.getenv("OLLAMA_ENDPOINT", DEFAULT_OLLAMA_ENDPOINT)
     elif "ollama_endpoint" in yaml_config:
         config.ollama_endpoint = yaml_config["ollama_endpoint"]
+
+    # Azure configuration from YAML (env vars already loaded above)
+    azure_yaml = yaml_config.get("azure", {})
+    if not config.azure_endpoint and azure_yaml.get("endpoint"):
+        config.azure_endpoint = azure_yaml["endpoint"]
+    if not config.azure_deployment_name and azure_yaml.get("deployment_name"):
+        config.azure_deployment_name = azure_yaml["deployment_name"]
+    if azure_yaml.get("api_version"):
+        config.azure_api_version = azure_yaml["api_version"]
 
     # Per-model rate limits (YAML only)
     if "model_limits" in yaml_config:
@@ -451,7 +557,12 @@ def load_config(
     elif yaml_config.get("langfuse", {}).get("base_url"):
         config.langfuse_base_url = yaml_config["langfuse"]["base_url"]
 
-    logger.debug(f"Loaded config: model={config.model}, out_folder={config.out_folder}")
+    logger.debug(
+        "Loaded config: provider=%s, model=%s, out_folder=%s",
+        config.model_provider,
+        config.model,
+        config.out_folder,
+    )
 
     # Validate the configuration before returning
     config.validate()
@@ -480,5 +591,7 @@ def setup_logging(verbose: bool = False) -> None:
     logging.getLogger("google").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
+    logging.getLogger("azure").setLevel(logging.WARNING)
 
     logger.debug("Logging configured with level: %s", "DEBUG" if verbose else "INFO")
