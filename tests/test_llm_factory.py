@@ -50,6 +50,8 @@ class TestValidateProvider:
         """Test that unknown providers raise ConfigError."""
         with pytest.raises(ConfigError, match="Invalid provider"):
             validate_provider("unknown")
+        # Note: "gemini" is a model name prefix (e.g., "gemini-2.5-flash"),
+        # not a provider. The provider for Gemini models is "google".
         with pytest.raises(ConfigError, match="Invalid provider"):
             validate_provider("gemini")  # Not a valid provider value
         with pytest.raises(ConfigError, match="Invalid provider"):

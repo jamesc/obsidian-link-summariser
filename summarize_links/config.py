@@ -283,6 +283,7 @@ class Config:
     default_tags: list[str] | None = None
     max_tags: int = DEFAULT_MAX_TAGS
     ollama_endpoint: str = DEFAULT_OLLAMA_ENDPOINT
+    # Azure fields - required when model_provider="azure", validated in validate()
     azure_api_key: str = ""
     azure_endpoint: str = ""
     azure_api_version: str = DEFAULT_AZURE_API_VERSION

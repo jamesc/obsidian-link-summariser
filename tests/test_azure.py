@@ -108,6 +108,28 @@ class TestAzureClientInit:
         # Client should be None until used
         assert client._client is None
 
+    def test_init_rejects_http_endpoint(self, mock_rate_limiter: RateLimiter) -> None:
+        """Should reject HTTP endpoints (require HTTPS)."""
+        with pytest.raises(AzureAPIError, match="must use HTTPS"):
+            AzureClient(
+                api_key="test-key",
+                endpoint="http://test.openai.azure.com",  # HTTP instead of HTTPS
+                model="gpt-4",
+                deployment_name="my-gpt4",
+                rate_limiter=mock_rate_limiter,
+            )
+
+    def test_init_rejects_invalid_scheme(self, mock_rate_limiter: RateLimiter) -> None:
+        """Should reject endpoints without proper scheme."""
+        with pytest.raises(AzureAPIError, match="must use HTTPS"):
+            AzureClient(
+                api_key="test-key",
+                endpoint="ftp://test.openai.azure.com",
+                model="gpt-4",
+                deployment_name="my-gpt4",
+                rate_limiter=mock_rate_limiter,
+            )
+
 
 class TestAzureClientSummarize:
     """Tests for AzureClient.summarize method."""

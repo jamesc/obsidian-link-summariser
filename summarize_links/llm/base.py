@@ -304,9 +304,10 @@ class BaseLLMClient:
             Number of seconds to wait before retrying.
 
         Raises:
-            AssertionError: If called without rate limiter initialized.
+            RuntimeError: If called without rate limiter initialized.
         """
-        assert self._rate_limiter is not None, "_calculate_rate_limit_wait requires rate limiter"
+        if self._rate_limiter is None:
+            raise RuntimeError("_calculate_rate_limit_wait requires rate limiter")
 
         # Mark that we hit a rate limit (syncs internal state)
         self._rate_limiter.mark_rate_limited()

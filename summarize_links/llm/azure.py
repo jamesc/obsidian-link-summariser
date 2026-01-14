@@ -79,8 +79,12 @@ class AzureClient(BaseLLMClient):
         Args:
             api_key: Azure API key.
             endpoint: Azure endpoint URL (e.g., https://myresource.openai.azure.com/).
+                Must use HTTPS protocol.
             model: Model name for logging and rate limiting.
-            deployment_name: Azure deployment name. Defaults to model name.
+            deployment_name: Azure deployment name. Defaults to model name if not
+                provided. Note: Azure deployment names are user-defined and often
+                differ from model names (e.g., "my-gpt4-deployment" vs "gpt-4").
+                Ensure this matches your actual Azure deployment.
             api_version: Azure API version.
             rate_limiter: Optional rate limiter instance. If None, creates a new one.
             state_path: Optional path for persisting rate limit state.
@@ -109,7 +113,14 @@ class AzureClient(BaseLLMClient):
         self._rate_limiter: RateLimiter = self._rate_limiter
 
         self._api_key = api_key
-        self._endpoint = endpoint.rstrip("/")
+        # Validate and normalize endpoint URL
+        normalized_endpoint = endpoint.rstrip("/")
+        if not normalized_endpoint.startswith("https://"):
+            raise AzureAPIError(
+                f"Azure endpoint must use HTTPS. Got: {endpoint}. "
+                "Expected format: https://<resource-name>.openai.azure.com"
+            )
+        self._endpoint = normalized_endpoint
         self._deployment_name = deployment_name or model
         self._api_version = api_version
         self._client: AzureOpenAI | None = None
