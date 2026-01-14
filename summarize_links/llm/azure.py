@@ -11,9 +11,9 @@ import logging
 import re
 import time
 from pathlib import Path
-from typing import Any
 
-from openai import AzureOpenAI, APIError, APIConnectionError, RateLimitError as OpenAIRateLimitError
+from openai import APIConnectionError, APIError, AzureOpenAI
+from openai import RateLimitError as OpenAIRateLimitError
 
 from summarize_links.config import (
     AZURE_DAILY_LIMIT,
@@ -411,7 +411,7 @@ class AzureClient(BaseLLMClient):
                 self._rate_limiter.record_request(tokens_used)
 
                 # Parse JSON response
-                result = parse_llm_json_response(raw_response, AzureAPIError)
+                result = parse_llm_json_response(raw_response)
 
                 # Populate metadata
                 self._populate_result_metadata(

@@ -13,7 +13,6 @@ from summarize_links.config import (
     DEFAULT_AZURE_API_VERSION,
     DEFAULT_OLLAMA_ENDPOINT,
     PROVIDER_AZURE,
-    PROVIDER_GOOGLE,
     PROVIDER_OLLAMA,
     VALID_PROVIDERS,
 )
@@ -45,8 +44,7 @@ def validate_provider(provider: str) -> str:
 
     if not provider:
         raise ConfigError(
-            "MODEL_PROVIDER is required. "
-            f"Set to one of: {', '.join(sorted(VALID_PROVIDERS))}"
+            f"MODEL_PROVIDER is required. Set to one of: {', '.join(sorted(VALID_PROVIDERS))}"
         )
 
     if provider not in VALID_PROVIDERS:
@@ -61,7 +59,7 @@ def validate_provider(provider: str) -> str:
 
 def create_llm_client(
     model: str,
-    provider: str,
+    provider: str | None = None,
     gemini_api_key: str | None = None,
     ollama_endpoint: str | None = None,
     azure_api_key: str | None = None,
@@ -104,6 +102,13 @@ def create_llm_client(
         logger.info("Creating MockGeminiClient (mock mode enabled)")
         return MockGeminiClient(model=model)
 
+    # Provider is required when not in mock mode
+    if not provider:
+        raise ConfigError(
+            "MODEL_PROVIDER is required. "
+            "Set MODEL_PROVIDER environment variable to: google, ollama, or azure"
+        )
+
     validated_provider = validate_provider(provider)
 
     if validated_provider == PROVIDER_OLLAMA:
@@ -120,13 +125,9 @@ def create_llm_client(
         from summarize_links.llm.azure import AzureClient
 
         if not azure_api_key:
-            raise ConfigError(
-                "AZURE_API_KEY is required when MODEL_PROVIDER=azure."
-            )
+            raise ConfigError("AZURE_API_KEY is required when MODEL_PROVIDER=azure.")
         if not azure_endpoint:
-            raise ConfigError(
-                "AZURE_ENDPOINT is required when MODEL_PROVIDER=azure."
-            )
+            raise ConfigError("AZURE_ENDPOINT is required when MODEL_PROVIDER=azure.")
 
         logger.info("Creating AzureClient for model: %s", model)
         return AzureClient(

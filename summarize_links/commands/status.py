@@ -8,7 +8,7 @@ import logging
 
 from rich.table import Table
 
-from summarize_links.config import Config, PROVIDER_OLLAMA, PROVIDER_GOOGLE, PROVIDER_AZURE
+from summarize_links.config import PROVIDER_AZURE, PROVIDER_OLLAMA, Config
 from summarize_links.rate_limiter import get_rate_limiter
 from summarize_links.ui import print_message
 

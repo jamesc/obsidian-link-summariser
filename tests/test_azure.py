@@ -6,11 +6,11 @@ retry logic, and response parsing.
 """
 
 import json
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from openai import APIConnectionError, APIStatusError, RateLimitError as OpenAIRateLimitError
+from openai import APIConnectionError, APIStatusError
+from openai import RateLimitError as OpenAIRateLimitError
 
 from summarize_links.config import DEFAULT_AZURE_API_VERSION
 from summarize_links.exceptions import (

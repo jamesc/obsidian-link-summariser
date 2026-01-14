@@ -289,8 +289,7 @@ class Config:
         # Provider is required
         if not self.model_provider:
             raise ConfigError(
-                "MODEL_PROVIDER is required. "
-                f"Set to one of: {', '.join(sorted(VALID_PROVIDERS))}"
+                f"MODEL_PROVIDER is required. Set to one of: {', '.join(sorted(VALID_PROVIDERS))}"
             )
 
         if self.model_provider not in VALID_PROVIDERS:
@@ -309,13 +308,9 @@ class Config:
 
             if self.model_provider == PROVIDER_AZURE:
                 if not self.azure_api_key:
-                    raise ConfigError(
-                        "AZURE_API_KEY is required when MODEL_PROVIDER=azure."
-                    )
+                    raise ConfigError("AZURE_API_KEY is required when MODEL_PROVIDER=azure.")
                 if not self.azure_endpoint:
-                    raise ConfigError(
-                        "AZURE_ENDPOINT is required when MODEL_PROVIDER=azure."
-                    )
+                    raise ConfigError("AZURE_ENDPOINT is required when MODEL_PROVIDER=azure.")
 
         # Vault path must be set and exist
         if self.vault_path is None:

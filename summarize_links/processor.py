@@ -491,11 +491,16 @@ def process_urls_batch(
     original_handler = signal.signal(signal.SIGINT, _handle_shutdown)
 
     try:
-        # Create the LLM client (auto-detects provider from model name)
+        # Create the LLM client (requires provider from config)
         client = create_llm_client(
             model=config.model,
+            provider=config.model_provider,
             gemini_api_key=config.gemini_api_key,
             ollama_endpoint=config.ollama_endpoint,
+            azure_api_key=config.azure_api_key,
+            azure_endpoint=config.azure_endpoint,
+            azure_deployment_name=config.azure_deployment_name,
+            azure_api_version=config.azure_api_version,
             mock_mode=config.mock_mode,
             state_path=config.vault_path,
             rpm_limit=config.rpm_limit,
@@ -611,8 +616,13 @@ def process_resummarize_batch(
         # Create the LLM client
         client = create_llm_client(
             model=config.model,
+            provider=config.model_provider,
             gemini_api_key=config.gemini_api_key,
             ollama_endpoint=config.ollama_endpoint,
+            azure_api_key=config.azure_api_key,
+            azure_endpoint=config.azure_endpoint,
+            azure_deployment_name=config.azure_deployment_name,
+            azure_api_version=config.azure_api_version,
             mock_mode=config.mock_mode,
             state_path=config.vault_path,
             rpm_limit=config.rpm_limit,

@@ -25,10 +25,9 @@ Usage:
 
 # Protocol interface
 # Factory
-from summarize_links.llm.factory import create_llm_client, validate_provider
-
 # Client implementations
 from summarize_links.llm.azure import AzureClient
+from summarize_links.llm.factory import create_llm_client, validate_provider
 from summarize_links.llm.gemini import GeminiClient, MockGeminiClient
 from summarize_links.llm.ollama import OllamaClient
 from summarize_links.llm.protocol import SummarizerProtocol
