@@ -12,6 +12,7 @@ keywords = ["obsidian", "gemini", "ai", "summarizer", "cli"]
 
 dependencies = [
     "google-genai>=0.1.0",
+    "openai>=1.3.0",
     "pydantic>=2.0",
     "requests>=2.32",
     "beautifulsoup4>=4.12",

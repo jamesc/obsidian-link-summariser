@@ -160,7 +160,7 @@ def process_url_with_metadata(
             ],
             metadata={
                 "vault": str(config.vault_path),
-                "provider": "gemini" if config.model.startswith("gemini") else "ollama",
+                "provider": config.model_provider,
             },
         ):
             try:
@@ -294,6 +294,7 @@ def process_url_with_metadata(
                         overwrite=needs_overwrite,
                         summary_status=summary_status,
                         summary_model=config.model,
+                        summary_provider=config.model_provider,
                         summary_date=datetime.now(),
                     )
 
@@ -315,6 +316,7 @@ def process_url_with_metadata(
                                     "final_tags": final_tags,
                                     "content_type": summary_result.content_type,
                                     "summary_model": config.model,
+                                    "summary_provider": config.model_provider,
                                     "date": summary_date.strftime("%Y-%m-%d"),
                                 },
                             )
@@ -345,6 +347,7 @@ def process_url_with_metadata(
                                 "source_note": daily_note_filename,
                                 "summary_path": str(summary_path),
                                 "summary_status": summary_status,
+                                "summary_provider": config.model_provider,
                                 "filename": summary_path.name,
                                 "title": page_metadata.title,
                                 "content_type": summary_result.content_type,
@@ -491,16 +494,21 @@ def process_urls_batch(
     original_handler = signal.signal(signal.SIGINT, _handle_shutdown)
 
     try:
-        # Create the LLM client (auto-detects provider from model name)
+        # Create the LLM client (requires provider from config)
+        # Note: We don't pass rpm/tpm/daily limits here - let the client
+        # use model-specific defaults from config.py or YAML model_limits
         client = create_llm_client(
             model=config.model,
+            provider=config.model_provider,
             gemini_api_key=config.gemini_api_key,
             ollama_endpoint=config.ollama_endpoint,
+            azure_api_key=config.azure_api_key,
+            azure_endpoint=config.azure_endpoint,
+            azure_deployment_name=config.azure_deployment_name,
+            azure_api_version=config.azure_api_version,
             mock_mode=config.mock_mode,
             state_path=config.vault_path,
-            rpm_limit=config.rpm_limit,
-            tpm_limit=config.tpm_limit,
-            daily_limit=config.daily_limit,
+            yaml_model_limits=config.model_limits,
         )
 
         if config.mock_mode:
@@ -609,15 +617,20 @@ def process_resummarize_batch(
 
     try:
         # Create the LLM client
+        # Note: We don't pass rpm/tpm/daily limits here - let the client
+        # use model-specific defaults from config.py or YAML model_limits
         client = create_llm_client(
             model=config.model,
+            provider=config.model_provider,
             gemini_api_key=config.gemini_api_key,
             ollama_endpoint=config.ollama_endpoint,
+            azure_api_key=config.azure_api_key,
+            azure_endpoint=config.azure_endpoint,
+            azure_deployment_name=config.azure_deployment_name,
+            azure_api_version=config.azure_api_version,
             mock_mode=config.mock_mode,
             state_path=config.vault_path,
-            rpm_limit=config.rpm_limit,
-            tpm_limit=config.tpm_limit,
-            daily_limit=config.daily_limit,
+            yaml_model_limits=config.model_limits,
         )
 
         if config.mock_mode:

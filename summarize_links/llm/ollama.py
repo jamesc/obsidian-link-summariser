@@ -72,10 +72,9 @@ class OllamaClient(BaseLLMClient):
             endpoint: Ollama server endpoint URL.
             timeout: Request timeout in seconds.
         """
-        # Initialize base class with Langfuse support
-        super().__init__(error_class=OllamaAPIError)
+        # Initialize base class with Langfuse support (no rate limiting for local models)
+        super().__init__(error_class=OllamaAPIError, model=model, enable_rate_limiting=False)
 
-        self._model = model
         self._endpoint = endpoint.rstrip("/")
         self._timeout = timeout
         self._server_checked = False
@@ -143,7 +142,7 @@ class OllamaClient(BaseLLMClient):
         self._check_server()
 
         try:
-            logger.debug("Checking if model '%s' is installed", self._model)
+            logger.debug("Checking if model '%s' is installed", self._model_name)
             response = requests.get(
                 f"{self._endpoint}/api/tags",
                 timeout=5,
@@ -157,16 +156,16 @@ class OllamaClient(BaseLLMClient):
                 installed_models = [m.get("name", "") for m in data["models"]]
 
             # Check if our model is in the list
-            if self._model not in installed_models:
+            if self._model_name not in installed_models:
                 available = ", ".join(installed_models) if installed_models else "none"
                 raise ModelNotInstalledError(
-                    f"Model '{self._model}' is not installed.\n"
-                    f"To install: ollama pull {self._model}\n\n"
+                    f"Model '{self._model_name}' is not installed.\n"
+                    f"To install: ollama pull {self._model_name}\n\n"
                     f"Available models: {available}"
                 )
 
             self._model_checked = True
-            logger.debug("Model '%s' is installed", self._model)
+            logger.debug("Model '%s' is installed", self._model_name)
 
         except requests.exceptions.RequestException as e:
             raise OllamaServerError(f"Failed to check installed models: {e}") from e
@@ -205,7 +204,7 @@ class OllamaClient(BaseLLMClient):
             response = requests.post(
                 f"{self._endpoint}/api/generate",
                 json={
-                    "model": self._model,
+                    "model": self._model_name,
                     "prompt": full_prompt,
                     "stream": False,
                     "format": "json",  # Request JSON output
@@ -288,7 +287,7 @@ class OllamaClient(BaseLLMClient):
             response = requests.post(
                 f"{self._endpoint}/api/generate",
                 json={
-                    "model": self._model,
+                    "model": self._model_name,
                     "prompt": full_prompt,
                     "stream": False,
                     "format": "json",

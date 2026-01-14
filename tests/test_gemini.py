@@ -660,7 +660,8 @@ class TestRateLimitWaitCalculation:
 
     def test_respects_minimum_rate_limit_wait(self) -> None:
         """Should enforce minimum wait time for rate limits."""
-        from summarize_links.llm.gemini import MIN_RATE_LIMIT_WAIT, GeminiClient
+        from summarize_links.llm.base import MIN_RATE_LIMIT_WAIT
+        from summarize_links.llm.gemini import GeminiClient
 
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
@@ -674,7 +675,8 @@ class TestRateLimitWaitCalculation:
 
     def test_caps_wait_at_max_delay(self) -> None:
         """Should cap wait time at maximum delay."""
-        from summarize_links.llm.gemini import MAX_RETRY_DELAY, GeminiClient
+        from summarize_links.llm.base import MAX_RETRY_DELAY
+        from summarize_links.llm.gemini import GeminiClient
 
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
@@ -779,7 +781,7 @@ class TestRetryOnGenericAPIError:
         self, mock_client_class: MagicMock
     ) -> None:
         """Should raise GeminiAPIError after retries exhausted for generic errors."""
-        from summarize_links.llm.gemini import MAX_RETRIES
+        from summarize_links.llm.base import MAX_RETRIES
 
         generic_error = errors.ClientError(500, {"error": {"message": "Persistent error"}})
 

@@ -1,118 +1,94 @@
 """
-Factory for creating LLM clients based on model name.
+Factory for creating LLM clients based on provider selection.
 
-Automatically detects provider (Ollama vs Gemini) and returns
-the appropriate client implementation.
+Uses explicit MODEL_PROVIDER configuration to route to the
+appropriate client implementation (Google, Ollama, or Azure).
 """
 
 import logging
 from pathlib import Path
 from typing import Any
 
-from summarize_links.llm.gemini import GeminiClient, MockGeminiClient
-from summarize_links.llm.ollama import DEFAULT_OLLAMA_ENDPOINT, OllamaClient
+from summarize_links.config import (
+    DEFAULT_AZURE_API_VERSION,
+    DEFAULT_OLLAMA_ENDPOINT,
+    PROVIDER_AZURE,
+    PROVIDER_OLLAMA,
+    VALID_PROVIDERS,
+)
 from summarize_links.llm.protocol import SummarizerProtocol
 
 __all__ = [
-    "detect_provider",
+    "validate_provider",
     "create_llm_client",
-    "OLLAMA_MODEL_PREFIXES",
 ]
 
 # Module logger
 logger = logging.getLogger(__name__)
 
-# Known Ollama model prefixes
-OLLAMA_MODEL_PREFIXES = [
-    "llama",
-    "mistral",
-    "phi",
-    "qwen",
-    "gemma",
-    "codellama",
-    "mixtral",
-    "neural-chat",
-    "starling",
-    "orca",
-    "vicuna",
-    "wizardlm",
-    "yi",
-    "solar",
-    "deepseek",
-    "openchat",
-    "nous",
-    "zephyr",
-    "orca2",
-    "dolphin",
-]
 
-
-def detect_provider(model: str) -> str:
+def validate_provider(provider: str) -> str:
     """
-    Detect which provider to use based on model name.
-
-    Provider detection logic:
-    1. Models starting with "gemini-" → Gemini
-    2. Models with ":" character (Ollama tag notation, e.g., "llama3:latest") → Ollama
-    3. Known Ollama model name prefixes → Ollama
-    4. Unknown models → raises ConfigError
+    Validate the provider setting.
 
     Args:
-        model: Model name/identifier.
+        provider: Provider from MODEL_PROVIDER env var or config.
 
     Returns:
-        "ollama" or "gemini"
+        Validated provider string (lowercase): "google", "ollama", or "azure"
 
     Raises:
-        ConfigError: If model provider cannot be determined.
+        ConfigError: If provider is missing or invalid.
     """
     from summarize_links.exceptions import ConfigError
 
-    # Check for Gemini-specific prefix first
-    if model.startswith("gemini-"):
-        logger.debug("Detected Gemini model by 'gemini-' prefix: %s", model)
-        return "gemini"
+    if not provider:
+        raise ConfigError(
+            f"MODEL_PROVIDER is required. Set to one of: {', '.join(sorted(VALID_PROVIDERS))}"
+        )
 
-    # Ollama models typically use : for tags (e.g., llama3:latest)
-    if ":" in model:
-        logger.debug("Detected Ollama model by ':' character: %s", model)
-        return "ollama"
+    # Normalize to lowercase for case-insensitive matching
+    normalized = provider.lower()
 
-    # Check against known Ollama model prefixes
-    model_lower = model.lower()
-    for prefix in OLLAMA_MODEL_PREFIXES:
-        if model_lower.startswith(prefix):
-            logger.debug("Detected Ollama model by prefix '%s': %s", prefix, model)
-            return "ollama"
+    if normalized not in VALID_PROVIDERS:
+        raise ConfigError(
+            f"Invalid provider: {provider}. Valid options: {', '.join(sorted(VALID_PROVIDERS))}"
+        )
 
-    # Cannot determine provider - raise error
-    raise ConfigError(
-        f"Unable to determine provider for model: {model}. "
-        f"Use 'gemini-*' prefix for Gemini models, ':' for Ollama tags (e.g., 'llama3:latest'), "
-        f"or a known Ollama model prefix."
-    )
+    logger.debug("Using provider: %s", normalized)
+    return normalized
 
 
 def create_llm_client(
     model: str,
+    provider: str | None = None,
     gemini_api_key: str | None = None,
     ollama_endpoint: str | None = None,
+    azure_api_key: str | None = None,
+    azure_endpoint: str | None = None,
+    azure_deployment_name: str | None = None,
+    azure_api_version: str | None = None,
     mock_mode: bool = False,
     state_path: Path | None = None,
     **kwargs: Any,
 ) -> SummarizerProtocol:
     """
-    Create appropriate LLM client based on model name.
+    Create appropriate LLM client based on provider.
 
-    Automatically detects the provider from the model name and
-    instantiates the correct client implementation.
+    Routes to the correct client implementation based on the
+    explicit provider setting.
 
     Args:
-        model: Model identifier (auto-detects provider).
-        gemini_api_key: API key for Gemini (required for Gemini models).
-        ollama_endpoint: Ollama server endpoint (defaults to localhost).
+        model: Model identifier.
+        provider: LLM provider (google, ollama, azure) - REQUIRED.
+        gemini_api_key: API key for Google Gemini.
+        ollama_endpoint: Ollama server endpoint.
+        azure_api_key: API key for Azure.
+        azure_endpoint: Azure endpoint URL.
+        azure_deployment_name: Azure deployment name (defaults to model).
+        azure_api_version: Azure API version.
         mock_mode: Use mock client for testing.
-        state_path: Path for rate limiter state (Gemini only).
+        state_path: Path for rate limiter state.
         **kwargs: Additional provider-specific arguments.
 
     Returns:
@@ -122,24 +98,56 @@ def create_llm_client(
         ConfigError: If required configuration is missing.
     """
     from summarize_links.exceptions import ConfigError
+    from summarize_links.llm.gemini import GeminiClient, MockGeminiClient
 
     if mock_mode:
         logger.info("Creating MockGeminiClient (mock mode enabled)")
         return MockGeminiClient(model=model)
 
-    provider = detect_provider(model)
+    # Provider is required when not in mock mode
+    if not provider:
+        raise ConfigError(
+            "MODEL_PROVIDER is required. "
+            "Set MODEL_PROVIDER environment variable to: google, ollama, or azure"
+        )
 
-    if provider == "ollama":
+    validated_provider = validate_provider(provider)
+
+    if validated_provider == PROVIDER_OLLAMA:
+        from summarize_links.llm.ollama import OllamaClient
+
         logger.info("Creating OllamaClient for model: %s", model)
         endpoint = ollama_endpoint or DEFAULT_OLLAMA_ENDPOINT
         return OllamaClient(
             model=model,
             endpoint=endpoint,
         )
-    else:  # gemini
+
+    elif validated_provider == PROVIDER_AZURE:
+        from summarize_links.llm.azure import AzureClient
+
+        if not azure_api_key:
+            raise ConfigError("AZURE_API_KEY is required when MODEL_PROVIDER=azure.")
+        if not azure_endpoint:
+            raise ConfigError("AZURE_ENDPOINT is required when MODEL_PROVIDER=azure.")
+
+        # deployment_name defaults to model if not provided
+        deployment = azure_deployment_name if azure_deployment_name else model
+        logger.info("Creating AzureClient for model: %s, deployment: %s", model, deployment)
+        return AzureClient(
+            api_key=azure_api_key,
+            endpoint=azure_endpoint,
+            model=model,
+            deployment_name=deployment,
+            api_version=azure_api_version or DEFAULT_AZURE_API_VERSION,
+            state_path=state_path,
+            **kwargs,
+        )
+
+    else:  # google
         if not gemini_api_key:
             raise ConfigError(
-                "GEMINI_API_KEY required for Gemini models. "
+                "GEMINI_API_KEY is required when MODEL_PROVIDER=google. "
                 "Get one at https://aistudio.google.com/apikey"
             )
 
