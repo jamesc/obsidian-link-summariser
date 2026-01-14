@@ -28,7 +28,7 @@ This specification outlines the implementation plan for adding **Microsoft Found
 | Requirement | Description |
 |-------------|-------------|
 | **FR1** | Route to correct client based on `MODEL_PROVIDER` setting |
-| **FR2** | Create `AzureFoundryClient` implementing `SummarizerProtocol` |
+| **FR2** | Create `AzureClient` implementing `SummarizerProtocol` |
 | **FR3** | Support Microsoft Foundry endpoints |
 | **FR4** | Handle Azure SDK authentication (API key, token-based) |
 | **FR5** | Parse and handle Azure rate limiting headers |
@@ -142,10 +142,10 @@ model_limits:
 
 ### 3.3 Class Structure
 
-#### `AzureFoundryClient`
+#### `AzureClient`
 
 ```python
-class AzureFoundryClient(BaseLLMClient):
+class AzureClient(BaseLLMClient):
     """
     Client for Microsoft Foundry.
 
@@ -350,7 +350,7 @@ class AzureDeploymentError(AzureAPIError):
               raise ConfigError(
                   "AZURE_API_KEY and AZURE_ENDPOINT required when MODEL_PROVIDER=azure"
               )
-          return AzureFoundryClient(
+          return AzureClient(
               api_key=azure_api_key,
               endpoint=azure_endpoint,
               model=model,
@@ -365,7 +365,7 @@ class AzureDeploymentError(AzureAPIError):
           ...
 **File: [llm/azure.py](../summarize_links/llm/azure.py)** (New file)
 
-- Implement `AzureFoundryClient(BaseLLMClient)`:
+- Implement `AzureClient(BaseLLMClient)`:
   - Constructor with authentication handling
   - `summarize()` method
   - `summarize_with_metadata()` method
@@ -407,7 +407,7 @@ Target: ≥ 85% code coverage
 - Add tests for `validate_provider()`
 - Test missing provider raises `ConfigError`
 - Test invalid provider raises `ConfigError`
-- Test `create_llm_client()` returns `AzureFoundryClient` for `provider="azure"`
+- Test `create_llm_client()` returns `AzureClient` for `provider="azure"`
 - Test `create_llm_client()` returns `GeminiClient` for `provider="google"`
 - Test `create_llm_client()` returns `OllamaClient` for `provider="ollama"`
 - Test error handling for missing provider-specific configuration
@@ -617,7 +617,7 @@ def mock_azure_config():
 
 @pytest.fixture
 def azure_client(mock_azure_config):
-    return AzureFoundryClient(**mock_azure_config)
+    return AzureClient(**mock_azure_config)
 ```
 
 ---
@@ -801,7 +801,7 @@ Document common issues:
 ### 13.1 Functional Criteria
 
 - ✅ Factory routes to correct client based on `MODEL_PROVIDER`
-- ✅ AzureFoundryClient successfully summarizes content
+- ✅ AzureClient successfully summarizes content
 - ✅ Structured output parsing works correctly
 - ✅ Rate limiting enforced per Azure quotas
 - ✅ Error handling for all Azure-specific errors
@@ -883,7 +883,7 @@ Azure OpenAI model availability varies by region. Key models:
 - [ ] Update `Config` dataclass with `model_provider` field
 - [ ] Update `load_config()` to read `MODEL_PROVIDER` env var
 - [ ] Update YAML loading to parse `model_provider` field
-- [ ] Create `llm/azure.py` with `AzureFoundryClient`
+- [ ] Create `llm/azure.py` with `AzureClient`
 - [ ] Remove `detect_provider()` and `OLLAMA_MODEL_PREFIXES` from `llm/factory.py`
 - [ ] Add `validate_provider()` to `llm/factory.py`
 - [ ] Update `create_llm_client()` with required `provider` parameter
