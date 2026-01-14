@@ -39,10 +39,12 @@ class TestValidateProvider:
 
     def test_validate_case_insensitive(self) -> None:
         """Test that provider validation is case-insensitive."""
+        # Case-insensitive input, but always returns lowercase
         assert validate_provider("GOOGLE") == "google"
         assert validate_provider("Ollama") == "ollama"
         assert validate_provider("AZURE") == "azure"
         assert validate_provider("Azure") == "azure"
+        assert validate_provider("Google") == "google"
 
     def test_validate_unknown_provider_raises_error(self) -> None:
         """Test that unknown providers raise ConfigError."""
@@ -100,7 +102,7 @@ class TestCreateLLMClient:
 
     def test_create_gemini_client_missing_api_key(self) -> None:
         """Test creation of Gemini client without API key raises error."""
-        with pytest.raises(ConfigError, match="GEMINI_API_KEY required"):
+        with pytest.raises(ConfigError, match="GEMINI_API_KEY is required"):
             create_llm_client(model="gemini-2.5-flash", provider="google")
 
     def test_create_gemini_client_with_state_path(self, tmp_path: Any) -> None:
@@ -140,33 +142,32 @@ class TestCreateLLMClient:
 
     def test_create_azure_client_missing_api_key(self) -> None:
         """Test creation of Azure client without API key raises error."""
-        with pytest.raises(ConfigError, match="AZURE_API_KEY required"):
+        with pytest.raises(ConfigError, match="AZURE_API_KEY is required"):
             create_llm_client(
                 model="gpt-4",
                 provider="azure",
                 azure_endpoint="https://test.openai.azure.com",
-                azure_deployment_name="my-gpt4",
             )
 
     def test_create_azure_client_missing_endpoint(self) -> None:
         """Test creation of Azure client without endpoint raises error."""
-        with pytest.raises(ConfigError, match="AZURE_ENDPOINT required"):
+        with pytest.raises(ConfigError, match="AZURE_ENDPOINT is required"):
             create_llm_client(
                 model="gpt-4",
                 provider="azure",
                 azure_api_key="test-key",
-                azure_deployment_name="my-gpt4",
             )
 
-    def test_create_azure_client_missing_deployment(self) -> None:
-        """Test creation of Azure client without deployment name raises error."""
-        with pytest.raises(ConfigError, match="AZURE_DEPLOYMENT_NAME required"):
-            create_llm_client(
-                model="gpt-4",
-                provider="azure",
-                azure_api_key="test-key",
-                azure_endpoint="https://test.openai.azure.com",
-            )
+    def test_create_azure_client_deployment_defaults_to_model(self) -> None:
+        """Test creation of Azure client uses model as deployment name when not specified."""
+        client = create_llm_client(
+            model="gpt-4",
+            provider="azure",
+            azure_api_key="test-key",
+            azure_endpoint="https://test.openai.azure.com",
+        )
+        assert isinstance(client, AzureClient)
+        assert client._deployment_name == "gpt-4"  # Should default to model name
 
     def test_missing_provider_raises_error(self) -> None:
         """Test that missing provider parameter raises error."""

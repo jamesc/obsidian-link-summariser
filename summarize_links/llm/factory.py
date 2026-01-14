@@ -35,7 +35,7 @@ def validate_provider(provider: str) -> str:
         provider: Provider from MODEL_PROVIDER env var or config.
 
     Returns:
-        Validated provider string: "google", "ollama", or "azure"
+        Validated provider string (lowercase): "google", "ollama", or "azure"
 
     Raises:
         ConfigError: If provider is missing or invalid.
@@ -47,14 +47,16 @@ def validate_provider(provider: str) -> str:
             f"MODEL_PROVIDER is required. Set to one of: {', '.join(sorted(VALID_PROVIDERS))}"
         )
 
-    if provider not in VALID_PROVIDERS:
+    # Normalize to lowercase for case-insensitive matching
+    normalized = provider.lower()
+
+    if normalized not in VALID_PROVIDERS:
         raise ConfigError(
-            f"Invalid MODEL_PROVIDER: {provider}. "
-            f"Valid options: {', '.join(sorted(VALID_PROVIDERS))}"
+            f"Invalid provider: {provider}. Valid options: {', '.join(sorted(VALID_PROVIDERS))}"
         )
 
-    logger.debug("Using provider: %s", provider)
-    return provider
+    logger.debug("Using provider: %s", normalized)
+    return normalized
 
 
 def create_llm_client(
@@ -129,12 +131,14 @@ def create_llm_client(
         if not azure_endpoint:
             raise ConfigError("AZURE_ENDPOINT is required when MODEL_PROVIDER=azure.")
 
-        logger.info("Creating AzureClient for model: %s", model)
+        # deployment_name defaults to model if not provided
+        deployment = azure_deployment_name if azure_deployment_name else model
+        logger.info("Creating AzureClient for model: %s, deployment: %s", model, deployment)
         return AzureClient(
             api_key=azure_api_key,
             endpoint=azure_endpoint,
             model=model,
-            deployment_name=azure_deployment_name or model,
+            deployment_name=deployment,
             api_version=azure_api_version or DEFAULT_AZURE_API_VERSION,
             state_path=state_path,
             **kwargs,

@@ -6,6 +6,8 @@ retry logic, and response parsing.
 """
 
 import json
+from collections.abc import Callable, Generator
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -29,6 +31,36 @@ def mock_rate_limiter() -> RateLimiter:
     """Create a rate limiter with high limits for testing."""
     limits = ModelRateLimits(rpm_limit=1000, tpm_limit=10000000, daily_limit=10000)
     return RateLimiter(model="gpt-4", limits=limits, _apply_safety_margin=False)
+
+
+@pytest.fixture
+def mock_time_functions() -> Generator[
+    tuple[Callable[[], float], Callable[[float], None]], None, None
+]:
+    """
+    Create mock time functions that advance time when sleep is called.
+
+    This is essential for testing rate limiting and retry logic without
+    real delays. The mock time advances whenever sleep() is called.
+
+    Yields:
+        Tuple of (mock_time, mock_sleep) functions.
+    """
+    current_time = [1000.0]  # Use list to allow mutation in nested function
+
+    def mock_time() -> float:
+        return current_time[0]
+
+    def mock_sleep(seconds: float) -> None:
+        current_time[0] += seconds
+
+    with (
+        patch("summarize_links.llm.azure.time.sleep", side_effect=mock_sleep),
+        patch("summarize_links.llm.azure.time.time", side_effect=mock_time),
+        patch("summarize_links.rate_limiter.time.sleep", side_effect=mock_sleep),
+        patch("summarize_links.rate_limiter.time.time", side_effect=mock_time),
+    ):
+        yield mock_time, mock_sleep
 
 
 class TestAzureClientInit:
@@ -86,7 +118,11 @@ class TestAzureClientSummarize:
         self._rate_limiter = mock_rate_limiter
 
     @patch("summarize_links.llm.azure.AzureOpenAI")
-    def test_successful_summarization(self, mock_azure_class: MagicMock) -> None:
+    def test_successful_summarization(
+        self,
+        mock_azure_class: MagicMock,
+        mock_time_functions: tuple[Any, Any],
+    ) -> None:
         """Should return summary on successful API call."""
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
@@ -117,7 +153,11 @@ class TestAzureClientSummarize:
         )
 
     @patch("summarize_links.llm.azure.AzureOpenAI")
-    def test_client_reused_across_calls(self, mock_azure_class: MagicMock) -> None:
+    def test_client_reused_across_calls(
+        self,
+        mock_azure_class: MagicMock,
+        mock_time_functions: tuple[Any, Any],
+    ) -> None:
         """Should reuse client across multiple calls."""
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
@@ -146,7 +186,11 @@ class TestAzureClientSummarize:
         assert mock_azure_class.call_count == 1
 
     @patch("summarize_links.llm.azure.AzureOpenAI")
-    def test_empty_response_raises_error(self, mock_azure_class: MagicMock) -> None:
+    def test_empty_response_raises_error(
+        self,
+        mock_azure_class: MagicMock,
+        mock_time_functions: tuple[Any, Any],
+    ) -> None:
         """Should raise error when response has no content."""
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
@@ -177,7 +221,11 @@ class TestAzureClientAuthentication:
         self._rate_limiter = mock_rate_limiter
 
     @patch("summarize_links.llm.azure.AzureOpenAI")
-    def test_auth_error_401(self, mock_azure_class: MagicMock) -> None:
+    def test_auth_error_401(
+        self,
+        mock_azure_class: MagicMock,
+        mock_time_functions: tuple[Any, Any],
+    ) -> None:
         """Should raise AzureAuthenticationError on 401."""
         mock_response = MagicMock()
         mock_response.status_code = 401
@@ -205,7 +253,11 @@ class TestAzureClientAuthentication:
             client.summarize("Content", "https://example.com")
 
     @patch("summarize_links.llm.azure.AzureOpenAI")
-    def test_auth_error_403(self, mock_azure_class: MagicMock) -> None:
+    def test_auth_error_403(
+        self,
+        mock_azure_class: MagicMock,
+        mock_time_functions: tuple[Any, Any],
+    ) -> None:
         """Should raise AzureAuthenticationError on 403."""
         mock_response = MagicMock()
         mock_response.status_code = 403
@@ -242,7 +294,11 @@ class TestAzureClientDeployment:
         self._rate_limiter = mock_rate_limiter
 
     @patch("summarize_links.llm.azure.AzureOpenAI")
-    def test_deployment_not_found(self, mock_azure_class: MagicMock) -> None:
+    def test_deployment_not_found(
+        self,
+        mock_azure_class: MagicMock,
+        mock_time_functions: tuple[Any, Any],
+    ) -> None:
         """Should raise AzureDeploymentError on 404."""
         mock_response = MagicMock()
         mock_response.status_code = 404
@@ -279,7 +335,11 @@ class TestAzureClientRateLimiting:
         self._rate_limiter = mock_rate_limiter
 
     @patch("summarize_links.llm.azure.AzureOpenAI")
-    def test_rate_limit_retry_succeeds(self, mock_azure_class: MagicMock) -> None:
+    def test_rate_limit_retry_succeeds(
+        self,
+        mock_azure_class: MagicMock,
+        mock_time_functions: tuple[Any, Any],
+    ) -> None:
         """Should retry on rate limit and succeed."""
         mock_response = MagicMock()
         mock_response.status_code = 429
@@ -313,14 +373,17 @@ class TestAzureClientRateLimiting:
             rate_limiter=self._rate_limiter,
         )
 
-        with patch("summarize_links.llm.azure.time.sleep"):
-            result = client.summarize("Content", "https://example.com")
+        result = client.summarize("Content", "https://example.com")
 
         assert result == "Summary after retry"
         assert mock_client.chat.completions.create.call_count == 2
 
     @patch("summarize_links.llm.azure.AzureOpenAI")
-    def test_rate_limit_exhausted_raises(self, mock_azure_class: MagicMock) -> None:
+    def test_rate_limit_exhausted_raises(
+        self,
+        mock_azure_class: MagicMock,
+        mock_time_functions: tuple[Any, Any],
+    ) -> None:
         """Should raise AzureRateLimitError after all retries exhausted."""
         mock_response = MagicMock()
         mock_response.status_code = 429
@@ -344,9 +407,8 @@ class TestAzureClientRateLimiting:
             rate_limiter=self._rate_limiter,
         )
 
-        with patch("summarize_links.llm.azure.time.sleep"):
-            with pytest.raises(AzureRateLimitError, match="Rate limit exceeded"):
-                client.summarize("Content", "https://example.com")
+        with pytest.raises(AzureRateLimitError, match="Rate limit exceeded"):
+            client.summarize("Content", "https://example.com")
 
 
 class TestAzureClientRetry:
@@ -358,7 +420,11 @@ class TestAzureClientRetry:
         self._rate_limiter = mock_rate_limiter
 
     @patch("summarize_links.llm.azure.AzureOpenAI")
-    def test_retry_on_500_error(self, mock_azure_class: MagicMock) -> None:
+    def test_retry_on_500_error(
+        self,
+        mock_azure_class: MagicMock,
+        mock_time_functions: tuple[Any, Any],
+    ) -> None:
         """Should retry on server errors."""
         mock_response = MagicMock()
         mock_response.status_code = 500
@@ -392,14 +458,17 @@ class TestAzureClientRetry:
             rate_limiter=self._rate_limiter,
         )
 
-        with patch("summarize_links.llm.azure.time.sleep"):
-            result = client.summarize("Content", "https://example.com")
+        result = client.summarize("Content", "https://example.com")
 
         assert result == "Success"
         assert mock_client.chat.completions.create.call_count == 2
 
     @patch("summarize_links.llm.azure.AzureOpenAI")
-    def test_retry_on_connection_error(self, mock_azure_class: MagicMock) -> None:
+    def test_retry_on_connection_error(
+        self,
+        mock_azure_class: MagicMock,
+        mock_time_functions: tuple[Any, Any],
+    ) -> None:
         """Should retry on connection errors."""
         connection_error = APIConnectionError(request=MagicMock())
 
@@ -425,8 +494,7 @@ class TestAzureClientRetry:
             rate_limiter=self._rate_limiter,
         )
 
-        with patch("summarize_links.llm.azure.time.sleep"):
-            result = client.summarize("Content", "https://example.com")
+        result = client.summarize("Content", "https://example.com")
 
         assert result == "Success"
 
@@ -440,7 +508,11 @@ class TestAzureClientSummarizeWithMetadata:
         self._rate_limiter = mock_rate_limiter
 
     @patch("summarize_links.llm.azure.AzureOpenAI")
-    def test_parses_json_response(self, mock_azure_class: MagicMock) -> None:
+    def test_parses_json_response(
+        self,
+        mock_azure_class: MagicMock,
+        mock_time_functions: tuple[Any, Any],
+    ) -> None:
         """Should parse JSON response into SummaryResult."""
         response_json = {
             "summary": "Test summary content",
@@ -476,7 +548,11 @@ class TestAzureClientSummarizeWithMetadata:
         assert result.usage_details == {"input": 100, "output": 50, "total": 150}
 
     @patch("summarize_links.llm.azure.AzureOpenAI")
-    def test_handles_json_in_code_block(self, mock_azure_class: MagicMock) -> None:
+    def test_handles_json_in_code_block(
+        self,
+        mock_azure_class: MagicMock,
+        mock_time_functions: tuple[Any, Any],
+    ) -> None:
         """Should handle JSON wrapped in markdown code block."""
         response_text = """```json
 {
@@ -512,7 +588,11 @@ class TestAzureClientSummarizeWithMetadata:
         assert result.content_type == "tutorial"
 
     @patch("summarize_links.llm.azure.AzureOpenAI")
-    def test_handles_non_json_response(self, mock_azure_class: MagicMock) -> None:
+    def test_handles_non_json_response(
+        self,
+        mock_azure_class: MagicMock,
+        mock_time_functions: tuple[Any, Any],
+    ) -> None:
         """Should handle plain text response as fallback."""
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
@@ -549,7 +629,11 @@ class TestAzureClientTokenTracking:
         self._rate_limiter = mock_rate_limiter
 
     @patch("summarize_links.llm.azure.AzureOpenAI")
-    def test_tracks_token_usage(self, mock_azure_class: MagicMock) -> None:
+    def test_tracks_token_usage(
+        self,
+        mock_azure_class: MagicMock,
+        mock_time_functions: tuple[Any, Any],
+    ) -> None:
         """Should track token usage in rate limiter."""
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]

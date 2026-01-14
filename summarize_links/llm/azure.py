@@ -296,22 +296,24 @@ class AzureClient(BaseLLMClient):
             except APIError as e:
                 error_str = str(e).lower()
 
-                # Check for authentication errors
-                if "401" in str(e) or "unauthorized" in error_str:
+                # Get status code from response if available
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+
+                # Check for authentication errors (401, 403)
+                if status_code == 401 or "unauthorized" in error_str:
                     logger.error("Authentication failed for Azure API: %s", e)
                     raise AzureAuthenticationError(f"Authentication failed: {e}") from e
 
-                # Check for deployment not found
-                if "404" in str(e) or "deployment" in error_str:
+                if status_code == 403 or "forbidden" in error_str:
+                    logger.error("Access forbidden for Azure API: %s", e)
+                    raise AzureAuthenticationError(f"Access forbidden: {e}") from e
+
+                # Check for deployment not found (404)
+                if status_code == 404 or "deployment" in error_str:
                     logger.error("Deployment not found: %s", e)
                     raise AzureDeploymentError(
                         f"Deployment '{self._deployment_name}' not found: {e}"
                     ) from e
-
-                # Check for forbidden
-                if "403" in str(e) or "forbidden" in error_str:
-                    logger.error("Access forbidden for Azure API: %s", e)
-                    raise AzureAuthenticationError(f"Access forbidden: {e}") from e
 
                 # Other API errors - retry with backoff
                 last_exception = e
@@ -395,13 +397,13 @@ class AzureClient(BaseLLMClient):
 
                 raw_response = response.choices[0].message.content
 
-                # Extract usage details
+                # Extract usage details (normalized to same format as other clients)
                 usage_details: dict[str, int] | None = None
                 if response.usage:
                     usage_details = {
-                        "prompt_tokens": response.usage.prompt_tokens,
-                        "completion_tokens": response.usage.completion_tokens,
-                        "total_tokens": response.usage.total_tokens,
+                        "input": response.usage.prompt_tokens,
+                        "output": response.usage.completion_tokens,
+                        "total": response.usage.total_tokens,
                     }
                     tokens_used = response.usage.total_tokens
                 else:
@@ -459,16 +461,19 @@ class AzureClient(BaseLLMClient):
             except APIError as e:
                 error_str = str(e).lower()
 
-                if "401" in str(e) or "unauthorized" in error_str:
+                # Get status code from response if available
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+
+                if status_code == 401 or "unauthorized" in error_str:
                     raise AzureAuthenticationError(f"Authentication failed: {e}") from e
 
-                if "404" in str(e) or "deployment" in error_str:
+                if status_code == 403 or "forbidden" in error_str:
+                    raise AzureAuthenticationError(f"Access forbidden: {e}") from e
+
+                if status_code == 404 or "deployment" in error_str:
                     raise AzureDeploymentError(
                         f"Deployment '{self._deployment_name}' not found: {e}"
                     ) from e
-
-                if "403" in str(e) or "forbidden" in error_str:
-                    raise AzureAuthenticationError(f"Access forbidden: {e}") from e
 
                 last_exception = e
                 wait_time = BASE_RETRY_DELAY * (2**attempt)

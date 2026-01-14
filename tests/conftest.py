@@ -123,6 +123,7 @@ def mock_vault(tmp_path: Path, sample_daily_note_content: str) -> Path:
 def mock_vault_with_config(mock_vault: Path) -> Path:
     """Mock vault with a .summarizer-config.yaml file."""
     config_content = """
+model_provider: "google"
 out_folder: "MySummaries"
 max_links: 5
 daily_notes_folder: "Journal"
@@ -207,6 +208,7 @@ def mock_config(tmp_path: Path) -> Config:
     from summarize_links.config import Config
 
     return Config(
+        model_provider="google",
         gemini_api_key="test-api-key",
         model="gemini-2.5-flash",
         vault_path=tmp_path,
