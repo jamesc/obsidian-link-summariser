@@ -160,7 +160,7 @@ def process_url_with_metadata(
             ],
             metadata={
                 "vault": str(config.vault_path),
-                "provider": "gemini" if config.model.startswith("gemini") else "ollama",
+                "provider": config.model_provider,
             },
         ):
             try:
@@ -294,6 +294,7 @@ def process_url_with_metadata(
                         overwrite=needs_overwrite,
                         summary_status=summary_status,
                         summary_model=config.model,
+                        summary_provider=config.model_provider,
                         summary_date=datetime.now(),
                     )
 
@@ -315,6 +316,7 @@ def process_url_with_metadata(
                                     "final_tags": final_tags,
                                     "content_type": summary_result.content_type,
                                     "summary_model": config.model,
+                                    "summary_provider": config.model_provider,
                                     "date": summary_date.strftime("%Y-%m-%d"),
                                 },
                             )
@@ -345,6 +347,7 @@ def process_url_with_metadata(
                                 "source_note": daily_note_filename,
                                 "summary_path": str(summary_path),
                                 "summary_status": summary_status,
+                                "summary_provider": config.model_provider,
                                 "filename": summary_path.name,
                                 "title": page_metadata.title,
                                 "content_type": summary_result.content_type,

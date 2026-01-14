@@ -318,6 +318,7 @@ def build_frontmatter(
     default_tags: list[str] | None = None,
     max_tags: int = DEFAULT_MAX_TAGS,
     summary_model: str | None = None,
+    summary_provider: str | None = None,
     summary_date: datetime | None = None,
 ) -> str:
     """
@@ -336,6 +337,7 @@ def build_frontmatter(
         default_tags: Tags to always include.
         max_tags: Maximum number of tags.
         summary_model: Model used to generate the summary.
+        summary_provider: Provider used for summarization (google, ollama, azure).
         summary_date: Date when the summary was generated (defaults to now).
 
     Returns:
@@ -371,6 +373,10 @@ def build_frontmatter(
     # Model used
     if summary_model:
         lines.append(f"summary_model: {summary_model}")
+
+    # Provider used
+    if summary_provider:
+        lines.append(f"summary_provider: {summary_provider}")
 
     # Summary generation date
     if summary_date is None:
@@ -513,6 +519,7 @@ def write_summary_note_with_metadata(
     max_tags: int = DEFAULT_MAX_TAGS,
     summary_status: str = "success",
     summary_model: str | None = None,
+    summary_provider: str | None = None,
     summary_date: datetime | None = None,
 ) -> Path:
     """
@@ -535,6 +542,7 @@ def write_summary_note_with_metadata(
         max_tags: Maximum number of tags.
         summary_status: Status to write in frontmatter ('success', 'mocked', 'error').
         summary_model: Model used to generate the summary.
+        summary_provider: Provider used for summarization (google, ollama, azure).
         summary_date: Date when the summary was generated (defaults to now).
 
     Returns:
@@ -572,6 +580,7 @@ def write_summary_note_with_metadata(
         default_tags=default_tags,
         max_tags=max_tags,
         summary_model=summary_model,
+        summary_provider=summary_provider,
         summary_date=summary_date,
     )
 
