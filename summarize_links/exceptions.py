@@ -20,6 +20,11 @@ __all__ = [
     "OllamaServerError",
     "OllamaAPIError",
     "ModelNotInstalledError",
+    # Azure / Microsoft Foundry exceptions
+    "AzureAPIError",
+    "AzureAuthenticationError",
+    "AzureRateLimitError",
+    "AzureDeploymentError",
 ]
 
 
@@ -97,5 +102,32 @@ class OllamaAPIError(SummarizerError):
 
 class ModelNotInstalledError(SummarizerError):
     """Raised when required Ollama model is not installed."""
+
+    pass
+
+
+# ----- Azure / Microsoft Foundry Exceptions -----
+
+
+class AzureAPIError(SummarizerError):
+    """Raised when an Azure API call fails."""
+
+    pass
+
+
+class AzureAuthenticationError(AzureAPIError):
+    """Raised when Azure authentication fails (invalid API key or token)."""
+
+    pass
+
+
+class AzureRateLimitError(AzureAPIError):
+    """Raised when Azure rate limit is hit (HTTP 429)."""
+
+    pass
+
+
+class AzureDeploymentError(AzureAPIError):
+    """Raised when Azure deployment configuration is invalid or deployment not found."""
 
     pass
