@@ -209,19 +209,19 @@ class AzureFoundryClient(BaseLLMClient):
 Add to [exceptions.py](exceptions.py):
 
 ```python
-class AzureFoundryError(SummarizerError):
+class AzureAPIError(SummarizerError):
     """Raised when Azure API call fails."""
     pass
 
-class AzureAuthenticationError(AzureFoundryError):
+class AzureAuthenticationError(AzureAPIError):
     """Raised when Azure authentication fails."""
     pass
 
-class AzureRateLimitError(AzureFoundryError):
+class AzureRateLimitError(AzureAPIError):
     """Raised when Azure rate limit is hit (HTTP 429)."""
     pass
 
-class AzureDeploymentError(AzureFoundryError):
+class AzureDeploymentError(AzureAPIError):
     """Raised when Azure deployment configuration is invalid."""
     pass
 ```
@@ -241,7 +241,7 @@ class AzureDeploymentError(AzureFoundryError):
   # Provider enum/constants
   PROVIDER_GOOGLE = "google"
   PROVIDER_OLLAMA = "ollama"
-  PROVIDER_azure = "azure"
+  PROVIDER_AZURE = "azure"
   VALID_PROVIDERS = {PROVIDER_GOOGLE, PROVIDER_OLLAMA, PROVIDER_AZURE}
 
   # Azure defaults
@@ -875,7 +875,7 @@ Azure OpenAI model availability varies by region. Key models:
 
 ## Appendix C: Reference Implementation Checklist
 
-- [ ] Add provider constants to `config.py` (`PROVIDER_GOOGLE`, `PROVIDER_OLLAMA`, `PROVIDER_azure`)
+- [ ] Add provider constants to `config.py` (`PROVIDER_GOOGLE`, `PROVIDER_OLLAMA`, `PROVIDER_AZURE`)
 - [ ] Add `VALID_PROVIDERS` set to `config.py`
 - [ ] Add Azure constants to `config.py`
 - [ ] Add Azure exception classes to `exceptions.py`
