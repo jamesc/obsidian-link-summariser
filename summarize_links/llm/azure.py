@@ -311,6 +311,18 @@ class AzureClient(BaseLLMClient):
         system_prompt_text, user_prompt_template = self._get_langfuse_prompts()
         user_prompt_text = self._compile_user_prompt(user_prompt_template, content, url, title)
 
+        # Debug: Check if system prompt contains "json" for Azure's requirement
+        if "json" not in system_prompt_text.lower():
+            logger.error(
+                "System prompt does not contain 'json' - Azure will reject this. "
+                "System prompt preview: %s",
+                system_prompt_text[:200],
+            )
+            raise AzureAPIError(
+                "System prompt must contain the word 'json' for Azure's "
+                "json_object response format. Check your Langfuse prompts."
+            )
+
         client = self._get_client()
 
         # Estimate tokens for rate limiting

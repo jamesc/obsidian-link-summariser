@@ -172,41 +172,82 @@ class BaseLLMClient:
 
     def _get_langfuse_prompts(self) -> tuple[str, str]:
         """
-        Fetch prompts from Langfuse with caching.
+        Fetch consolidated chat prompt from Langfuse with caching.
+
+        The "summarize-document" prompt is a chat-type prompt containing both
+        system and user messages. This method extracts the text from each.
 
         Returns:
             Tuple of (system_prompt_text, user_prompt_template_text).
 
         Raises:
-            Exception: Subclass-specific error if prompts cannot be fetched.
+            Exception: Subclass-specific error if prompt cannot be fetched.
         """
         try:
             # Check cache first
-            if "system" in self._prompt_cache and "user" in self._prompt_cache:
-                logger.debug("Using cached Langfuse prompts")
-                system_obj = self._prompt_cache["system"]
-                user_obj = self._prompt_cache["user"]
-                return system_obj.prompt, user_obj.prompt
+            if "prompt" in self._prompt_cache:
+                logger.debug("Using cached Langfuse prompt")
+                prompt_obj = self._prompt_cache["prompt"]
+                return self._extract_messages_from_chat_prompt(prompt_obj)
 
-            # Fetch from Langfuse
-            logger.debug("Fetching prompts from Langfuse")
-            system_obj = self._langfuse_client.get_prompt("summarize-document/system")
-            user_obj = self._langfuse_client.get_prompt("summarize-document/user")
+            # Fetch consolidated chat prompt from Langfuse
+            logger.debug("Fetching prompt from Langfuse: summarize-document")
+            prompt_obj = self._langfuse_client.get_prompt("summarize-document", type="chat")
 
-            # Cache the objects (not just text, for metadata)
-            self._prompt_cache["system"] = system_obj
-            self._prompt_cache["user"] = user_obj
+            # Cache the prompt object (for metadata and trace linking)
+            self._prompt_cache["prompt"] = prompt_obj
 
             logger.info(
-                "Fetched prompts from Langfuse: system v%s, user v%s",
-                getattr(system_obj, "version", "unknown"),
-                getattr(user_obj, "version", "unknown"),
+                "Fetched prompt from Langfuse: summarize-document v%s",
+                getattr(prompt_obj, "version", "unknown"),
             )
 
-            return system_obj.prompt, user_obj.prompt
+            return self._extract_messages_from_chat_prompt(prompt_obj)
 
         except Exception as e:
-            raise self._error_class(f"Failed to fetch prompts from Langfuse (required): {e}") from e
+            raise self._error_class(f"Failed to fetch prompt from Langfuse (required): {e}") from e
+
+    def _extract_messages_from_chat_prompt(self, prompt_obj: Any) -> tuple[str, str]:
+        """
+        Extract system and user message templates from a chat prompt object.
+
+        Note: Langfuse automatically resolves prompt references (@@@langfusePrompt:...@@@)
+        server-side, so we receive the fully resolved content in prompt_obj.prompt.
+
+        Args:
+            prompt_obj: Langfuse chat prompt object with messages array.
+
+        Returns:
+            Tuple of (system_prompt_text, user_prompt_template_text).
+
+        Raises:
+            Exception: If expected messages are not found.
+        """
+        # Get messages from prompt (already resolved by Langfuse)
+        messages = prompt_obj.prompt
+        if not isinstance(messages, list):
+            raise self._error_class(
+                f"Expected chat prompt to have list of messages, got {type(messages)}"
+            )
+
+        # Extract system and user content
+        system_content = None
+        user_content = None
+
+        for msg in messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role == "system":
+                system_content = content
+            elif role == "user":
+                user_content = content
+
+        if system_content is None:
+            raise self._error_class("Chat prompt missing system message")
+        if user_content is None:
+            raise self._error_class("Chat prompt missing user message")
+
+        return system_content, user_content
 
     def _compile_user_prompt(self, template: str, content: str, url: str, title: str | None) -> str:
         """
@@ -216,7 +257,7 @@ class BaseLLMClient:
         a title exists, or empty string when title is None.
 
         Args:
-            template: Prompt template string from Langfuse.
+            template: Prompt template string (user message from chat prompt).
             content: Web page content.
             url: Source URL.
             title: Page title (None if unknown).
@@ -230,36 +271,57 @@ class BaseLLMClient:
         # Format title as " titled 'X'" or empty string (matches main branch behavior)
         title_text = f" titled '{title}'" if title else ""
 
-        # Compile using Langfuse prompt object
-        user_obj = self._prompt_cache["user"]
-        compiled: str = user_obj.compile(
+        # Compile using Langfuse chat prompt object
+        # compile() returns a list of messages with variables substituted
+        prompt_obj = self._prompt_cache["prompt"]
+        compiled_messages: list[dict[str, str]] = prompt_obj.compile(
             title=title_text,
             url=url,
             content=content,
         )
-        return compiled
+
+        # Extract the user message content from compiled messages
+        for msg in compiled_messages:
+            if msg.get("role") == "user":
+                return msg.get("content", "")
+
+        # Fallback: if no user message found, return the template as-is
+        # This shouldn't happen with a well-formed prompt
+        logger.warning("No user message found in compiled chat prompt, using raw template")
+        return template
 
     def _build_prompt_metadata(self) -> dict[str, Any] | None:
         """
-        Build prompt metadata dictionary from cached Langfuse prompts.
+        Build prompt metadata dictionary from cached Langfuse prompt.
 
         Returns:
-            Dictionary with prompt names, versions, and source.
-            None if prompts not cached.
+            Dictionary with prompt name, version, and source.
+            None if prompt not cached.
         """
-        if "system" not in self._prompt_cache or "user" not in self._prompt_cache:
+        if "prompt" not in self._prompt_cache:
             return None
 
-        system_obj = self._prompt_cache["system"]
-        user_obj = self._prompt_cache["user"]
+        prompt_obj = self._prompt_cache["prompt"]
 
         return {
-            "system_prompt_name": "summarize-document/system",
-            "user_prompt_name": "summarize-document/user",
-            "system_prompt_version": getattr(system_obj, "version", None),
-            "user_prompt_version": getattr(user_obj, "version", None),
+            "prompt_name": "summarize-document",
+            "prompt_version": getattr(prompt_obj, "version", None),
+            "prompt_type": "chat",
             "source": "langfuse",
         }
+
+    def get_cached_prompt(self) -> Any | None:
+        """
+        Get cached Langfuse prompt object for trace linking.
+
+        Returns the raw prompt object that can be passed to Langfuse's
+        trace_generation to link prompts to generations. This enables
+        per-prompt-version metrics in Langfuse UI.
+
+        Returns:
+            The cached prompt object, or None if not cached.
+        """
+        return self._prompt_cache.get("prompt")
 
     def _populate_result_metadata(
         self,

@@ -44,9 +44,36 @@ def mock_langfuse_globally(monkeypatch: pytest.MonkeyPatch, request: pytest.Fixt
     # Create a comprehensive mock
     mock_lf = Mock()
     mock_lf.auth_check.return_value = True
-    mock_lf.get_prompt.return_value = Mock(
-        prompt="mock prompt", version=1, compile=Mock(return_value="compiled")
+
+    # Create a chat prompt mock with proper structure
+    mock_chat_prompt = Mock()
+    mock_chat_prompt.prompt = [
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful assistant that summarizes web pages. "
+                "You MUST respond with valid JSON."
+            ),
+        },
+        {"role": "user", "content": "Summarize the web page{{title}}:\n{{url}}\n\n{{content}}"},
+    ]
+    mock_chat_prompt.version = 1
+    mock_chat_prompt.name = "summarize-document"
+    # compile() returns list of message dicts with variables substituted
+    mock_chat_prompt.compile = Mock(
+        return_value=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a helpful assistant that summarizes web pages. "
+                    "You MUST respond with valid JSON."
+                ),
+            },
+            {"role": "user", "content": "compiled user prompt"},
+        ]
     )
+    mock_lf.get_prompt.return_value = mock_chat_prompt
+
     mock_lf.start_as_current_observation.return_value.__enter__ = Mock(return_value=Mock())
     mock_lf.start_as_current_observation.return_value.__exit__ = Mock(return_value=False)
     mock_lf.flush.return_value = None
@@ -284,6 +311,7 @@ class MockLangfuseTracer:
         input_data: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         model: str | None = None,
+        prompt: Any | None = None,
     ) -> Generator[MagicMock, None, None]:
         """Mock generation - records call and yields a mock object."""
         self.generation_calls.append(
@@ -292,6 +320,7 @@ class MockLangfuseTracer:
                 "input_data": input_data,
                 "metadata": metadata,
                 "model": model,
+                "prompt": prompt,
             }
         )
         mock_generation = MagicMock()

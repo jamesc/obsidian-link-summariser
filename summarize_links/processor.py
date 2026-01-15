@@ -9,6 +9,7 @@ This module handles the core processing logic for URLs including:
 
 import contextlib
 import logging
+import re
 import signal
 from datetime import datetime
 from typing import Any
@@ -172,39 +173,100 @@ def process_url_with_metadata(
                     name="fetch",
                     input_data={"url": url},
                 ) as fetch_span:
-                    page_metadata = fetch_and_extract_metadata(url)
+                    try:
+                        page_metadata = fetch_and_extract_metadata(url)
 
-                    # Update fetch span with extracted metadata
-                    if fetch_span and hasattr(fetch_span, "update"):
-                        with contextlib.suppress(Exception):
-                            fetch_span.update(
-                                output={
-                                    "title": page_metadata.title,
-                                    "domain": page_metadata.domain,
-                                    "content_length": len(page_metadata.content),
-                                    "has_author": page_metadata.author is not None,
-                                    "has_published_date": page_metadata.published_date is not None,
-                                    "article_tags_count": len(page_metadata.article_tags),
-                                },
-                                metadata={
-                                    "author": page_metadata.author,
-                                    "site_name": page_metadata.site_name,
-                                    "published_date": page_metadata.published_date,
-                                    "description": page_metadata.description[:200]
-                                    if page_metadata.description
-                                    else None,
-                                    "article_tags": page_metadata.article_tags[:10],
-                                },
-                            )
+                        # Update fetch span with extracted metadata
+                        if fetch_span and hasattr(fetch_span, "update"):
+                            with contextlib.suppress(Exception):
+                                fetch_span.update(
+                                    output={
+                                        "title": page_metadata.title,
+                                        "domain": page_metadata.domain,
+                                        "content_length": len(page_metadata.content),
+                                        "has_author": page_metadata.author is not None,
+                                        "has_published_date": page_metadata.published_date
+                                        is not None,
+                                        "article_tags_count": len(page_metadata.article_tags),
+                                    },
+                                    metadata={
+                                        "author": page_metadata.author,
+                                        "site_name": page_metadata.site_name,
+                                        "published_date": page_metadata.published_date,
+                                        "description": page_metadata.description[:200]
+                                        if page_metadata.description
+                                        else None,
+                                        "article_tags": page_metadata.article_tags[:10],
+                                    },
+                                )
+                    except (ContentFetchError, ContentExtractionError, URLValidationError) as e:
+                        # Capture error details in the fetch span before re-raising
+                        if fetch_span and hasattr(fetch_span, "update"):
+                            with contextlib.suppress(Exception):
+                                # Parse error message for additional context
+                                error_msg = str(e)
+                                error_metadata: dict[str, Any] = {
+                                    "error_type": type(e).__name__,
+                                    "error_message": error_msg,
+                                    "url": url,
+                                }
+
+                                # Extract HTTP status code if present
+                                status_match = re.search(r"HTTP (\d{3})", error_msg)
+                                if status_match:
+                                    error_metadata["http_status"] = int(status_match.group(1))
+
+                                # Check for paywall detection
+                                if "paywall" in error_msg.lower():
+                                    error_metadata["is_paywall"] = True
+
+                                # Check for timeout
+                                if "timeout" in error_msg.lower():
+                                    error_metadata["is_timeout"] = True
+
+                                # Check for connection error
+                                if "connection" in error_msg.lower():
+                                    error_metadata["is_connection_error"] = True
+
+                                # Check for content type issues
+                                if "content type" in error_msg.lower():
+                                    error_metadata["is_content_type_error"] = True
+
+                                fetch_span.update(
+                                    level="ERROR",
+                                    status_message=error_msg,
+                                    output={"error": error_msg},
+                                    metadata=error_metadata,
+                                )
+                        raise
 
                 # Generate summary with structured output
                 if progress and task_id is not None:
                     progress.update(task_id, description=f"[cyan]Summarizing: {slug}...")
 
+                # Pre-fetch the prompt to ensure it's cached before we create the generation
+                # This is needed because get_cached_prompt() is called before
+                # summarize_with_metadata(), which is when the prompt is normally fetched
+                if hasattr(client, "_get_langfuse_prompts"):
+                    try:
+                        # This fetches and caches the prompt
+                        client._get_langfuse_prompts()
+                    except Exception as e:
+                        logger.warning(f"Failed to pre-fetch Langfuse prompt: {e}")
+
+                # Get cached prompt object for Langfuse linking (if available)
+                # This enables per-prompt-version metrics in Langfuse UI
+                langfuse_prompt = None
+                if hasattr(client, "get_cached_prompt"):
+                    langfuse_prompt = client.get_cached_prompt()
+                    prompt_name = langfuse_prompt.name if langfuse_prompt else None
+                    logger.debug(f"Retrieved prompt for linking: {prompt_name}")
+
                 # Create generation observation (input/output will be set via update())
                 with tracer.trace_generation(
                     name="summarize",
                     model=config.model,
+                    prompt=langfuse_prompt,
                 ) as generation:
                     try:
                         summary_result = client.summarize_with_metadata(
@@ -239,6 +301,8 @@ def process_url_with_metadata(
                                     "parsed_tags": summary_result.suggested_tags,
                                     "parsed_content_type": summary_result.content_type,
                                     "summary_length": len(summary_result.content),
+                                    "provider": config.model_provider,
+                                    "model": config.model,
                                 }
 
                                 # Add usage details if available

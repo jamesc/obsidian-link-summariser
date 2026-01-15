@@ -103,6 +103,7 @@ class TestMockLangfuseTracer:
             input_data={"prompt": "test"},
             metadata={"key": "value"},
             model="test-model",
+            prompt=None,  # Mock prompt object
         ) as gen:
             assert gen is None
 
@@ -235,6 +236,40 @@ class TestTracerContextManagers:
             model="gemini-2.5-flash",
         ) as gen:
             assert gen is not None
+
+    @patch("summarize_links.langfuse_tracer.Langfuse")
+    def test_trace_generation_with_prompt_linking(self, mock_langfuse_class: Mock) -> None:
+        """Test trace_generation accepts prompt object for Langfuse linking."""
+        mock_client = Mock()
+        mock_client.auth_check.return_value = True
+        mock_gen = Mock()
+        mock_client.start_as_current_observation.return_value.__enter__ = Mock(
+            return_value=mock_gen
+        )
+        mock_client.start_as_current_observation.return_value.__exit__ = Mock(return_value=False)
+        mock_langfuse_class.return_value = mock_client
+
+        tracer = LangfuseTracer(
+            public_key="pk-test",
+            secret_key="sk-test",
+        )
+
+        # Simulate a Langfuse prompt object
+        mock_prompt = Mock()
+        mock_prompt.name = "test-prompt"
+        mock_prompt.version = 5
+
+        with tracer.trace_generation(
+            name="summarize",
+            model="gemini-2.5-flash",
+            prompt=mock_prompt,
+        ) as gen:
+            assert gen is not None
+
+        # Verify that the prompt was passed to start_as_current_observation
+        mock_client.start_as_current_observation.assert_called()
+        call_kwargs = mock_client.start_as_current_observation.call_args[1]
+        assert call_kwargs.get("prompt") == mock_prompt
 
     @patch("summarize_links.langfuse_tracer.Langfuse")
     def test_score_trace_with_comment(self, mock_langfuse_class: Mock) -> None:

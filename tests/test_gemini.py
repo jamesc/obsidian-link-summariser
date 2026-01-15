@@ -454,6 +454,11 @@ class TestMockGeminiClientWithMetadata:
         with pytest.raises(GeminiAPIError, match="Simulated API error"):
             client.summarize_with_metadata("Content", "https://fail.com")
 
+    def test_get_cached_prompt_returns_none(self) -> None:
+        """Mock client should return None for get_cached_prompt (no Langfuse)."""
+        client = MockGeminiClient()
+        assert client.get_cached_prompt() is None
+
 
 class TestGeminiClientWithMetadata:
     """Tests for GeminiClient.summarize_with_metadata."""
