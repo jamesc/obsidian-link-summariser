@@ -3,7 +3,7 @@
 
 ## Project Overview
 
-**Purpose**: A lightweight Python CLI tool that reads URLs from Obsidian daily notes, fetches web pages, generates AI summaries using Google's Gemini API, and creates formatted Markdown summary notes in your Obsidian vault.
+**Purpose**: A lightweight Python CLI tool that reads URLs from Obsidian daily notes, fetches web pages, generates AI summaries using Google's Gemini API, Azure OpenAI, or local Ollama models, and creates formatted Markdown summary notes in your Obsidian vault.
 
 **Target usage**: 5-10 links per day for personal knowledge management, triggered via Obsidian hotkey.
 

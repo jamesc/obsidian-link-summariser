@@ -9,6 +9,7 @@ A lightweight Python CLI tool that reads URLs from Obsidian daily notes, fetches
 - 📝 Extract URLs from Obsidian daily notes (Markdown links and bare URLs)
 - 🤖 Generate AI summaries using:
   - **Google Gemini** (cloud API, free tier friendly)
+  - **Azure OpenAI** (enterprise-grade, Microsoft Foundry)
   - **Ollama** (local models, unlimited usage, private)
 - 📁 Create well-formatted summary notes with rich frontmatter (author, tags, content type)
 - 🏷️ Automatic tag extraction from page metadata and user hashtags
@@ -49,6 +50,7 @@ See [.devcontainer/README.md](.devcontainer/README.md) for detailed setup instru
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) package manager
 - **For Gemini**: Google AI Studio API key ([get one free](https://aistudio.google.com/apikey))
+- **For Azure**: Azure OpenAI resource and API key ([Azure Portal](https://portal.azure.com))
 - **For Ollama** (optional): [Ollama](https://ollama.ai) installed and running
 
 #### Setup
@@ -76,6 +78,24 @@ GEMINI_API_KEY=your_api_key_here
 MODEL=gemini-2.5-flash
 ```
 
+#### Using Azure OpenAI (Enterprise)
+
+```bash
+# .env
+MODEL_PROVIDER=azure
+AZURE_API_KEY=your_azure_api_key_here
+AZURE_ENDPOINT=https://your-resource.openai.azure.com
+MODEL=gpt-4
+# AZURE_DEPLOYMENT_NAME=my-gpt4-deployment  # Optional, defaults to MODEL
+# AZURE_API_VERSION=2024-02-15-preview      # Optional, uses default if omitted
+```
+
+**Important Azure Notes:**
+- Your Azure endpoint must use HTTPS (e.g., `https://myresource.openai.azure.com`)
+- `AZURE_DEPLOYMENT_NAME` is often different from the model name (e.g., "my-gpt4-deployment" vs "gpt-4")
+- Ensure your deployment name matches what's configured in Azure Portal
+- Get your keys from: Azure Portal → Your Resource → Keys and Endpoint
+
 #### Using Ollama (Local Models)
 
 ```bash
@@ -87,14 +107,15 @@ ollama pull llama3
 ollama serve
 
 # 4. Configure .env
+MODEL_PROVIDER=ollama
 MODEL=llama3:latest
 # OLLAMA_ENDPOINT=http://localhost:11434  # Optional, this is the default
 ```
 
-The tool automatically detects which provider to use based on the model name:
-- Models with `:` (e.g., `llama3:latest`) → Ollama
-- Known Ollama models (llama, mistral, phi, qwen, etc.) → Ollama
-- Others (e.g., `gemini-2.5-flash`) → Gemini API
+The tool requires explicit provider configuration via `MODEL_PROVIDER`:
+- `MODEL_PROVIDER=google` → Google Gemini API
+- `MODEL_PROVIDER=azure` → Azure OpenAI
+- `MODEL_PROVIDER=ollama` → Ollama (local)
 
 ## Usage
 
@@ -146,40 +167,61 @@ summarize-links summaries --vault ~/Notes
 
 ### Using Different LLM Providers
 
-The tool automatically detects which provider to use based on the model name:
+The tool uses the `MODEL_PROVIDER` environment variable to determine which provider to use:
 
 **Using Gemini API (cloud):**
 ```bash
-# Use Gemini Flash
-MODEL=gemini-2.0-flash-exp summarize-links from-note --vault ~/Notes
+# Configure in .env
+MODEL_PROVIDER=google
+GEMINI_API_KEY=your_key_here
+MODEL=gemini-2.0-flash-exp
+
+# Run command
+summarize-links from-note --vault ~/Notes
 
 # Rate limits are tracked and displayed
 summarize-links status --vault ~/Notes
 ```
 
+**Using Azure OpenAI (enterprise):**
+```bash
+# Configure in .env
+MODEL_PROVIDER=azure
+AZURE_API_KEY=your_azure_key_here
+AZURE_ENDPOINT=https://your-resource.openai.azure.com
+MODEL=gpt-4
+AZURE_DEPLOYMENT_NAME=my-gpt4-deployment
+
+# Run command
+summarize-links from-note --vault ~/Notes
+
+# Check rate limit status (Azure quotas are tracked)
+summarize-links status --vault ~/Notes
+```
+
 **Using Ollama (local):**
 ```bash
-# Use Llama3 (automatically detected as Ollama)
-MODEL=llama3:latest summarize-links from-note --vault ~/Notes
+# Configure in .env
+MODEL_PROVIDER=ollama
+MODEL=llama3:latest
 
-# Use Mistral
-MODEL=mistral:7b-instruct summarize-links from-note --vault ~/Notes
+# Run command
+summarize-links from-note --vault ~/Notes
 
 # Rate limits are not applicable for local models
 summarize-links status --vault ~/Notes  # Shows "Provider: ollama (no rate limits)"
 ```
 
-**Override model per command:**
+**Override provider and model per command:**
 ```bash
-# Use different model just for this command
-summarize-links from-note --vault ~/Notes --model llama3:latest
+# Use different model just for this command (requires matching MODEL_PROVIDER in .env)
+summarize-links from-note --vault ~/Notes --model gpt-4
 ```
 
-**Common Ollama models supported:**
-- `llama3:latest`, `llama3:8b`, `llama3:70b`
-- `mistral:latest`, `mistral:7b-instruct`
-- `phi:latest`, `phi3:latest`
-- `qwen:latest`, `gemma:latest`
+**Common models by provider:**
+- **Gemini:** `gemini-2.5-flash`, `gemini-2.0-flash-exp`, `gemini-1.5-pro`
+- **Azure OpenAI:** `gpt-4`, `gpt-4-turbo`, `gpt-35-turbo` (check your Azure deployment names)
+- **Ollama:** `llama3:latest`, `mistral:7b-instruct`, `phi3:latest`, `qwen:latest`
 
 ### Command Reference
 
@@ -288,13 +330,27 @@ When developing or testing, use `--mock` to:
 
 ### Rate Limiting
 
-The tool automatically manages Gemini API rate limits to keep you within free tier quotas:
+The tool automatically manages API rate limits for cloud providers:
+
+**Gemini API (free tier):**
 
 | Limit | Quota | Behavior |
 |-------|-------|----------|
 | RPM (Requests/Minute) | 5 | Automatically waits if limit approached |
 | TPM (Tokens/Minute) | 250,000 | Automatically waits if limit approached |
 | Daily Requests | 20 | Raises error when exceeded |
+
+**Azure OpenAI (default limits):**
+
+| Limit | Quota | Behavior |
+|-------|-------|----------|
+| RPM (Requests/Minute) | 100 | Automatically waits if limit approached |
+| TPM (Tokens/Minute) | 90,000 | Automatically waits if limit approached |
+| Daily Requests | 5,000 | Raises error when exceeded |
+
+**Ollama:** No rate limits (local models)
+
+Azure rate limits vary by deployment and subscription tier. Configure custom limits in your `.env` or vault config file.
 
 **Check current usage:**
 ```bash
@@ -326,17 +382,24 @@ Daily usage is tracked persistently in `.summarizer-rate-limit.json` in your vau
 | `LANGFUSE_PUBLIC_KEY` | **Yes*** | - | Langfuse public key for prompt management |
 | `LANGFUSE_SECRET_KEY` | **Yes*** | - | Langfuse secret key for prompt management |
 | `LANGFUSE_BASE_URL` | No | `https://cloud.langfuse.com` | Langfuse API endpoint |
-| `MODEL` | No | `gemini-2.0-flash-exp` | Model to use (auto-detects provider) |
-| `GEMINI_API_KEY` | Conditional** | - | Google AI Studio API key |
-| `GEMINI_MODEL` | No | - | **Deprecated:** Use `MODEL` instead |
-| `OLLAMA_ENDPOINT` | No | `http://localhost:11434` | Ollama server endpoint |
+| `MODEL_PROVIDER` | **Yes** | - | LLM provider: `google`, `azure`, or `ollama` |
+| `MODEL` | No | `gemini-2.5-flash` | Model identifier |
+| `GEMINI_API_KEY` | Conditional** | - | Google AI Studio API key (when provider=google) |
+| `AZURE_API_KEY` | Conditional** | - | Azure OpenAI API key (when provider=azure) |
+| `AZURE_ENDPOINT` | Conditional** | - | Azure endpoint URL (when provider=azure) |
+| `AZURE_DEPLOYMENT_NAME` | No | Uses `MODEL` | Azure deployment name (when provider=azure) |
+| `AZURE_API_VERSION` | No | `2024-02-15-preview` | Azure API version (when provider=azure) |
+| `OLLAMA_ENDPOINT` | No | `http://localhost:11434` | Ollama server endpoint (when provider=ollama) |
 | `DEFAULT_VAULT_PATH` | No | - | Default Obsidian vault path |
-| `GEMINI_RPM_LIMIT` | No | `5` | Requests per minute limit (Gemini only) |
-| `GEMINI_TPM_LIMIT` | No | `250000` | Tokens per minute limit (Gemini only) |
-| `GEMINI_DAILY_LIMIT` | No | `20` | Requests per day limit (Gemini only) |
+| `GEMINI_RPM_LIMIT` | No | `5` | Requests per minute (Gemini only) |
+| `GEMINI_TPM_LIMIT` | No | `250000` | Tokens per minute (Gemini only) |
+| `GEMINI_DAILY_LIMIT` | No | `20` | Requests per day (Gemini only) |
+| `AZURE_RPM_LIMIT` | No | `100` | Requests per minute (Azure only) |
+| `AZURE_TPM_LIMIT` | No | `90000` | Tokens per minute (Azure only) |
+| `AZURE_DAILY_LIMIT` | No | `5000` | Requests per day (Azure only) |
 
 *\*Langfuse credentials are required for prompt management (except in `--mock` mode). If Langfuse is not configured and you are not using `--mock`, the CLI will fail to start with an error indicating which Langfuse environment variables are missing. To get started, create a (free) account and project at [Langfuse Cloud](https://cloud.langfuse.com), then set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` (and optionally `LANGFUSE_BASE_URL` if self-hosting) in your environment or `.env` file.*
-*\*\*Required only when using Gemini models*
+*\*\*Required based on `MODEL_PROVIDER`: `GEMINI_API_KEY` when `google`, `AZURE_API_KEY` and `AZURE_ENDPOINT` when `azure`*
 
 ### Vault Config File (Optional)
 
@@ -348,15 +411,58 @@ max_links: 10
 daily_notes_folder: "Journal"
 model: "gemini-2.5-flash"
 
-# Rate limits (override defaults for paid tiers)
-rpm_limit: 60         # Requests per minute
-tpm_limit: 1000000    # Tokens per minute (1M)
-daily_limit: 10000    # Requests per day
+# Provider-specific rate limits (override defaults)
+model_limits:
+  gemini-2.5-flash:
+    rpm_limit: 60
+    tpm_limit: 1000000
+    daily_limit: 10000
+  gpt-4:
+    rpm_limit: 500
+    tpm_limit: 150000
+    daily_limit: 10000
 ```
 
-**Note:** Rate limit settings can be customized for paid Gemini API tiers. Free tier defaults are conservative to avoid hitting quotas.
+**Note:** Rate limit settings can be customized based on your API tier (Gemini paid tier, Azure subscription limits, etc.). Defaults are conservative to avoid hitting quotas.
 
 ## Troubleshooting
+
+### Azure OpenAI Errors
+
+**"AZURE_API_KEY not set" or "AZURE_ENDPOINT not set"**
+- Ensure both environment variables are configured in your `.env` file
+- Get your credentials from: Azure Portal → Your OpenAI Resource → Keys and Endpoint
+
+**"Authentication failed" (401/403 errors)**
+- Verify your API key is correct and not expired
+- Check that your Azure subscription is active
+- Ensure your resource has not been disabled
+
+**"Deployment not found" (404 error)**
+- Verify `AZURE_DEPLOYMENT_NAME` matches your actual deployment in Azure Portal
+- Check Azure Portal → Your Resource → Model deployments
+- Deployment names are case-sensitive and user-defined
+- Remember: deployment name ≠ model name (e.g., "my-gpt4" vs "gpt-4")
+
+**"Azure endpoint must use HTTPS"**
+- Ensure your endpoint URL starts with `https://`
+- Format: `https://{your-resource-name}.openai.azure.com`
+- Don't include trailing slashes or path components
+
+**"System prompt must contain 'json'" error**
+- This indicates a Langfuse prompt configuration issue
+- Azure's `json_object` response format requires the word "json" in the system prompt
+- Check your Langfuse prompts and ensure they mention JSON output
+
+**Rate limit errors**
+- Azure quotas vary by deployment and subscription
+- Check Azure Portal → Your Resource → Quotas
+- Adjust rate limits in `.env` or vault config to match your tier:
+  ```bash
+  AZURE_RPM_LIMIT=500
+  AZURE_TPM_LIMIT=150000
+  AZURE_DAILY_LIMIT=10000
+  ```
 
 ### Ollama Errors
 
