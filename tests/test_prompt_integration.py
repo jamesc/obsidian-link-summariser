@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from summarize_links.exceptions import AzureAPIError, GeminiAPIError
+from summarize_links.exceptions import GeminiAPIError
 from summarize_links.llm.azure import AzureClient
 from summarize_links.llm.gemini import GeminiClient
 
@@ -190,6 +190,8 @@ class TestPromptVersionTracking:
         client2._get_langfuse_prompts()
         metadata2 = client2._build_prompt_metadata()
 
+        assert metadata1 is not None
+        assert metadata2 is not None
         assert metadata1["prompt_version"] == 1
         assert metadata2["prompt_version"] == 2
 
@@ -209,6 +211,7 @@ class TestPromptVersionTracking:
 
         # Should be the exact same object that can be passed to trace_generation
         assert cached_prompt is mock_prompt
+        assert cached_prompt is not None
         assert cached_prompt.name == "summarize-document"
         assert cached_prompt.version == 3
         # Verify it has the required attributes for Langfuse linking
@@ -260,10 +263,9 @@ class TestPromptErrorRecovery:
 
         # Compilation should fail
         with pytest.raises(Exception, match="Compilation failed"):
-            client._compile_user_prompt(
-                "template {{url}}", "content", "https://test.com", "Title"
-            )
+            client._compile_user_prompt("template {{url}}", "content", "https://test.com", "Title")
 
         # But cached prompt should still be available
-        assert client.get_cached_prompt() is not None
-        assert client.get_cached_prompt().name == "summarize-document"
+        cached = client.get_cached_prompt()
+        assert cached is not None
+        assert cached.name == "summarize-document"

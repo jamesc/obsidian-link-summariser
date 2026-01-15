@@ -245,12 +245,12 @@ def process_url_with_metadata(
                     progress.update(task_id, description=f"[cyan]Summarizing: {slug}...")
 
                 # Pre-fetch the prompt to ensure it's cached before we create the generation
-                # This is needed because get_cached_prompt() is called before summarize_with_metadata()
-                # which is when the prompt is normally fetched and cached
+                # This is needed because get_cached_prompt() is called before
+                # summarize_with_metadata(), which is when the prompt is normally fetched
                 if hasattr(client, "_get_langfuse_prompts"):
                     try:
                         # This fetches and caches the prompt
-                        client._get_langfuse_prompts()  # type: ignore[attr-defined]
+                        client._get_langfuse_prompts()
                     except Exception as e:
                         logger.warning(f"Failed to pre-fetch Langfuse prompt: {e}")
 
@@ -259,9 +259,8 @@ def process_url_with_metadata(
                 langfuse_prompt = None
                 if hasattr(client, "get_cached_prompt"):
                     langfuse_prompt = client.get_cached_prompt()
-                    logger.debug(
-                        f"Retrieved prompt for linking: {langfuse_prompt.name if langfuse_prompt else None}"  # type: ignore[attr-defined]
-                    )
+                    prompt_name = langfuse_prompt.name if langfuse_prompt else None
+                    logger.debug(f"Retrieved prompt for linking: {prompt_name}")
 
                 # Create generation observation (input/output will be set via update())
                 with tracer.trace_generation(
