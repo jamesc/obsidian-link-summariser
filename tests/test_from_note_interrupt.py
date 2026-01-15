@@ -132,6 +132,8 @@ def test_shutdown_flag_resets_between_batches(mock_config: Config) -> None:
 
         # The key behavior: _shutdown_requested was reset at the start of the batch,
         # so this new batch could run to completion despite being True beforehand.
+
+
 def test_shutdown_flag_resets_in_resummarize_batch(mock_config: Config) -> None:
     """Test that _shutdown_requested flag is reset in resummarize batch too.
 
