@@ -85,6 +85,7 @@ class MockLangfuseTracer:
         input_data: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         model: str | None = None,
+        prompt: Any | None = None,
     ) -> Generator[None, None, None]:
         """No-op generation - yields None."""
         yield None
@@ -233,6 +234,7 @@ class LangfuseTracer:
         input_data: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         model: str | None = None,
+        prompt: Any | None = None,
     ) -> Generator[Any, None, None]:
         """
         Create a generation observation for an LLM call within the current trace context.
@@ -245,6 +247,7 @@ class LangfuseTracer:
         - Capture raw model response in output via generation.update()
         - Include usage_details for token tracking
         - Add relevant metadata (temperature, max_tokens, etc.)
+        - Pass prompt object to link to Langfuse prompt management
 
         Args:
             name: Generation name (e.g., "summarize").
@@ -254,6 +257,8 @@ class LangfuseTracer:
                        - preprocessing results
             metadata: Additional metadata (model config, parameters, etc.).
             model: Model name used for generation.
+            prompt: Optional Langfuse prompt object to link to this generation.
+                   This enables per-prompt-version metrics in the Langfuse UI.
 
         Yields:
             Generation object.
@@ -271,6 +276,7 @@ class LangfuseTracer:
                 input=input_data or {},
                 metadata=generation_metadata,
                 model=model,
+                prompt=prompt,
             ) as generation:
                 yield generation
         except Exception as e:

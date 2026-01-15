@@ -6,7 +6,7 @@ implementations must follow, enabling seamless switching between
 different providers (Gemini, Ollama, etc.).
 """
 
-from typing import Protocol
+from typing import Any, Protocol
 
 from summarize_links.models import SummaryResult
 
@@ -43,5 +43,14 @@ class SummarizerProtocol(Protocol):
 
         Returns:
             SummaryResult with content, suggested tags, and content type.
+        """
+        ...
+
+    def get_cached_prompt(self) -> Any | None:
+        """
+        Get cached Langfuse prompt object for trace linking.
+
+        Returns:
+            The cached prompt object, or None if not cached.
         """
         ...

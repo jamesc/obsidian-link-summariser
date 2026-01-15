@@ -55,8 +55,13 @@ def upload_prompts() -> None:
     """
     Upload prompts to Langfuse.
 
-    Reads system.txt and user.txt from the prompts directory and creates/updates
-    them in Langfuse as "summarize-document/system" and "summarize-document/user".
+    Creates a composable prompt structure:
+    1. "summarize-document/system" (text prompt) - system instructions
+    2. "summarize-document/user" (text prompt) - user template with variables
+    3. "summarize-document" (chat prompt) - references the above prompts
+
+    This allows independent versioning of system/user prompts while maintaining
+    a single chat prompt that composes them.
 
     Raises:
         ValueError: If Langfuse credentials are not configured.
@@ -91,32 +96,60 @@ def upload_prompts() -> None:
     system_prompt = load_system_prompt()
     user_prompt_template = load_user_prompt_template()
 
+    # Upload individual component prompts
+    logger.info("Uploading component prompts to Langfuse...")
+
     # Upload system prompt
-    logger.info("Uploading system prompt to Langfuse...")
     try:
         langfuse.create_prompt(
             name="summarize-document/system",
             prompt=system_prompt,
             type="text",
-            labels=["system", "production"],
+            labels=["production", "component"],
         )
-        logger.info("✓ System prompt uploaded successfully")
+        logger.info("✓ System prompt 'summarize-document/system' uploaded")
     except Exception as e:
         logger.error(f"Failed to upload system prompt: {e}")
         raise
 
     # Upload user prompt template
-    logger.info("Uploading user prompt template to Langfuse...")
     try:
         langfuse.create_prompt(
             name="summarize-document/user",
             prompt=user_prompt_template,
             type="text",
-            labels=["user", "template", "production"],
+            labels=["production", "component"],
         )
-        logger.info("✓ User prompt template uploaded successfully")
+        logger.info("✓ User prompt 'summarize-document/user' uploaded")
     except Exception as e:
         logger.error(f"Failed to upload user prompt template: {e}")
+        raise
+
+    # Upload composed chat prompt that references the components
+    logger.info("Uploading composed chat prompt to Langfuse...")
+    try:
+        langfuse.create_prompt(
+            name="summarize-document",
+            prompt=[
+                {
+                    "role": "system",
+                    "content": (
+                        "@@@langfusePrompt:name=summarize-document/system|label=production@@@"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "@@@langfusePrompt:name=summarize-document/user|label=production@@@"
+                    ),
+                },
+            ],
+            type="chat",
+            labels=["production"],
+        )
+        logger.info("✓ Composed chat prompt 'summarize-document' uploaded")
+    except Exception as e:
+        logger.error(f"Failed to upload composed chat prompt: {e}")
         raise
 
     # Flush any pending events
@@ -124,8 +157,11 @@ def upload_prompts() -> None:
 
     logger.info("\n✓ All prompts uploaded successfully!")
     logger.info(
-        "\nYou can now view and manage your prompts in the Langfuse UI "
-        "(using your configured Langfuse project)."
+        "\nStructure:\n"
+        "  - summarize-document/system (text, component)\n"
+        "  - summarize-document/user (text, component)\n"
+        "  - summarize-document (chat, references components)\n"
+        "\nYou can now view and manage your prompts in the Langfuse UI."
     )
 
 
