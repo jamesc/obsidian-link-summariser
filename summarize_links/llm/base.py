@@ -211,8 +211,8 @@ class BaseLLMClient:
         """
         Extract system and user message templates from a chat prompt object.
 
-        When using prompt references (composability), this method resolves them by
-        manually fetching each referenced prompt from Langfuse.
+        Note: Langfuse automatically resolves prompt references (@@@langfusePrompt:...@@@)
+        server-side, so we receive the fully resolved content in prompt_obj.prompt.
 
         Args:
             prompt_obj: Langfuse chat prompt object with messages array.
@@ -223,33 +223,18 @@ class BaseLLMClient:
         Raises:
             Exception: If expected messages are not found.
         """
-        # Get raw messages from prompt
-        raw_messages = prompt_obj.prompt
-        if not isinstance(raw_messages, list):
+        # Get messages from prompt (already resolved by Langfuse)
+        messages = prompt_obj.prompt
+        if not isinstance(messages, list):
             raise self._error_class(
-                f"Expected chat prompt to have list of messages, got {type(raw_messages)}"
+                f"Expected chat prompt to have list of messages, got {type(messages)}"
             )
-
-        # Resolve prompt references if present
-        resolved_messages = []
-        for msg in raw_messages:
-            role = msg.get("role", "")
-            content = msg.get("content", "")
-
-            # Check if content is a prompt reference: @@@langfusePrompt:...@@@
-            if isinstance(content, str) and "@@@langfusePrompt:" in content:
-                # Resolve the reference by fetching the referenced prompt
-                resolved_content = self._resolve_prompt_reference(content)
-                resolved_messages.append({"role": role, "content": resolved_content})
-            else:
-                # Use content as-is
-                resolved_messages.append({"role": role, "content": content})
 
         # Extract system and user content
         system_content = None
         user_content = None
 
-        for msg in resolved_messages:
+        for msg in messages:
             role = msg.get("role", "")
             content = msg.get("content", "")
             if role == "system":
@@ -263,71 +248,6 @@ class BaseLLMClient:
             raise self._error_class("Chat prompt missing user message")
 
         return system_content, user_content
-
-    def _resolve_prompt_reference(self, reference: str) -> str:
-        """
-        Resolve a prompt reference by fetching the referenced prompt from Langfuse.
-
-        Supports Langfuse's prompt reference syntax:
-        - @@@langfusePrompt:name=PromptName|label=production@@@
-        - @@@langfusePrompt:name=PromptName|version=1@@@
-
-        Args:
-            reference: Prompt reference string.
-
-        Returns:
-            The content of the referenced prompt.
-
-        Raises:
-            Exception: If reference cannot be resolved.
-        """
-        # Parse the reference: @@@langfusePrompt:name=X|label=Y@@@ or version=Z
-        import re
-
-        match = re.match(
-            r"@@@langfusePrompt:name=([^|@]+)(?:\|(?:label=([^@]+)|version=(\d+)))?@@@",
-            reference.strip(),
-        )
-        if not match:
-            logger.warning("Invalid Langfuse prompt reference format: %s", reference)
-            return reference
-
-        prompt_name = match.group(1)
-        label = match.group(2) if match.group(2) else None
-        version = int(match.group(3)) if match.group(3) else None
-
-        try:
-            if version is not None:
-                logger.debug("Resolving prompt reference: %s (version: %s)", prompt_name, version)
-                referenced_prompt = self._langfuse_client.get_prompt(prompt_name, version=version)
-            else:
-                # Default to production label if neither label nor version specified
-                label = label or "production"
-                logger.debug("Resolving prompt reference: %s (label: %s)", prompt_name, label)
-                referenced_prompt = self._langfuse_client.get_prompt(prompt_name, label=label)
-
-            # For text prompts, the content is in the 'prompt' attribute
-            if hasattr(referenced_prompt, "prompt"):
-                content = referenced_prompt.prompt
-                if isinstance(content, str):
-                    logger.debug(
-                        "Resolved prompt reference %s to %d chars", prompt_name, len(content)
-                    )
-                    return content
-                else:
-                    logger.warning(
-                        "Referenced prompt %s has non-string content: %s",
-                        prompt_name,
-                        type(content),
-                    )
-                    return str(content)
-            else:
-                logger.warning("Referenced prompt %s has no 'prompt' attribute", prompt_name)
-                return reference
-
-        except Exception as e:
-            logger.error("Failed to resolve prompt reference %s: %s", prompt_name, e)
-            raise self._error_class(f"Failed to resolve prompt reference {prompt_name}: {e}") from e
 
     def _compile_user_prompt(self, template: str, content: str, url: str, title: str | None) -> str:
         """
