@@ -616,7 +616,8 @@ def process_urls_batch(
                         # If the source_date is not in that exact format, ignore it and
                         # fall back to the higher-level source_date value instead.
                         logger.debug(
-                            "Ignoring source_date '%s' from URL context; expected YYYY-MM-DD format.",
+                            "Ignoring source_date '%s' from URL context; "
+                            "expected YYYY-MM-DD format.",
                             url_context.source_date,
                         )
                 if ctx_source_date is None:
