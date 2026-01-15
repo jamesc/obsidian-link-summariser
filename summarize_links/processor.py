@@ -302,6 +302,8 @@ def process_url_with_metadata(
                                     "parsed_tags": summary_result.suggested_tags,
                                     "parsed_content_type": summary_result.content_type,
                                     "summary_length": len(summary_result.content),
+                                    "provider": config.model_provider,
+                                    "model": config.model,
                                 }
 
                                 # Add usage details if available
