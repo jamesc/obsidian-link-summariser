@@ -20,6 +20,7 @@ Design Note:
 """
 
 import asyncio
+import atexit
 import concurrent.futures
 import logging
 from typing import Literal
@@ -69,6 +70,18 @@ def _get_thread_pool() -> concurrent.futures.ThreadPoolExecutor:
     return _thread_pool
 
 
+def _cleanup_thread_pool() -> None:
+    """Cleanup thread pool on exit."""
+    global _thread_pool
+    if _thread_pool is not None:
+        _thread_pool.shutdown(wait=True)
+        _thread_pool = None
+
+
+# Register cleanup handler
+atexit.register(_cleanup_thread_pool)
+
+
 def _is_in_asyncio_loop() -> bool:
     """
     Check if we're currently inside an asyncio event loop.
@@ -111,7 +124,8 @@ def _fetch_content_sync(
     Args:
         url: URL to fetch.
         timeout: Request timeout in seconds.
-        browser_type: Browser to use (only chromium is currently used).
+        browser_type: Browser to use ("chromium", "firefox", or "webkit";
+            currently only chromium is used).
         wait_until: Wait condition for page load.
 
     Returns:
@@ -198,8 +212,7 @@ def _fetch_content_sync(
         raise
     except ImportError as e:
         raise ContentFetchError(
-            "Playwright is not installed. "
-            "Run: uv pip install playwright && playwright install chromium"
+            "Playwright is not installed. Run: uv sync && playwright install chromium"
         ) from e
     except TimeoutError as e:
         raise ContentFetchError(f"Playwright timeout after {timeout}s: {url}") from e
@@ -251,7 +264,8 @@ def fetch_content_with_playwright(
     Args:
         url: URL to fetch.
         timeout: Request timeout in seconds (default 30s).
-        browser_type: Browser to use (currently only "chromium" supported).
+        browser_type: Browser to use ("chromium", "firefox", or "webkit";
+            "chromium" is recommended).
         wait_until: Wait condition - "load", "domcontentloaded", or "networkidle".
 
     Returns:

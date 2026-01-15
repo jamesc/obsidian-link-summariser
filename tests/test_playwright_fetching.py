@@ -201,16 +201,13 @@ class TestPlaywrightFetching:
 
     def test_playwright_not_installed(self):
         """Should raise ContentFetchError if Playwright not installed."""
-        with patch.dict("sys.modules", {"playwright": None, "playwright.sync_api": None}):
-            # Need to re-import to trigger ImportError
-            import importlib
-
-            import summarize_links.extract.playwright_fetching as pw_module
-
-            importlib.reload(pw_module)
-
+        # Simulate Playwright being unavailable by making sync_playwright raise ImportError
+        with patch(
+            "playwright.sync_api.sync_playwright",
+            side_effect=ImportError("No module named 'playwright'"),
+        ):
             with pytest.raises(ContentFetchError) as exc_info:
-                pw_module.fetch_content_with_playwright("https://example.com")
+                fetch_content_with_playwright("https://example.com")
 
             assert "playwright" in str(exc_info.value).lower()
 
@@ -312,9 +309,14 @@ class TestFallbackLogic:
             ContentFetchError("Invalid URL"),
         ]
 
-        for phase in ["phase1", "phase2", "phase3", "phase4"]:
+        from typing import cast
+
+        from summarize_links.extract.fallback import PhaseType
+
+        for phase_str in ["phase1", "phase2", "phase3", "phase4"]:
+            phase = cast(PhaseType, phase_str)
             for error in permanent_errors:
-                assert should_retry_with_playwright(error, phase) is False  # type: ignore
+                assert should_retry_with_playwright(error, phase) is False
 
     def test_error_matching_case_insensitive(self):
         """Should match errors case-insensitively."""

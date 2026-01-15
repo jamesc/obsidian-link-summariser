@@ -24,6 +24,7 @@ from summarize_links.exceptions import ContentFetchError
 # Public API
 # Re-export constants and private functions for tests
 from summarize_links.extract.fallback import (
+    PhaseType,
     get_error_category,
     should_retry_with_playwright,
 )
@@ -122,7 +123,7 @@ def fetch_and_extract(url: str) -> tuple[str, str | None]:
 def fetch_and_extract_metadata(
     url: str,
     playwright_enabled: bool = True,
-    playwright_phase: str = "phase1",
+    playwright_phase: PhaseType = "phase1",
     playwright_timeout: int = 30,
 ) -> PageMetadata:
     """
@@ -148,7 +149,6 @@ def fetch_and_extract_metadata(
         ContentFetchError: If fetching fails (both HTTP and Playwright if applicable).
         ContentExtractionError: If extraction fails.
     """
-    fetch_method = "http"  # Track which method succeeded
     http_error_category: str | None = None  # Track error category if fallback used
 
     try:
@@ -159,7 +159,7 @@ def fetch_and_extract_metadata(
 
     except ContentFetchError as http_error:
         # Check if Playwright fallback should be attempted
-        if playwright_enabled and should_retry_with_playwright(http_error, playwright_phase):  # type: ignore
+        if playwright_enabled and should_retry_with_playwright(http_error, playwright_phase):
             error_category = get_error_category(http_error)
             http_error_category = error_category  # Store for observability
             logger.info(f"HTTP fetch failed ({error_category}), retrying with Playwright: {url}")

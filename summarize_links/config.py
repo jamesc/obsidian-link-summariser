@@ -16,7 +16,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import yaml
 from dotenv import load_dotenv
@@ -301,7 +301,7 @@ class Config:
     langfuse_base_url: str = "https://cloud.langfuse.com"
     # Playwright fallback configuration
     playwright_enabled: bool = True
-    playwright_fallback_phase: str = "phase1"
+    playwright_fallback_phase: Literal["phase1", "phase2", "phase3", "phase4"] = "phase1"
     playwright_timeout: int = 30
     playwright_browser: str = "chromium"
 
@@ -351,6 +351,14 @@ class Config:
         # Max links must be positive
         if self.max_links < 1:
             raise ConfigError(f"max_links must be at least 1, got {self.max_links}")
+
+        # Playwright phase must be valid
+        valid_phases = ["phase1", "phase2", "phase3", "phase4"]
+        if self.playwright_fallback_phase not in valid_phases:
+            raise ConfigError(
+                f"Invalid playwright_fallback_phase: {self.playwright_fallback_phase}. "
+                f"Valid options: {', '.join(valid_phases)}"
+            )
 
         # Langfuse credentials are required (not in mock mode)
         if not self.mock_mode and (not self.langfuse_public_key or not self.langfuse_secret_key):
@@ -578,7 +586,10 @@ def load_config(
         config.playwright_enabled = bool(yaml_config["playwright_enabled"])
 
     if os.getenv("PLAYWRIGHT_FALLBACK_PHASE"):
-        config.playwright_fallback_phase = os.getenv("PLAYWRIGHT_FALLBACK_PHASE", "phase1")
+        phase_value = os.getenv("PLAYWRIGHT_FALLBACK_PHASE", "phase1")
+        config.playwright_fallback_phase = cast(
+            Literal["phase1", "phase2", "phase3", "phase4"], phase_value
+        )
     elif "playwright_fallback_phase" in yaml_config:
         config.playwright_fallback_phase = yaml_config["playwright_fallback_phase"]
 

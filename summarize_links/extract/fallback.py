@@ -14,6 +14,7 @@ __all__ = [
     "should_retry_with_playwright",
     "get_error_category",
     "PLAYWRIGHT_RETRYABLE_ERRORS",
+    "PhaseType",
 ]
 
 logger = logging.getLogger(__name__)

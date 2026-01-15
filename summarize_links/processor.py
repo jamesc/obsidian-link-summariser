@@ -686,6 +686,8 @@ def process_urls_batch(
 
     finally:
         # Cleanup browser context if Playwright was used
+        # NOTE: close_browser_context() is a no-op with self-contained fetches,
+        # but kept for API compatibility with future context-reuse implementations
         try:
             from summarize_links.extract.playwright_fetching import close_browser_context
 
@@ -802,6 +804,8 @@ def process_resummarize_batch(
 
     finally:
         # Cleanup browser context if Playwright was used
+        # NOTE: close_browser_context() is a no-op with self-contained fetches,
+        # but kept for API compatibility with future context-reuse implementations
         try:
             from summarize_links.extract.playwright_fetching import close_browser_context
 
