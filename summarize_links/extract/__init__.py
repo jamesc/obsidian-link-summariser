@@ -19,13 +19,14 @@ Main entry points:
 
 import logging
 
-from summarize_links.exceptions import ContentFetchError
+from summarize_links.exceptions import ContentExtractionError, ContentFetchError
 
 # Public API
 # Re-export constants and private functions for tests
 from summarize_links.extract.fallback import (
     PhaseType,
     get_error_category,
+    should_retry_with_extraction_fallback,
     should_retry_with_playwright,
 )
 from summarize_links.extract.fetching import (
@@ -154,8 +155,8 @@ def fetch_and_extract_metadata(
     try:
         # Try HTTP first (fast path)
         content, content_type = fetch_content(url)
-        logger.debug(f"✓ HTTP fetch succeeded: {url}")
         fetch_method = "http"
+        logger.debug(f"✓ HTTP fetch succeeded: {url}")
 
     except ContentFetchError as http_error:
         # Check if Playwright fallback should be attempted
@@ -195,7 +196,52 @@ def fetch_and_extract_metadata(
         metadata = _extract_markdown_metadata(content, url)
     else:
         # For HTML, use the full extraction pipeline
-        metadata = extract_page_metadata(content, url)
+        try:
+            metadata = extract_page_metadata(content, url)
+        except ContentExtractionError as extraction_error:
+            # Extraction failed - check if we should retry with Playwright
+            if (
+                playwright_enabled
+                and fetch_method != "playwright"  # Don't retry if already using Playwright
+                and should_retry_with_extraction_fallback(extraction_error, playwright_phase)
+            ):
+                logger.warning(
+                    f"⚠ Extraction failed for {url}, retrying with Playwright: {extraction_error}"
+                )
+                http_error_category = get_error_category(ContentFetchError(str(extraction_error)))
+
+                # Retry with Playwright
+                try:
+                    content, content_type = fetch_content_with_playwright(
+                        url, timeout=playwright_timeout
+                    )
+                    logger.info(f"✓ Playwright fetch succeeded after extraction error: {url}")
+                    fetch_method = "playwright"
+
+                    # Try extraction again with Playwright content
+                    metadata = extract_page_metadata(content, url)
+                except Exception as playwright_error:
+                    # Both methods failed - enhance error message
+                    logger.error(
+                        f"✗ Extraction and Playwright fallback both failed for {url}. "
+                        f"Extraction: {extraction_error}, Playwright: {playwright_error}"
+                    )
+                    raise ContentExtractionError(
+                        f"{extraction_error} (Playwright fallback also failed: {playwright_error})"
+                    ) from playwright_error
+            else:
+                # Playwright disabled, already used, or error not retryable
+                reason = (
+                    "disabled"
+                    if not playwright_enabled
+                    else "already used"
+                    if fetch_method == "playwright"
+                    else f"not in {playwright_phase}"
+                )
+                logger.debug(
+                    f"Playwright fallback {reason} for extraction error: {extraction_error}"
+                )
+                raise
 
     # Truncate content
     metadata.content = truncate_content(metadata.content)

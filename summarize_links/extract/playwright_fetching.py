@@ -201,6 +201,15 @@ def _fetch_content_sync(
                 error_msg = f"HTTP {status}: Request failed (via Playwright)"
             raise ContentFetchError(error_msg)
 
+        # For SPAs/JavaScript-heavy pages, wait for network to be idle
+        # This ensures JavaScript has time to render content
+        try:
+            logger.debug("Waiting for network idle after page load")
+            page.wait_for_load_state("networkidle", timeout=min(timeout * 1000, 10000))
+        except Exception as wait_error:
+            # Log but don't fail - page might already be loaded
+            logger.debug(f"Network idle wait timed out: {wait_error}")
+
         # Extract page content after JavaScript execution
         html_content = page.content()
 
