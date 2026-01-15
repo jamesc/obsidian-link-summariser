@@ -381,10 +381,12 @@ class TestCmdFromNoteAll:
         result = cmd_from_note_all(config)
 
         assert result == EXIT_SUCCESS
-        assert mock_process.call_count == 2
-        # First call should be for newest date (2025-12-16)
-        first_call = mock_process.call_args_list[0]
-        assert first_call[1]["daily_note_filename"] == "2025-12-16.md"
+        # Should collect all URLs and process in ONE batch
+        assert mock_process.call_count == 1
+        # Check that all URLs were collected
+        call_args = mock_process.call_args
+        url_contexts = call_args[0][0]
+        assert len(url_contexts) == 2  # URLs from both notes
 
     @patch("summarize_links.commands.from_note.process_urls_batch")
     @patch("summarize_links.commands.from_note.extract_urls_with_context")
@@ -419,13 +421,10 @@ class TestCmdFromNoteAll:
 
         cmd_from_note_all(config)
 
-        # First note: 3 URLs processed (all of them)
-        # Second note: only 1 URL processed (to reach limit of 4)
-        assert mock_process.call_count == 2
-        first_call_urls = mock_process.call_args_list[0][0][0]
-        second_call_urls = mock_process.call_args_list[1][0][0]
-        assert len(first_call_urls) == 3
-        assert len(second_call_urls) == 1
+        # Should collect all 6 URLs but limit to 4 and process in ONE batch
+        assert mock_process.call_count == 1
+        call_urls = mock_process.call_args[0][0]
+        assert len(call_urls) == 4  # Limited to max_links
 
 
 class TestCmdUrls:

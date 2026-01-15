@@ -37,12 +37,16 @@ class UrlWithContext:
         original_url: The URL exactly as it appears in the note (for removal).
         tags: Hashtags found on the same line (without # prefix).
         context_text: The full line text for reference.
+        source_note: Optional filename of the daily note this URL came from.
+        source_date: Optional date from the source daily note (for summary filename).
     """
 
     url: str
     original_url: str = ""  # Populated by extract_urls_with_context
     tags: list[str] = field(default_factory=list)
     context_text: str = ""
+    source_note: str | None = None  # For batch processing from multiple notes
+    source_date: str | None = None  # ISO format: YYYY-MM-DD
 
 
 @dataclass

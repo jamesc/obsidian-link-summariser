@@ -65,7 +65,7 @@ def _handle_shutdown(signum: int, frame: object) -> None:
     """
     global _shutdown_requested
     _shutdown_requested = True
-    print_message("\n[yellow]⚠ Shutdown requested, finishing current URL...[/]")
+    print_message("\n[yellow]⚠ Shutdown requested, finishing current task...[/]")
 
 
 def process_url_with_metadata(
@@ -541,17 +541,20 @@ def process_urls_batch(
     and reports partial results.
 
     Args:
-        url_contexts: URLs with context (user tags, surrounding text).
+        url_contexts: URLs with context (user tags, surrounding text, source info).
         config: Application configuration.
         daily_note_filename: Optional filename of source daily note for back-linking.
+            If not provided, will use source_note from url_context if available.
         source_date: Optional date from the source daily note (for filename).
+            If not provided, will use source_date from url_context if available.
 
     Returns:
         Tuple of (exit_code, results).
     """
     global _shutdown_requested
 
-    # Reset shutdown flag at start of batch
+    # Reset shutdown flag at the start of each batch so that multiple invocations
+    # in the same process (e.g., tests, REPL, programmatic use) work correctly.
     _shutdown_requested = False
 
     # Install signal handler for graceful shutdown
@@ -582,7 +585,7 @@ def process_urls_batch(
 
         # Process with progress bar
         results: list[tuple[bool, str]] = []
-        urls_to_delete: list[str] = []  # Track URLs that were successfully processed
+        urls_to_delete: dict[str, list[str]] = {}  # Track URLs by source note
         interrupted = False
 
         with Progress(
@@ -601,37 +604,63 @@ def process_urls_batch(
                     print_message(f"[yellow]Stopping early. {remaining} URLs not processed.[/]")
                     break
 
+                # Get source info from URL context if not provided as parameters
+                ctx_note_filename = url_context.source_note or daily_note_filename
+                ctx_source_date = None
+                if url_context.source_date:
+                    try:
+                        parsed_date = datetime.strptime(url_context.source_date, "%Y-%m-%d").date()
+                        ctx_source_date = datetime.combine(parsed_date, datetime.min.time())
+                    except ValueError:
+                        # This is a strict validation step for YYYY-MM-DD dates only.
+                        # If the source_date is not in that exact format, ignore it and
+                        # fall back to the higher-level source_date value instead.
+                        logger.debug(
+                            "Ignoring source_date '%s' from URL context; "
+                            "expected YYYY-MM-DD format.",
+                            url_context.source_date,
+                        )
+                if ctx_source_date is None:
+                    ctx_source_date = source_date
+
                 success, message, should_delete = process_url_with_metadata(
-                    url_context, config, client, progress, task, daily_note_filename, source_date
+                    url_context, config, client, progress, task, ctx_note_filename, ctx_source_date
                 )
                 results.append((success, message))
 
                 # Track URLs that were newly processed (not skipped, not errors)
-                if should_delete:
+                # Group by source note for batch deletion
+                if should_delete and ctx_note_filename:
                     # Store original_url for removal (cleaned URL may not match note)
-                    urls_to_delete.append(url_context.original_url or url_context.url)
+                    if ctx_note_filename not in urls_to_delete:
+                        urls_to_delete[ctx_note_filename] = []
+                    urls_to_delete[ctx_note_filename].append(
+                        url_context.original_url or url_context.url
+                    )
 
                 progress.advance(task)
 
-        # Delete processed URL lines from the daily note
-        # Only if we have a source note and are not in dry-run mode
-        if daily_note_filename and urls_to_delete and not config.dry_run:
+        # Delete processed URL lines from daily notes
+        # Only if we are not in dry-run mode
+        if urls_to_delete and not config.dry_run:
             assert config.vault_path is not None
-            print_message(
-                f"[cyan]Cleaning up {len(urls_to_delete)} processed URLs from daily note...[/]"
-            )
-            for url in urls_to_delete:
-                try:
-                    removed = remove_url_line_from_note(
-                        vault_path=config.vault_path,
-                        daily_notes_folder=config.daily_notes_folder,
-                        note_filename=daily_note_filename,
-                        url=url,
-                    )
-                    if removed:
-                        logger.debug(f"Removed URL line from daily note: {url}")
-                except Exception as e:
-                    logger.warning(f"Failed to remove URL line from daily note: {e}")
+            total_urls = sum(len(urls) for urls in urls_to_delete.values())
+            num_notes = len(urls_to_delete)
+            msg = f"Cleaning up {total_urls} processed URLs from {num_notes} daily note(s)..."
+            print_message(f"[cyan]{msg}[/]")
+            for note_filename, urls in urls_to_delete.items():
+                for url in urls:
+                    try:
+                        removed = remove_url_line_from_note(
+                            vault_path=config.vault_path,
+                            daily_notes_folder=config.daily_notes_folder,
+                            note_filename=note_filename,
+                            url=url,
+                        )
+                        if removed:
+                            logger.debug(f"Removed URL line from {note_filename}: {url}")
+                    except Exception as e:
+                        logger.warning(f"Failed to remove URL line from {note_filename}: {e}")
 
         # Print summary if interrupted
         if interrupted and results:
@@ -673,7 +702,9 @@ def process_resummarize_batch(
     """
     global _shutdown_requested
 
-    # Reset shutdown flag at start of batch
+    # Reset shutdown flag at the start of each batch so that a previous
+    # interrupted run in the same process doesn't cause this run to
+    # immediately think shutdown was requested.
     _shutdown_requested = False
 
     # Install signal handler for graceful shutdown
