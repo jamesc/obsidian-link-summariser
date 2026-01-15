@@ -35,12 +35,12 @@ This document provides guidance for GitHub Copilot coding agent when working on 
 - `models.py` - Pydantic data models
 - `exceptions.py` - Custom exception classes
 
-**Design Patterns:**: Gemini, Azure, Ollama)
+**Design Patterns:**
+- Factory pattern for LLM client creation (supports Gemini, Azure, Ollama)
 - Protocol-based interfaces for client abstraction (`SummarizerProtocol`)
 - Dependency injection for testability
 - Configuration cascading: CLI args > env vars > YAML config > defaults
 - Explicit provider selection via `MODEL_PROVIDER` environment variable
-- Configuration cascading: CLI args > env vars > YAML config > defaults
 
 ## Development Workflow
 
@@ -54,8 +54,8 @@ uv sync
 uv sync --all-extras
 
 # Copy environment file and configure
-cp .env.example .envprovider choice (google/azure/ollama) and credential
-# Edit .env with your GEMINI_API_KEY and preferences
+cp .env.example .env
+# Edit .env with your provider choice (google/azure/ollama) and credentials
 ```
 
 ### Building and Testing
@@ -83,7 +83,8 @@ uv run mypy .
 ### Common Commands
 
 **Run the CLI:**
-```bash (uses MODEL_PROVIDER from .env)
+```bash
+# uses MODEL_PROVIDER from .env
 uv run summarize-links from-note --vault ~/Notes
 
 # Process with specific date
@@ -103,7 +104,6 @@ uv run summarize-links from-note --vault ~/Notes --verbose
 
 # Check rate limit status (varies by provider)
 uv run summarize-links status --vault ~/Notes
-uv run summarize-links from-note --vault ~/Notes --verbose
 ```
 
 ## Code Style and Conventions
