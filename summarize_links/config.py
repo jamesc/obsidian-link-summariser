@@ -267,6 +267,10 @@ class Config:
         langfuse_public_key: Langfuse public API key (required)
         langfuse_secret_key: Langfuse secret API key (required)
         langfuse_base_url: Langfuse server URL
+        playwright_enabled: Enable Playwright fallback for failed HTTP requests
+        playwright_fallback_phase: Phase level (phase1-phase4) for fallback behavior
+        playwright_timeout: Timeout in seconds for Playwright operations
+        playwright_browser: Browser to use (chromium, firefox, webkit)
     """
 
     model_provider: str = ""  # Required: google, ollama, azure
@@ -295,6 +299,11 @@ class Config:
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_base_url: str = "https://cloud.langfuse.com"
+    # Playwright fallback configuration
+    playwright_enabled: bool = True
+    playwright_fallback_phase: str = "phase1"
+    playwright_timeout: int = 30
+    playwright_browser: str = "chromium"
 
     def validate(self) -> None:
         """
@@ -557,6 +566,31 @@ def load_config(
         config.langfuse_base_url = os.getenv("LANGFUSE_BASE_URL", config.langfuse_base_url)
     elif yaml_config.get("langfuse", {}).get("base_url"):
         config.langfuse_base_url = yaml_config["langfuse"]["base_url"]
+
+    # Playwright configuration (env vars > YAML > defaults)
+    if os.getenv("PLAYWRIGHT_ENABLED"):
+        config.playwright_enabled = os.getenv("PLAYWRIGHT_ENABLED", "").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+    elif "playwright_enabled" in yaml_config:
+        config.playwright_enabled = bool(yaml_config["playwright_enabled"])
+
+    if os.getenv("PLAYWRIGHT_FALLBACK_PHASE"):
+        config.playwright_fallback_phase = os.getenv("PLAYWRIGHT_FALLBACK_PHASE", "phase1")
+    elif "playwright_fallback_phase" in yaml_config:
+        config.playwright_fallback_phase = yaml_config["playwright_fallback_phase"]
+
+    if os.getenv("PLAYWRIGHT_TIMEOUT"):
+        config.playwright_timeout = int(os.getenv("PLAYWRIGHT_TIMEOUT", "30"))
+    elif "playwright_timeout" in yaml_config:
+        config.playwright_timeout = int(yaml_config["playwright_timeout"])
+
+    if os.getenv("PLAYWRIGHT_BROWSER"):
+        config.playwright_browser = os.getenv("PLAYWRIGHT_BROWSER", "chromium")
+    elif "playwright_browser" in yaml_config:
+        config.playwright_browser = yaml_config["playwright_browser"]
 
     logger.debug(
         "Loaded config: provider=%s, model=%s, out_folder=%s",
