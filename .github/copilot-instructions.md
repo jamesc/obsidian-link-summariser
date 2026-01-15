@@ -4,14 +4,17 @@ This document provides guidance for GitHub Copilot coding agent when working on 
 
 ## Project Overview
 
-**Obsidian Link Summarizer** is a lightweight Python CLI tool that reads URLs from Obsidian daily notes, fetches web pages, generates AI summaries using Google's Gemini API or local Ollama models, and creates formatted Markdown summary notes in an Obsidian vault.
+**Obsidian Link Summarizer** is a lightweight Python CLI tool that reads URLs from Obsidian daily notes, fetches web pages, generates AI summaries using Google's Gemini API, Azure OpenAI, or local Ollama models, and creates formatted Markdown summary notes in an Obsidian vault.
 
 ### Key Features
 - Extract URLs from Obsidian daily notes (Markdown links and bare URLs)
-- Generate AI summaries using Google Gemini (cloud API) or Ollama (local models)
+- Generate AI summaries using multiple providers:
+  - Google Gemini (cloud API, free tier friendly)
+  - Azure OpenAI (enterprise-grade, Microsoft Foundry)
+  - Ollama (local models, unlimited, private)
 - Create well-formatted summary notes with rich frontmatter
 - Automatic tag extraction and URL cleaning
-- Built-in rate limiting for Gemini API
+- Built-in rate limiting for cloud APIs (Gemini, Azure)
 - Idempotent operations (safe to run multiple times)
 - Graceful degradation (continues processing on failures)
 - Mock mode for development/testing
@@ -21,21 +24,23 @@ This document provides guidance for GitHub Copilot coding agent when working on 
 **Main Modules:**
 - `cli.py` - Command-line interface and main entry point
 - `config.py` - Configuration management (env vars, YAML, defaults)
-- `extract.py` - Web page fetching and content extraction
-- `notes.py` - Obsidian note reading/writing operations
-- `gemini_client.py` - Google Gemini API client
-- `ollama_client.py` - Ollama API client for local models
-- `llm_factory.py` - Factory pattern for creating LLM clients
+- `extract/` - Web page fetching and content extraction
+- `notes/` - Obsidian note reading/writing operations
+- `llm/gemini.py` - Google Gemini API client
+- `llm/azure.py` - Azure OpenAI API client
+- `llm/ollama.py` - Ollama API client for local models
+- `llm/factory.py` - Factory pattern for creating LLM clients
 - `rate_limiter.py` - Token bucket rate limiting for API calls
-- `langfuse_tracer.py` - Optional LLM observability integration
+- `langfuse_tracer.py` - LLM observability and prompt management (Langfuse)
 - `models.py` - Pydantic data models
 - `exceptions.py` - Custom exception classes
 
 **Design Patterns:**
-- Factory pattern for LLM client creation (supports multiple providers)
-- Protocol-based interfaces for client abstraction
+- Factory pattern for LLM client creation (supports Gemini, Azure, Ollama)
+- Protocol-based interfaces for client abstraction (`SummarizerProtocol`)
 - Dependency injection for testability
 - Configuration cascading: CLI args > env vars > YAML config > defaults
+- Explicit provider selection via `MODEL_PROVIDER` environment variable
 
 ## Development Workflow
 
@@ -50,7 +55,7 @@ uv sync --all-extras
 
 # Copy environment file and configure
 cp .env.example .env
-# Edit .env with your GEMINI_API_KEY and preferences
+# Edit .env with your provider choice (google/azure/ollama) and credentials
 ```
 
 ### Building and Testing
@@ -79,7 +84,7 @@ uv run mypy .
 
 **Run the CLI:**
 ```bash
-# Process today's daily note
+# uses MODEL_PROVIDER from .env
 uv run summarize-links from-note --vault ~/Notes
 
 # Process with specific date
@@ -96,6 +101,9 @@ uv run summarize-links from-note --vault ~/Notes --mock
 
 # Verbose output
 uv run summarize-links from-note --vault ~/Notes --verbose
+
+# Check rate limit status (varies by provider)
+uv run summarize-links status --vault ~/Notes
 ```
 
 ## Code Style and Conventions
@@ -210,9 +218,9 @@ from unittest.mock import Mock
 def test_summarize_url_success(mock_client):
     """Test successful URL summarization."""
     mock_client.summarize.return_value = "Summary content"
-    
+
     result = summarize_url("https://example.com", mock_client)
-    
+
     assert result.success is True
     assert "Summary content" in result.content
     mock_client.summarize.assert_called_once()

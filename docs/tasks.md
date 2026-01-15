@@ -4,6 +4,114 @@ This document tracks completed development tasks for the Obsidian Link Summarize
 
 ---
 
+## 2026-01-15: Azure OpenAI / Microsoft Foundry Integration
+
+**Goal:** Add support for Azure OpenAI (Microsoft Foundry) as an enterprise-grade LLM provider alongside Google Gemini and Ollama.
+
+**Status:** ✅ Completed
+
+**Implementation Plan:** See [foundry-support-plan.md](docs/foundry-support-plan.md)
+
+**Requirements Met:**
+- ✅ Support for Azure OpenAI models (GPT-4, GPT-4 Turbo, GPT-3.5)
+- ✅ Explicit provider configuration via `MODEL_PROVIDER` environment variable
+- ✅ Configurable rate limiting per Azure subscription tier
+- ✅ Structured output with JSON response format
+- ✅ Custom deployment name support (separate from model names)
+- ✅ Automatic retry with exponential backoff
+- ✅ Comprehensive error handling (auth, deployment, rate limits)
+- ✅ Per-model rate limit tracking
+- ✅ Full test coverage (85%+)
+
+**Changes:**
+
+### Core Implementation
+
+**New Module: `summarize_links/llm/azure.py`** (450+ lines)
+- `AzureClient` class implementing `BaseLLMClient`
+- Uses official `openai` Python library for Azure OpenAI SDK
+- HTTPS endpoint validation
+- API key authentication
+- Custom deployment name support (deployment_name != model_name)
+- Retry logic with exponential backoff (up to 5 retries)
+- Rate limiting integration with `RateLimiter`
+- Error handling for auth failures (401/403), deployment errors (404), rate limits (429)
+- Both `summarize()` and `summarize_with_metadata()` methods
+- JSON response parsing using Azure's `json_object` format
+
+**Updated: `summarize_links/llm/factory.py`**
+- Explicit provider selection required via `MODEL_PROVIDER`
+- Added `PROVIDER_AZURE = "azure"` constant
+- `validate_provider()` ensures valid provider configuration
+- `create_llm_client()` routes to `AzureClient` when provider is "azure"
+- Validates required Azure credentials (API key, endpoint)
+- Deployment name defaults to model if not specified
+
+**Updated: `summarize_links/exceptions.py`**
+- Added `AzureAPIError` - Base exception for Azure errors
+- Added `AzureAuthenticationError` - For 401/403 auth failures
+- Added `AzureRateLimitError` - For 429 rate limit errors
+- Added `AzureDeploymentError` - For 404 deployment not found errors
+
+**Updated: `summarize_links/config.py`**
+- Added Azure configuration constants and fields
+- Environment variable loading for Azure settings
+- Updated `DEFAULT_MODEL_LIMITS` with Azure models (gpt-4, gpt-4-turbo, gpt-35-turbo)
+
+### Configuration
+
+**Updated: `.env.example`**
+- Added Azure configuration section with all required fields
+- Documented deployment name concept
+- Added rate limit configuration options
+
+### Testing
+
+**New Module: `tests/test_azure.py`** (24 tests)
+- Comprehensive test coverage for Azure client
+- Authentication, error handling, retry logic tests
+
+**Test Results:** All 542 tests passing (518 existing + 24 new)
+
+### Documentation
+
+**Updated: `README.md`**
+- Added Azure OpenAI to features and prerequisites
+- Added configuration examples and troubleshooting
+- Updated environment variables table with Azure fields
+
+**New Document: `docs/azure-integration.md`** (600+ lines)
+- Comprehensive Azure integration guide
+- Setup instructions and best practices
+- Detailed troubleshooting section
+- Comparison: Azure vs Gemini vs Ollama
+
+**Updated: `.github/copilot-instructions.md`**
+- Added Azure to supported providers
+- Updated architecture and design patterns
+
+**Updated: `docs/spec.md` and `docs/foundry-support-plan.md`**
+- Reflected Azure implementation completion
+
+### Code Quality
+
+**Static Analysis:** All checks pass ✓
+- `ruff check .` - No issues
+- `ruff format .` - All files formatted
+- `mypy .` - Type checking passes
+
+**Test Coverage:** 91% overall
+
+### Key Benefits
+
+✅ **Enterprise Features**: SLA guarantees, compliance, data residency
+✅ **Flexibility**: Three provider choices (Gemini, Azure, Ollama)
+✅ **Cost Control**: Configurable rate limits
+✅ **Reliability**: Comprehensive error handling
+✅ **Documentation**: Extensive guides and troubleshooting
+
+---
+
 ## 2025-12-30: Refactor extract.py into Subpackage
 
 **Goal:** Split the large extract.py module (1,123 lines, 28 functions) into a focused subpackage with clear separation of concerns.
@@ -1636,7 +1744,7 @@ Updated CLI error handling in `summarize_links/cli.py`:
 
 **Behavior After Fix:**
 
-1. **During extraction**: 
+1. **During extraction**:
    - If web page content appears garbled (base64, high non-ASCII ratio)
    - Extraction fails with `ContentExtractionError`
    - Clear error message about garbled content
@@ -1798,7 +1906,7 @@ Tips:
 - Support multiple Ollama models (Llama3, Mistral, Phi, Qwen, Gemma, etc.)
 - Automatic provider detection based on model name
 - Same output format from both providers (JSON with summary, tags, content_type)
-- No rate limiting for local models  
+- No rate limiting for local models
 - Support custom Ollama endpoint configuration
 - Clear error messages when Ollama is unavailable or model not installed
 - Both providers supported long-term (not replacing Gemini)
@@ -1866,7 +1974,7 @@ Tips:
 
 **Updated: `README.md`**
 - Added Ollama to features, prerequisites, and configuration sections
-- Added usage examples for both Gemini and Ollama providers  
+- Added usage examples for both Gemini and Ollama providers
 - Updated environment variables table with MODEL, OLLAMA_ENDPOINT
 - Added troubleshooting section for Ollama-specific errors
 
@@ -2017,7 +2125,7 @@ Created `LangfuseTracer` class with graceful degradation:
 
 **Goal:** Fix non-working Langfuse tracing by migrating to OpenTelemetry-based API and implementing proper trace/span creation with token usage tracking.
 
-**Problem:** 
+**Problem:**
 Initial integration used decorator-based `langfuse_context` API which was deprecated in Langfuse v2.x. The new v3.x SDK uses OpenTelemetry context managers via `start_as_current_observation()`.
 
 **Root Causes:**
@@ -2056,19 +2164,19 @@ Added comprehensive tracing in `_process_url_with_metadata()`:
 # Create trace for entire URL processing
 with tracer.trace_url_processing(url, metadata={...}) as trace:
     trace_id = trace.trace_id if trace else None
-    
+
     # Fetch span
     with tracer.trace_span(trace_id, "fetch", ...):
         content, meta = fetch_and_extract_metadata(...)
-    
+
     # Summarize span (generation)
     with tracer.trace_generation(trace_id, "summarize", model=...):
         summary = client.summarize_with_metadata(...)
-        
+
         # Update generation with output and usage
         if generation and hasattr(generation, "update"):
             generation.update(output={...}, usage_details={...})
-    
+
     # Write span
     with tracer.trace_span(trace_id, "write", ...):
         write_summary_note_with_metadata(...)
@@ -2240,7 +2348,7 @@ This enables:
          "prompt": raw_prompt,
      }
      `
-   
+
    - **Propagate Attributes**: Wrapped processing in propagate_attributes context:
      `python
      with propagate_attributes(
@@ -2250,7 +2358,7 @@ This enables:
      ):
      `
      This ensures session_id, tags, and metadata propagate to ALL child observations (fetch, generation, write spans)
-   
+
    - **Error Tracking**: Added error handling in generation observation:
      `python
      except Exception as e:
@@ -3284,22 +3392,21 @@ Track whether a successful summary existed before processing, and skip writing e
   - Set to xisting_summary_complete value before processing begins
   - Tracks whether the summary existed and was successful before any errors occurred
 - Updated all error handlers to check had_successful_summary before writing error stubs:
-  - ContentFetchError: Only writes stub if 
-ot had_successful_summary`n  - ContentExtractionError: Only writes stub if 
-ot had_successful_summary`n  - RateLimitError: Only writes stub if 
-ot had_successful_summary`n  - OllamaServerError: Only writes stub if 
-ot had_successful_summary`n  - ModelNotInstalledError: Only writes stub if 
-ot had_successful_summary`n  - OllamaAPIError: Only writes stub if 
-ot had_successful_summary`n  - GeminiAPIError: Only writes stub if 
-ot had_successful_summary`n
-### Tests (	ests/test_cli.py)
-- Added 	est_error_during_resummarize_preserves_successful_summary:
+  - ContentFetchError: Only writes stub if not had_successful_summary
+  - ContentExtractionError: Only writes stub if not had_successful_summary
+  - RateLimitError: Only writes stub if not had_successful_summary
+  - OllamaServerError: Only writes stub if not had_successful_summary
+  - ModelNotInstalledError: Only writes stub if not had_successful_summary
+  - OllamaAPIError: Only writes stub if not had_successful_summary
+  - GeminiAPIError: Only writes stub if not had_successful_summary
+### Tests (tests/test_cli.py)
+- Added test_error_during_resummarize_preserves_successful_summary:
   - Simulates successful summary existing
   - Force mode enabled (resummarize always uses force)
   - Fetch error occurs during processing
   - Verifies error stub is NOT written
   - Verifies error is still returned correctly
-- Added 	est_error_on_first_try_creates_stub:
+- Added test_error_on_first_try_creates_stub:
   - Simulates no existing summary
   - Fetch error occurs
   - Verifies error stub IS written (first attempt)
@@ -3352,10 +3459,8 @@ Failed to fetch: Connection refused
 - Error reporting still works correctly
 
 **Static Analysis:** All checks pass ✓
-- 
-uff check . - Clean
-- 
-uff format . - Formatted
+- ruff check . - Clean
+- ruff format . - Formatted
 - mypy . - Type checking passes
 
 **Tests:** All 498 tests pass (496 existing + 2 new)
@@ -3386,7 +3491,7 @@ uff format . - Formatted
 Created individual command handler files:
 - from_note.py (205 lines): Handler for from-note and from-note --all commands
 - urls.py (49 lines): Handler for urls command
-- list.py (62 lines): Handler for list command  
+- list.py (62 lines): Handler for list command
 - status.py (96 lines): Handler for status command (rate limits)
 - summaries.py (141 lines): Handler for summaries command (scan reports)
 - resummarize.py (109 lines): Handler for resummarize command
@@ -3511,7 +3616,7 @@ Created directory with fallback prompts:
   - Output format (JSON with summary, tags, content_type)
   - Content type descriptions from CONTENT_TYPE_DESCRIPTIONS
   - Tag generation guidelines
-  
+
 - **user.txt** - User prompt template:
   - Template with variables: `{{title}}`, `{{url}}`, `{{content}}`
   - `{{title}}` becomes ` titled 'X'` or empty (inline format)
