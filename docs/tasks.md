@@ -3392,22 +3392,21 @@ Track whether a successful summary existed before processing, and skip writing e
   - Set to xisting_summary_complete value before processing begins
   - Tracks whether the summary existed and was successful before any errors occurred
 - Updated all error handlers to check had_successful_summary before writing error stubs:
-  - ContentFetchError: Only writes stub if
-ot had_successful_summary`n  - ContentExtractionError: Only writes stub if
-ot had_successful_summary`n  - RateLimitError: Only writes stub if
-ot had_successful_summary`n  - OllamaServerError: Only writes stub if
-ot had_successful_summary`n  - ModelNotInstalledError: Only writes stub if
-ot had_successful_summary`n  - OllamaAPIError: Only writes stub if
-ot had_successful_summary`n  - GeminiAPIError: Only writes stub if
-ot had_successful_summary`n
-### Tests (	ests/test_cli.py)
-- Added 	est_error_during_resummarize_preserves_successful_summary:
+  - ContentFetchError: Only writes stub if not had_successful_summary
+  - ContentExtractionError: Only writes stub if not had_successful_summary
+  - RateLimitError: Only writes stub if not had_successful_summary
+  - OllamaServerError: Only writes stub if not had_successful_summary
+  - ModelNotInstalledError: Only writes stub if not had_successful_summary
+  - OllamaAPIError: Only writes stub if not had_successful_summary
+  - GeminiAPIError: Only writes stub if not had_successful_summary
+### Tests (tests/test_cli.py)
+- Added test_error_during_resummarize_preserves_successful_summary:
   - Simulates successful summary existing
   - Force mode enabled (resummarize always uses force)
   - Fetch error occurs during processing
   - Verifies error stub is NOT written
   - Verifies error is still returned correctly
-- Added 	est_error_on_first_try_creates_stub:
+- Added test_error_on_first_try_creates_stub:
   - Simulates no existing summary
   - Fetch error occurs
   - Verifies error stub IS written (first attempt)
@@ -3460,10 +3459,8 @@ Failed to fetch: Connection refused
 - Error reporting still works correctly
 
 **Static Analysis:** All checks pass ✓
--
-uff check . - Clean
--
-uff format . - Formatted
+- ruff check . - Clean
+- ruff format . - Formatted
 - mypy . - Type checking passes
 
 **Tests:** All 498 tests pass (496 existing + 2 new)
