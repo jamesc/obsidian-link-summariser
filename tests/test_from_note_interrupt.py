@@ -1,0 +1,184 @@
+"""
+Test batch processing structure for from-note --all command.
+"""
+
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from summarize_links.config import Config
+
+
+@pytest.fixture
+def mock_config(tmp_path: Path) -> Config:
+    """Create a mock config for testing."""
+    vault_path = tmp_path / "vault"
+    vault_path.mkdir()
+    return Config(
+        vault_path=vault_path,
+        out_folder="Summaries",
+        gemini_api_key="test-key",
+        model="gemini-2.5-flash",
+        model_provider="google",
+        daily_notes_folder="",
+        max_links=100,
+        mock_mode=True,
+        dry_run=False,
+        verbose=False,
+        force=False,
+    )
+
+
+@patch("summarize_links.commands.from_note.find_daily_notes_with_urls")
+@patch("summarize_links.commands.from_note.read_daily_note")
+@patch("summarize_links.commands.from_note.extract_urls_with_context")
+@patch("summarize_links.commands.from_note.process_urls_batch")
+def test_from_note_all_collects_urls_upfront(
+    mock_process: MagicMock,
+    mock_extract: MagicMock,
+    mock_read: MagicMock,
+    mock_find: MagicMock,
+    mock_config: Config,
+) -> None:
+    """Test that from-note --all collects all URLs upfront and processes in one batch.
+
+    This structure matches resummarize and allows signal handling to work
+    correctly inside process_urls_batch.
+    """
+    from summarize_links.commands.from_note import cmd_from_note_all
+    from summarize_links.models import UrlWithContext
+
+    # Set up mocks - 3 notes with URLs
+    mock_find.return_value = [
+        ("2025-01-15", 2),
+        ("2025-01-14", 3),
+        ("2025-01-13", 1),
+    ]
+    mock_read.return_value = "# Daily Note\n\nhttps://example.com"
+    mock_extract.return_value = [
+        UrlWithContext(url="https://example.com", original_url="https://example.com")
+    ]
+
+    # Mock successful processing
+    mock_process.return_value = (0, [(True, "Created: example.md")])
+
+    # Run the command
+    exit_code = cmd_from_note_all(mock_config)
+
+    # Should collect all URLs and process in ONE batch
+    assert mock_process.call_count == 1
+    assert exit_code == 0
+
+    # Check that all URLs were collected with source info
+    call_args = mock_process.call_args
+    url_contexts = call_args[0][0]  # First positional arg
+    assert len(url_contexts) == 3  # One URL per note
+
+    # Verify source info was attached to each URL
+    for url_ctx in url_contexts:
+        assert url_ctx.source_note is not None
+        assert url_ctx.source_date is not None
+        assert url_ctx.source_note.endswith(".md")
+        assert len(url_ctx.source_date) == 10  # YYYY-MM-DD format
+
+
+@patch("summarize_links.commands.from_note.find_daily_notes_with_urls")
+def test_from_note_all_no_urls_found(
+    mock_find: MagicMock,
+    mock_config: Config,
+) -> None:
+    """Test handling when no daily notes with URLs are found."""
+    from summarize_links.commands.from_note import cmd_from_note_all
+
+    mock_find.return_value = []
+
+    exit_code = cmd_from_note_all(mock_config)
+
+    assert exit_code == 0
+
+
+def test_shutdown_flag_resets_between_batches(mock_config: Config) -> None:
+    """Test that _shutdown_requested flag is reset between batch calls.
+
+    This ensures that if a previous batch was interrupted, subsequent batches
+    in the same process don't incorrectly think they're interrupted.
+    Addresses Copilot review comment about multiple invocations in same process.
+    """
+    from summarize_links import processor
+    from summarize_links.models import UrlWithContext
+
+    # Simulate a previous interrupted batch by setting the flag
+    processor._shutdown_requested = True
+
+    # Now run a new batch - it should reset the flag and process normally
+    url_contexts = [UrlWithContext(url="https://example.com", original_url="https://example.com")]
+
+    with patch("summarize_links.processor.create_llm_client") as mock_client_factory:
+        mock_client = MagicMock()
+        mock_client.summarize_with_metadata.return_value = MagicMock(
+            summary="Test summary",
+            tags=[],
+            content_type="article",
+        )
+        mock_client_factory.return_value = mock_client
+
+        exit_code, results = processor.process_urls_batch(url_contexts, mock_config)
+
+        # Should have processed successfully (not immediately exited due to flag)
+        assert exit_code == 0
+        assert len(results) == 1
+        assert results[0][0] is True  # Success
+
+        # The key behavior: _shutdown_requested was reset at the start of the batch,
+        # so this new batch could run to completion despite being True beforehand.
+def test_shutdown_flag_resets_in_resummarize_batch(mock_config: Config) -> None:
+    """Test that _shutdown_requested flag is reset in resummarize batch too.
+
+    This ensures consistency across all batch processing functions.
+    """
+    from datetime import datetime
+
+    from summarize_links import processor
+    from summarize_links.models import UrlWithContext
+
+    # Simulate a previous interrupted batch
+    processor._shutdown_requested = True
+
+    # Run resummarize batch - should reset flag
+    url_contexts = [UrlWithContext(url="https://example.com", original_url="https://example.com")]
+    url_dates = {"https://example.com": datetime(2025, 1, 1)}
+    url_source_notes: dict[str, str | None] = {"https://example.com": "2025-01-01.md"}
+
+    with patch("summarize_links.processor.create_llm_client") as mock_client_factory:
+        mock_client = MagicMock()
+        mock_client.summarize_with_metadata.return_value = MagicMock(
+            summary="Test summary",
+            tags=[],
+            content_type="article",
+        )
+        mock_client_factory.return_value = mock_client
+
+        # Force config to allow overwriting
+        config_with_force = Config(
+            vault_path=mock_config.vault_path,
+            out_folder=mock_config.out_folder,
+            gemini_api_key=mock_config.gemini_api_key,
+            model=mock_config.model,
+            model_provider=mock_config.model_provider,
+            daily_notes_folder=mock_config.daily_notes_folder,
+            max_links=mock_config.max_links,
+            mock_mode=mock_config.mock_mode,
+            dry_run=mock_config.dry_run,
+            verbose=mock_config.verbose,
+            force=True,  # Enable force mode
+        )
+
+        exit_code, results = processor.process_resummarize_batch(
+            url_contexts, url_dates, url_source_notes, config_with_force
+        )
+
+        # Should process successfully
+        assert exit_code == 0
+        assert len(results) == 1
+        assert results[0][0] is True  # Success

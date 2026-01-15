@@ -9,6 +9,7 @@ from datetime import datetime
 
 from summarize_links.config import Config
 from summarize_links.exceptions import NoteReadError
+from summarize_links.models import UrlWithContext
 from summarize_links.notes import (
     extract_urls_with_context,
     find_daily_notes_with_urls,
@@ -96,8 +97,8 @@ def cmd_from_note_all(config: Config) -> int:
     """
     Process URLs from all daily notes that contain URLs.
 
-    Iterates through all daily notes with URLs (newest first) and processes
-    each one in sequence, respecting the max_links limit across all notes.
+    Scans all notes upfront, collects URLs with their source info,
+    and processes everything in a single batch (like resummarize).
 
     Args:
         config: Application configuration.
@@ -110,7 +111,7 @@ def cmd_from_note_all(config: Config) -> int:
 
     print_message("[bold]Finding all daily notes with URLs...[/]")
 
-    # Find all daily notes with URLs (returns newest first, we want oldest first)
+    # Find all daily notes with URLs
     notes_with_urls = find_daily_notes_with_urls(
         vault_path=config.vault_path,
         daily_notes_folder=config.daily_notes_folder,
@@ -120,33 +121,19 @@ def cmd_from_note_all(config: Config) -> int:
         print_message("[yellow]No daily notes with URLs found.[/]")
         return EXIT_SUCCESS
 
-    # Notes are returned newest first - process most recent first
-    # (no reversal needed)
-
     total_urls = sum(count for _, count in notes_with_urls)
     print_message(
         f"[green]Found {len(notes_with_urls)} daily notes with {total_urls} total URLs[/]"
     )
 
-    # Track overall progress
-    processed_count = 0
-    overall_failures = 0
-    notes_processed = 0
+    # Collect all URLs from all notes with source info
+    all_url_contexts: list[UrlWithContext] = []
 
-    for date_str, url_count in notes_with_urls:
-        # Check if we've hit the max_links limit
-        if config.max_links and processed_count >= config.max_links:
-            remaining_notes = len(notes_with_urls) - notes_processed
-            print_message(
-                f"[yellow]Reached max_links limit ({config.max_links}). "
-                f"Skipping remaining {remaining_notes} notes.[/]"
-            )
-            break
-
-        print_message(f"\n[bold cyan]Processing: {date_str} ({url_count} URLs)[/]")
-
+    for date_str, _ in notes_with_urls:
         try:
-            date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            # Validate date format (YYYY-MM-DD); we discard the parsed date object,
+            # but this ensures date_str is parseable before storing it as a string.
+            datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
             print_error(f"[red]Invalid date format: {date_str}, skipping[/]")
             continue
@@ -161,45 +148,38 @@ def cmd_from_note_all(config: Config) -> int:
             )
         except NoteReadError as e:
             print_error(f"[red]Error reading daily note {date_str}: {e}[/]")
-            overall_failures += url_count
-            notes_processed += 1
             continue
 
         # Extract URLs with context
         url_contexts = extract_urls_with_context(note_content)
         if not url_contexts:
-            print_message(f"[yellow]No URLs found in {date_str} (may have been processed)[/]")
-            notes_processed += 1
             continue
 
-        # Apply remaining max_links budget for this note
-        if config.max_links:
-            remaining_budget = config.max_links - processed_count
-            if len(url_contexts) > remaining_budget:
-                print_message(f"[yellow]Limiting to {remaining_budget} URLs (max_links budget)[/]")
-                url_contexts = url_contexts[:remaining_budget]
+        # Attach source note and date to each URL context
+        for url_ctx in url_contexts:
+            url_ctx.source_note = note_filename
+            url_ctx.source_date = date_str
 
-        # Process this note's URLs
-        source_datetime = datetime.combine(date, datetime.min.time())
-        exit_code, results = process_urls_batch(
-            url_contexts, config, daily_note_filename=note_filename, source_date=source_datetime
+        all_url_contexts.extend(url_contexts)
+
+    if not all_url_contexts:
+        print_message("[yellow]No URLs found in daily notes.[/]")
+        return EXIT_SUCCESS
+
+    # Apply max_links limit
+    if config.max_links and len(all_url_contexts) > config.max_links:
+        print_message(
+            f"[yellow]Found {len(all_url_contexts)} URLs, limiting to {config.max_links}[/]"
         )
+        all_url_contexts = all_url_contexts[: config.max_links]
+    else:
+        print_message(f"[green]Found {len(all_url_contexts)} URLs to process[/]")
 
-        # Print results for this note
-        if results:
-            print_results(results)
+    # Process all URLs in one batch (signal handling is in process_urls_batch)
+    exit_code, results = process_urls_batch(all_url_contexts, config)
 
-        processed_count += len(url_contexts)
-        notes_processed += 1
+    # Print results
+    if results:
+        print_results(results)
 
-        if exit_code == EXIT_ERROR:
-            overall_failures += len(url_contexts)
-
-    # Final summary
-    print_message("\n" + "=" * 50)
-    print_message(f"[bold]Completed processing {notes_processed} daily notes[/]")
-    print_message(f"[bold]Total URLs processed: {processed_count}[/]")
-
-    if overall_failures > 0:
-        return EXIT_ERROR
-    return EXIT_SUCCESS
+    return exit_code
