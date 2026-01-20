@@ -178,7 +178,6 @@ def process_url_with_metadata(
                         page_metadata = fetch_and_extract_metadata(
                             url,
                             playwright_enabled=config.playwright_enabled,
-                            playwright_phase=config.playwright_fallback_phase,
                             playwright_timeout=config.playwright_timeout,
                         )
 

@@ -187,8 +187,8 @@ class TestConfigIntegration:
 class TestPlaywrightFallbackIntegration:
     """Integration tests for Playwright fallback behavior."""
 
-    def test_fallback_on_429_phase2(self, mocker: MockerFixture) -> None:
-        """Should fallback to Playwright on HTTP 429 in Phase 2."""
+    def test_fallback_on_429(self, mocker: MockerFixture) -> None:
+        """Should fallback to Playwright on HTTP 429 rate limiting."""
         from summarize_links.extract import fetch_and_extract_metadata
 
         # Mock HTTP fetch to return 429 error
@@ -209,11 +209,10 @@ class TestPlaywrightFallbackIntegration:
             "html",
         )
 
-        # Call with phase2 enabled
+        # Call with Playwright enabled
         metadata = fetch_and_extract_metadata(
             "https://example.com/rate-limited",
             playwright_enabled=True,
-            playwright_phase="phase2",
         )
 
         # Verify HTTP was tried first
@@ -228,36 +227,8 @@ class TestPlaywrightFallbackIntegration:
         assert metadata.fetch_method == "playwright"
         assert metadata.http_error_category == "rate_limit"
 
-    def test_no_fallback_on_429_phase1(self, mocker: MockerFixture) -> None:
-        """Should NOT fallback to Playwright on HTTP 429 in Phase 1."""
-        from summarize_links.extract import fetch_and_extract_metadata
-
-        # Mock HTTP fetch to return 429 error
-        mock_fetch_content = mocker.patch("summarize_links.extract.fetch_content")
-        mock_fetch_content.side_effect = ContentFetchError("HTTP 429: Too Many Requests")
-
-        # Mock Playwright (should not be called)
-        mock_playwright = mocker.patch("summarize_links.extract.fetch_content_with_playwright")
-
-        # Call with phase1 (should raise without trying Playwright)
-        with pytest.raises(ContentFetchError) as exc_info:
-            fetch_and_extract_metadata(
-                "https://example.com/rate-limited",
-                playwright_enabled=True,
-                playwright_phase="phase1",
-            )
-
-        # Verify error message
-        assert "429" in str(exc_info.value)
-
-        # Verify HTTP was tried
-        mock_fetch_content.assert_called_once()
-
-        # Verify Playwright was NOT called (429 not in phase1)
-        mock_playwright.assert_not_called()
-
-    def test_fallback_on_403_phase1(self, mocker: MockerFixture) -> None:
-        """Should fallback to Playwright on HTTP 403 in Phase 1."""
+    def test_fallback_on_403(self, mocker: MockerFixture) -> None:
+        """Should fallback to Playwright on HTTP 403."""
         from summarize_links.extract import fetch_and_extract_metadata
 
         # Mock HTTP fetch to return 403 error
@@ -278,11 +249,10 @@ class TestPlaywrightFallbackIntegration:
             "html",
         )
 
-        # Call with phase1 enabled (403 is in phase1)
+        # Call with Playwright enabled
         metadata = fetch_and_extract_metadata(
             "https://example.com/protected",
             playwright_enabled=True,
-            playwright_phase="phase1",
         )
 
         # Verify HTTP was tried first
@@ -297,8 +267,8 @@ class TestPlaywrightFallbackIntegration:
         assert metadata.fetch_method == "playwright"
         assert metadata.http_error_category == "bot_detection"
 
-    def test_fallback_on_401_phase2(self, mocker: MockerFixture) -> None:
-        """Should fallback to Playwright on HTTP 401 in Phase 2 (includes Phase 1)."""
+    def test_fallback_on_401(self, mocker: MockerFixture) -> None:
+        """Should fallback to Playwright on HTTP 401."""
         from summarize_links.extract import fetch_and_extract_metadata
 
         # Mock HTTP fetch to return 401 error
@@ -319,11 +289,10 @@ class TestPlaywrightFallbackIntegration:
             "html",
         )
 
-        # Call with phase2 (should include phase1 errors)
+        # Call with Playwright enabled
         metadata = fetch_and_extract_metadata(
             "https://example.com/auth-required",
             playwright_enabled=True,
-            playwright_phase="phase2",
         )
 
         # Verify Playwright was called
@@ -351,7 +320,6 @@ class TestPlaywrightFallbackIntegration:
             fetch_and_extract_metadata(
                 "https://example.com/blocked",
                 playwright_enabled=True,
-                playwright_phase="phase1",
             )
 
         # Verify error message mentions both failures
@@ -376,7 +344,6 @@ class TestPlaywrightFallbackIntegration:
             fetch_and_extract_metadata(
                 "https://example.com/blocked",
                 playwright_enabled=False,
-                playwright_phase="phase1",
             )
 
         # Verify error is original HTTP error
@@ -401,7 +368,6 @@ class TestPlaywrightFallbackIntegration:
             fetch_and_extract_metadata(
                 "https://example.com/not-found",
                 playwright_enabled=True,
-                playwright_phase="phase2",
             )
 
         # Verify error message

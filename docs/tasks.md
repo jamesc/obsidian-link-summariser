@@ -56,7 +56,7 @@ PLAYWRIGHT_FALLBACK_PHASE=phase2
 
 **Phase 1 (already deployed):** HTTP 401, 403, JavaScript-required, No readable content
 **Phase 2 (this update):** Phase 1 + HTTP 429 (rate limiting)
-**Phase 3 (future):** Phase 2 + Timeout, Connection errors  
+**Phase 3 (future):** Phase 2 + Timeout, Connection errors
 **Phase 4 (future):** Phase 3 + Unsupported content type
 
 ### Benefits of Phase 2
@@ -74,7 +74,7 @@ PLAYWRIGHT_FALLBACK_PHASE=phase2
 
 **Static Analysis:** All checks pass ✓
 - `ruff check .` - No issues
-- `ruff format .` - All files formatted  
+- `ruff format .` - All files formatted
 - `mypy .` - Type checking passes
 
 ### Verification

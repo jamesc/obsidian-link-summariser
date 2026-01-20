@@ -231,85 +231,57 @@ class TestPlaywrightFetching:
 class TestFallbackLogic:
     """Tests for Playwright fallback logic."""
 
-    def test_should_retry_with_playwright_phase1_401(self):
-        """Should retry 401 errors in Phase 1."""
+    def test_should_retry_401(self):
+        """Should retry 401 errors."""
         error = ContentFetchError("HTTP 401: Unauthorized")
-        assert should_retry_with_playwright(error, "phase1") is True
+        assert should_retry_with_playwright(error) is True
 
-    def test_should_retry_with_playwright_phase1_403(self):
-        """Should retry 403 errors in Phase 1."""
+    def test_should_retry_403(self):
+        """Should retry 403 errors."""
         error = ContentFetchError("HTTP 403: Forbidden")
-        assert should_retry_with_playwright(error, "phase1") is True
+        assert should_retry_with_playwright(error) is True
 
-    def test_invalid_phase_raises_value_error(self):
-        """Should raise ValueError for invalid phase values."""
-        error = ContentFetchError("HTTP 403: Forbidden")
-        with pytest.raises(ValueError) as exc_info:
-            should_retry_with_playwright(error, "phase5")  # type: ignore[arg-type]
-        assert "Invalid phase" in str(exc_info.value)
-        assert "phase5" in str(exc_info.value)
+    def test_should_retry_429(self):
+        """Should retry 429 errors."""
+        error = ContentFetchError("HTTP 429: Too Many Requests")
+        assert should_retry_with_playwright(error) is True
 
-    def test_should_not_retry_404_phase1(self):
-        """Should NOT retry 404 errors in Phase 1."""
+    def test_should_retry_js_required(self):
+        """Should retry when JavaScript is required."""
+        error = ContentFetchError("Page requires JavaScript to display content")
+        assert should_retry_with_playwright(error) is True
+
+    def test_should_retry_no_content(self):
+        """Should retry when no readable content found."""
+        error = ContentFetchError("No readable content found")
+        assert should_retry_with_playwright(error) is True
+
+    def test_should_not_retry_404(self):
+        """Should NOT retry 404 errors."""
         error = ContentFetchError("HTTP 404: Not Found")
-        assert should_retry_with_playwright(error, "phase1") is False
+        assert should_retry_with_playwright(error) is False
 
-    def test_should_not_retry_500_phase1(self):
-        """Should NOT retry 500 errors in Phase 1."""
+    def test_should_not_retry_500(self):
+        """Should NOT retry 500 errors."""
         error = ContentFetchError("HTTP 500: Server Error")
-        assert should_retry_with_playwright(error, "phase1") is False
+        assert should_retry_with_playwright(error) is False
 
-    def test_should_not_retry_429_phase1(self):
-        """Should NOT retry 429 errors in Phase 1 (requires Phase 2)."""
-        error = ContentFetchError("HTTP 429: Too Many Requests")
-        assert should_retry_with_playwright(error, "phase1") is False
+    def test_case_insensitive_matching(self):
+        """Should match errors case-insensitively."""
+        # Lower case
+        error = ContentFetchError("http 401: unauthorized")
+        assert should_retry_with_playwright(error) is True
 
-    def test_should_retry_429_phase2(self):
-        """Should retry 429 errors in Phase 2."""
-        error = ContentFetchError("HTTP 429: Too Many Requests")
-        assert should_retry_with_playwright(error, "phase2") is True
+        # Upper case
+        error = ContentFetchError("HTTP 403: FORBIDDEN")
+        assert should_retry_with_playwright(error) is True
 
-    def test_should_retry_401_phase2(self):
-        """Should still retry 401 errors in Phase 2 (includes Phase 1)."""
-        error = ContentFetchError("HTTP 401: Unauthorized")
-        assert should_retry_with_playwright(error, "phase2") is True
+        # Mixed case
+        error = ContentFetchError("Http 429: Too Many Requests")
+        assert should_retry_with_playwright(error) is True
 
-    def test_should_not_retry_timeout_phase2(self):
-        """Should NOT retry timeout errors in Phase 2 (requires Phase 3)."""
-        error = ContentFetchError("Timeout after 30s")
-        assert should_retry_with_playwright(error, "phase2") is False
-
-    def test_should_retry_timeout_phase3(self):
-        """Should retry timeout errors in Phase 3."""
-        error = ContentFetchError("Timeout after 30s")
-        assert should_retry_with_playwright(error, "phase3") is True
-
-    def test_should_retry_connection_phase3(self):
-        """Should retry connection errors in Phase 3."""
-        error = ContentFetchError("Connection refused")
-        assert should_retry_with_playwright(error, "phase3") is True
-
-    def test_should_retry_content_type_phase4(self):
-        """Should retry content type errors in Phase 4."""
-        error = ContentFetchError("URL returned unsupported content type: application/json")
-        assert should_retry_with_playwright(error, "phase4") is True
-
-    def test_should_retry_all_phases_in_phase4(self):
-        """Phase 4 should include all previous phase errors."""
-        errors = [
-            ContentFetchError("HTTP 401: Unauthorized"),  # Phase 1
-            ContentFetchError("HTTP 403: Forbidden"),  # Phase 1
-            ContentFetchError("HTTP 429: Too Many Requests"),  # Phase 2
-            ContentFetchError("Timeout after 30s"),  # Phase 3
-            ContentFetchError("Connection error"),  # Phase 3
-            ContentFetchError("unsupported content type"),  # Phase 4
-        ]
-
-        for error in errors:
-            assert should_retry_with_playwright(error, "phase4") is True
-
-    def test_should_not_retry_permanent_failures_any_phase(self):
-        """Should never retry permanent failures in any phase."""
+    def test_should_not_retry_permanent_failures(self):
+        """Should never retry permanent failures."""
         permanent_errors = [
             ContentFetchError("HTTP 404: Not Found"),
             ContentFetchError("HTTP 500: Server Error"),
@@ -317,19 +289,8 @@ class TestFallbackLogic:
             ContentFetchError("Invalid URL"),
         ]
 
-        from typing import cast
-
-        from summarize_links.extract.fallback import PhaseType
-
-        for phase_str in ["phase1", "phase2", "phase3", "phase4"]:
-            phase = cast(PhaseType, phase_str)
-            for error in permanent_errors:
-                assert should_retry_with_playwright(error, phase) is False
-
-    def test_error_matching_case_insensitive(self):
-        """Should match errors case-insensitively."""
-        error = ContentFetchError("http 403: forbidden")  # lowercase
-        assert should_retry_with_playwright(error, "phase1") is True
+        for error in permanent_errors:
+            assert should_retry_with_playwright(error) is False
 
 
 class TestErrorCategorization:
