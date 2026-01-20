@@ -28,6 +28,7 @@ from summarize_links.exceptions import (
     URLValidationError,
 )
 from summarize_links.extract import fetch_and_extract_metadata
+from summarize_links.extract.playwright_fetching import close_browser_context
 from summarize_links.llm import SummarizerProtocol, create_llm_client
 from summarize_links.models import UrlWithContext
 from summarize_links.notes import (
@@ -689,8 +690,6 @@ def process_urls_batch(
         # NOTE: close_browser_context() is a no-op with self-contained fetches,
         # but kept for API compatibility with future context-reuse implementations
         try:
-            from summarize_links.extract.playwright_fetching import close_browser_context
-
             close_browser_context()
         except Exception as e:
             logger.debug(f"Failed to cleanup browser context: {e}")
@@ -807,8 +806,6 @@ def process_resummarize_batch(
         # NOTE: close_browser_context() is a no-op with self-contained fetches,
         # but kept for API compatibility with future context-reuse implementations
         try:
-            from summarize_links.extract.playwright_fetching import close_browser_context
-
             close_browser_context()
         except Exception as e:
             logger.debug(f"Failed to cleanup browser context: {e}")

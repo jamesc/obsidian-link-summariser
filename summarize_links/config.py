@@ -16,7 +16,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from dotenv import load_dotenv
@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 from summarize_links.exceptions import ConfigError
 
 if TYPE_CHECKING:
+    from summarize_links.extract.fallback import PhaseType
     from summarize_links.rate_limiter import ModelRateLimits
 
 __all__ = [
@@ -301,7 +302,7 @@ class Config:
     langfuse_base_url: str = "https://cloud.langfuse.com"
     # Playwright fallback configuration
     playwright_enabled: bool = True
-    playwright_fallback_phase: Literal["phase1", "phase2", "phase3", "phase4"] = "phase1"
+    playwright_fallback_phase: PhaseType = "phase1"
     playwright_timeout: int = 30
     playwright_browser: str = "chromium"
 
@@ -352,12 +353,13 @@ class Config:
         if self.max_links < 1:
             raise ConfigError(f"max_links must be at least 1, got {self.max_links}")
 
-        # Playwright phase must be valid
-        valid_phases = ["phase1", "phase2", "phase3", "phase4"]
-        if self.playwright_fallback_phase not in valid_phases:
+        # Playwright phase must be valid - import at runtime to avoid circular import
+        from summarize_links.extract.fallback import VALID_PHASES
+
+        if self.playwright_fallback_phase not in VALID_PHASES:
             raise ConfigError(
                 f"Invalid playwright_fallback_phase: {self.playwright_fallback_phase}. "
-                f"Valid options: {', '.join(valid_phases)}"
+                f"Valid options: {', '.join(VALID_PHASES)}"
             )
 
         # Langfuse credentials are required (not in mock mode)
@@ -586,10 +588,16 @@ def load_config(
         config.playwright_enabled = bool(yaml_config["playwright_enabled"])
 
     if os.getenv("PLAYWRIGHT_FALLBACK_PHASE"):
+        # Import at runtime to avoid circular import
+        from summarize_links.extract.fallback import VALID_PHASES
+
         phase_value = os.getenv("PLAYWRIGHT_FALLBACK_PHASE", "phase1")
-        config.playwright_fallback_phase = cast(
-            Literal["phase1", "phase2", "phase3", "phase4"], phase_value
-        )
+        if phase_value not in VALID_PHASES:
+            raise ConfigError(
+                f"Invalid PLAYWRIGHT_FALLBACK_PHASE value: {phase_value!r}. "
+                f"Expected one of: {', '.join(VALID_PHASES)}."
+            )
+        config.playwright_fallback_phase = phase_value  # type: ignore[assignment]
     elif "playwright_fallback_phase" in yaml_config:
         config.playwright_fallback_phase = yaml_config["playwright_fallback_phase"]
 

@@ -48,6 +48,10 @@ BrowserType = Literal["chromium", "firefox", "webkit"]
 # Wait conditions for page load
 WaitUntilType = Literal["load", "domcontentloaded", "networkidle"]
 
+# Image file extensions to block for faster loading (performance optimization)
+# These are blocked to reduce bandwidth and speed up page rendering
+BLOCKED_IMAGE_EXTENSIONS = "png,jpg,jpeg,gif,svg,webp,ico"
+
 # Thread pool for running Playwright in asyncio contexts
 _thread_pool: concurrent.futures.ThreadPoolExecutor | None = None
 
@@ -62,7 +66,14 @@ def _get_thread_pool() -> concurrent.futures.ThreadPoolExecutor:
     global _thread_pool
 
     if _thread_pool is None:
-        # Single worker is sufficient - each fetch is self-contained
+        # Use a single worker to serialize Playwright sessions.
+        # Each fetch is self-contained (spin up browser, fetch, teardown), so we
+        # do not need multiple concurrent Playwright threads for correctness.
+        # Async callers can still issue many fetches in parallel at the coroutine
+        # level, but all Playwright work is funneled through this one thread.
+        # This slightly reduces maximum throughput compared to multi-worker or
+        # browser-context reuse approaches, but avoids the subtle threading and
+        # greenlet issues seen when sharing Playwright resources across tasks.
         _thread_pool = concurrent.futures.ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="playwright"
         )
@@ -154,7 +165,12 @@ def _fetch_content_sync(
             args=[
                 "--disable-blink-features=AutomationControlled",  # Hide automation
                 "--disable-dev-shm-usage",  # Avoid /dev/shm issues in containers
-                "--no-sandbox",  # Required in some environments
+                # SECURITY NOTE: --no-sandbox disables Chromium's security sandbox.
+                # This is required in Docker containers and some CI environments that
+                # lack proper kernel privileges. It increases security risk if browsing
+                # untrusted content, but is acceptable for content summarization use case.
+                # Consider making this configurable via environment variable for production.
+                "--no-sandbox",
             ],
         )
 
@@ -169,8 +185,8 @@ def _fetch_content_sync(
         # Create page
         page = context.new_page()
 
-        # Block images for faster loading
-        page.route("**/*.{png,jpg,jpeg,gif,svg,webp,ico}", lambda route: route.abort())
+        # Block images for faster loading (configurable via BLOCKED_IMAGE_EXTENSIONS constant)
+        page.route(f"**/*.{{{BLOCKED_IMAGE_EXTENSIONS}}}", lambda route: route.abort())
 
         # Navigate to URL
         logger.debug(f"Navigating to {url} (timeout={timeout}s, wait_until={wait_until})")

@@ -16,11 +16,16 @@ __all__ = [
     "get_error_category",
     "PLAYWRIGHT_RETRYABLE_ERRORS",
     "PhaseType",
+    "VALID_PHASES",
 ]
 
 logger = logging.getLogger(__name__)
 
 # ----- Error Patterns by Phase -----
+
+# Valid phase names - single source of truth
+PhaseType = Literal["phase1", "phase2", "phase3", "phase4"]
+VALID_PHASES: tuple[str, ...] = ("phase1", "phase2", "phase3", "phase4")
 
 # Tiered error patterns that trigger Playwright fallback
 # Each phase includes errors from previous phases
@@ -42,9 +47,6 @@ PLAYWRIGHT_RETRYABLE_ERRORS = {
         "unsupported content type",  # Servers return different content to bots
     ],
 }
-
-# Valid phase names
-PhaseType = Literal["phase1", "phase2", "phase3", "phase4"]
 
 
 def get_error_category(error: ContentFetchError) -> str:
@@ -102,15 +104,22 @@ def should_retry_with_playwright(
 
     Returns:
         True if error matches patterns for configured phase, False otherwise.
+
+    Raises:
+        ValueError: If phase is not one of the valid phase values.
     """
+    # Validate phase parameter
+    if phase not in VALID_PHASES:
+        raise ValueError(f"Invalid phase: {phase!r}. Valid phases: {', '.join(VALID_PHASES)}")
+
     error_msg = str(error)
 
     # Collect all patterns up to configured phase
     patterns_to_check: list[str] = []
 
     # Add patterns for each phase up to the configured one
-    phase_order = ["phase1", "phase2", "phase3", "phase4"]
-    for p in phase_order:
+    # Use VALID_PHASES as single source of truth
+    for p in VALID_PHASES:
         patterns_to_check.extend(PLAYWRIGHT_RETRYABLE_ERRORS[p])
         if p == phase:
             break
@@ -147,15 +156,22 @@ def should_retry_with_extraction_fallback(
 
     Returns:
         True if error matches patterns for configured phase, False otherwise.
+
+    Raises:
+        ValueError: If phase is not one of the valid phase values.
     """
+    # Validate phase parameter
+    if phase not in VALID_PHASES:
+        raise ValueError(f"Invalid phase: {phase!r}. Valid phases: {', '.join(VALID_PHASES)}")
+
     error_msg = str(error)
 
     # Collect all patterns up to configured phase
     patterns_to_check: list[str] = []
 
     # Add patterns for each phase up to the configured one
-    phase_order = ["phase1", "phase2", "phase3", "phase4"]
-    for p in phase_order:
+    # Use VALID_PHASES as single source of truth
+    for p in VALID_PHASES:
         patterns_to_check.extend(PLAYWRIGHT_RETRYABLE_ERRORS[p])
         if p == phase:
             break

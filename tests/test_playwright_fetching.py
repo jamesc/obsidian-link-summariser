@@ -241,6 +241,14 @@ class TestFallbackLogic:
         error = ContentFetchError("HTTP 403: Forbidden")
         assert should_retry_with_playwright(error, "phase1") is True
 
+    def test_invalid_phase_raises_value_error(self):
+        """Should raise ValueError for invalid phase values."""
+        error = ContentFetchError("HTTP 403: Forbidden")
+        with pytest.raises(ValueError) as exc_info:
+            should_retry_with_playwright(error, "phase5")  # type: ignore[arg-type]
+        assert "Invalid phase" in str(exc_info.value)
+        assert "phase5" in str(exc_info.value)
+
     def test_should_not_retry_404_phase1(self):
         """Should NOT retry 404 errors in Phase 1."""
         error = ContentFetchError("HTTP 404: Not Found")
