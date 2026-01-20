@@ -7,7 +7,6 @@ using mock data and the mock vault fixture.
 
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 from pytest_mock import MockerFixture
@@ -202,7 +201,9 @@ class TestPlaywrightFallbackIntegration:
             """
             <html>
                 <head><title>Test Article</title></head>
-                <body><article><p>Content fetched via Playwright after 429 error.</p></article></body>
+                <body><article>
+                    <p>Content fetched via Playwright after 429 error.</p>
+                </article></body>
             </html>
             """,
             "html",
@@ -269,7 +270,9 @@ class TestPlaywrightFallbackIntegration:
             """
             <html>
                 <head><title>Protected Article</title></head>
-                <body><article><p>Content fetched via Playwright after 403 error.</p></article></body>
+                <body><article>
+                    <p>Content fetched via Playwright after 403 error.</p>
+                </article></body>
             </html>
             """,
             "html",
@@ -308,7 +311,9 @@ class TestPlaywrightFallbackIntegration:
             """
             <html>
                 <head><title>Auth Protected</title></head>
-                <body><article><p>Content fetched via Playwright after 401 error.</p></article></body>
+                <body><article>
+                    <p>Content fetched via Playwright after 401 error.</p>
+                </article></body>
             </html>
             """,
             "html",
