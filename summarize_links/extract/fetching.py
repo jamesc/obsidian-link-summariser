@@ -33,6 +33,7 @@ __all__ = [
     "_create_session",
     "_format_http_error",
     "_get_paywall_info",
+    "_is_javascript_required",
 ]
 
 # Configure module logger
@@ -122,6 +123,82 @@ def _create_session() -> requests.Session:
     session = requests.Session()
     session.headers.update(BROWSER_HEADERS)
     return session
+
+
+def _is_javascript_required(html: str) -> bool:
+    """
+    Detect if a page requires JavaScript to display content.
+
+    This checks for common patterns in JavaScript-only SPAs (Single Page Applications)
+    that return an empty HTML shell requiring JavaScript to render.
+
+    Args:
+        html: The HTML content to check.
+
+    Returns:
+        True if the page appears to require JavaScript, False otherwise.
+
+    Examples:
+        >>> _is_javascript_required('<html><body>You need to enable JavaScript</body></html>')
+        True
+        >>> _is_javascript_required(
+        ...     '<html><body><h1>Real Content</h1><p>More text</p></body></html>'
+        ... )
+        False
+    """
+    html_lower = html.lower()
+
+    # Common messages in JavaScript-only pages
+    js_required_phrases = [
+        "you need to enable javascript",
+        "please enable javascript",
+        "javascript is required",
+        "javascript must be enabled",
+        "enable javascript to run",
+        "this app requires javascript",
+        "requires javascript to be enabled",
+    ]
+
+    # Check if any of these phrases appear
+    has_js_message = any(phrase in html_lower for phrase in js_required_phrases)
+
+    if not has_js_message:
+        return False
+
+    # If we found a JS message, check if the page is suspiciously small
+    # Real pages with content are typically much larger
+    # SPAs usually have just a shell with scripts
+    if len(html) < 10000:  # Less than 10KB suggests empty shell
+        return True
+
+    # For larger pages, check body content to see if it's mostly empty
+    # Extract text between <body> and </body> tags
+    body_start = html_lower.find("<body")
+    body_end = html_lower.find("</body>")
+
+    if body_start == -1 or body_end == -1:
+        return False
+
+    # Find the actual start of body content (after the opening tag)
+    body_content_start = html_lower.find(">", body_start) + 1
+    body_content = html[body_content_start:body_end]
+
+    # Remove script and style tags from body content
+    import re
+
+    body_no_scripts = re.sub(
+        r"<script[^>]*>.*?</script>", "", body_content, flags=re.IGNORECASE | re.DOTALL
+    )
+    body_no_scripts = re.sub(
+        r"<style[^>]*>.*?</style>", "", body_no_scripts, flags=re.IGNORECASE | re.DOTALL
+    )
+
+    # Remove HTML tags and check remaining text length
+    text_only = re.sub(r"<[^>]+>", "", body_no_scripts)
+    text_only = text_only.strip()
+
+    # If body has very little actual text (< 200 chars), it's likely a JS-only page
+    return len(text_only) < 200
 
 
 def _get_paywall_info(url: str) -> str | None:
@@ -228,6 +305,12 @@ def _fetch_with_retry(url: str, timeout: int) -> tuple[str, str]:
 
         # Check for HTML or text
         if "html" in content_type_header or "text" in content_type_header:
+            # Check if this is a JavaScript-only page (SPA with no server-side rendering)
+            if _is_javascript_required(response.text):
+                raise ContentFetchError(
+                    "Page requires JavaScript to render content (detected empty SPA shell)"
+                )
+
             logger.info(f"Fetched {len(response.text)} characters from {url}")
             return response.text, "html"
 

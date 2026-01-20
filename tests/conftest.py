@@ -378,3 +378,31 @@ def mock_langfuse_client(
     )
 
     return mock_tracer
+
+
+@pytest.fixture
+def mock_playwright_browser() -> Mock:
+    """
+    Mock Playwright browser context for testing.
+
+    Provides a mock browser, context, and page that can be used
+    to test Playwright functionality without launching a real browser.
+    """
+    # Create mock page
+    mock_page = Mock()
+    mock_page.goto.return_value = Mock(status=200)
+    mock_page.content.return_value = "<html><body>Test content</body></html>"
+    mock_page.close.return_value = None
+    mock_page.route = Mock()
+
+    # Create mock context
+    mock_context = Mock()
+    mock_context.new_page.return_value = mock_page
+    mock_context.close.return_value = None
+
+    # Create mock browser
+    mock_browser = Mock()
+    mock_browser.new_context.return_value = mock_context
+    mock_browser.close.return_value = None
+
+    return mock_browser

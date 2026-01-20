@@ -66,6 +66,8 @@ class PageMetadata:
         site_name: Site name from og:site_name.
         article_tags: Tags/keywords from meta tags or content.
         content: The main readable text content.
+        fetch_method: Method used to fetch content ("http" or "playwright").
+        http_error_category: Category of HTTP error if fallback occurred.
     """
 
     title: str
@@ -76,6 +78,9 @@ class PageMetadata:
     published_date: str | None = None
     site_name: str | None = None
     article_tags: list[str] = field(default_factory=list)
+    # Fetch metadata for observability
+    fetch_method: str = "http"
+    http_error_category: str | None = None
 
 
 @dataclass

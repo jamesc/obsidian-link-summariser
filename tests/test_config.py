@@ -119,6 +119,20 @@ class TestConfig:
         # Should not raise
         config.validate()
 
+    def test_validate_invalid_playwright_phase(self, tmp_path: Path) -> None:
+        """Invalid playwright phase should fail validation."""
+        config = Config(
+            model_provider="google",
+            gemini_api_key="test-key",
+            vault_path=tmp_path,
+            max_links=5,
+            langfuse_public_key="pk-lf-test",
+            langfuse_secret_key="sk-lf-test",
+            playwright_fallback_phase="phase5",  # type: ignore
+        )
+        with pytest.raises(ConfigError, match="Invalid playwright_fallback_phase"):
+            config.validate()
+
 
 class TestLoadYamlConfig:
     """Tests for YAML config loading."""
