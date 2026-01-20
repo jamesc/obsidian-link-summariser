@@ -7,10 +7,13 @@ using mock data and the mock vault fixture.
 
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
+from pytest_mock import MockerFixture
 
 from summarize_links.config import load_config
+from summarize_links.exceptions import ContentFetchError
 from summarize_links.notes import (
     extract_urls,
     read_daily_note,
@@ -180,3 +183,224 @@ class TestConfigIntegration:
 
         assert config.vault_path == mock_vault
         assert config.gemini_api_key == "test-key"
+
+
+class TestPlaywrightFallbackIntegration:
+    """Integration tests for Playwright fallback behavior."""
+
+    def test_fallback_on_429_phase2(self, mocker: MockerFixture) -> None:
+        """Should fallback to Playwright on HTTP 429 in Phase 2."""
+        from summarize_links.extract import fetch_and_extract_metadata
+
+        # Mock HTTP fetch to return 429 error
+        mock_fetch_content = mocker.patch("summarize_links.extract.fetch_content")
+        mock_fetch_content.side_effect = ContentFetchError("HTTP 429: Too Many Requests")
+
+        # Mock Playwright to succeed
+        mock_playwright = mocker.patch("summarize_links.extract.fetch_content_with_playwright")
+        mock_playwright.return_value = (
+            """
+            <html>
+                <head><title>Test Article</title></head>
+                <body><article><p>Content fetched via Playwright after 429 error.</p></article></body>
+            </html>
+            """,
+            "html",
+        )
+
+        # Call with phase2 enabled
+        metadata = fetch_and_extract_metadata(
+            "https://example.com/rate-limited",
+            playwright_enabled=True,
+            playwright_phase="phase2",
+        )
+
+        # Verify HTTP was tried first
+        mock_fetch_content.assert_called_once_with("https://example.com/rate-limited")
+
+        # Verify Playwright was called as fallback
+        mock_playwright.assert_called_once_with("https://example.com/rate-limited", timeout=30)
+
+        # Verify content was extracted successfully
+        assert metadata.title == "Test Article"
+        assert "Playwright" in metadata.content
+        assert metadata.fetch_method == "playwright"
+        assert metadata.http_error_category == "rate_limit"
+
+    def test_no_fallback_on_429_phase1(self, mocker: MockerFixture) -> None:
+        """Should NOT fallback to Playwright on HTTP 429 in Phase 1."""
+        from summarize_links.extract import fetch_and_extract_metadata
+
+        # Mock HTTP fetch to return 429 error
+        mock_fetch_content = mocker.patch("summarize_links.extract.fetch_content")
+        mock_fetch_content.side_effect = ContentFetchError("HTTP 429: Too Many Requests")
+
+        # Mock Playwright (should not be called)
+        mock_playwright = mocker.patch("summarize_links.extract.fetch_content_with_playwright")
+
+        # Call with phase1 (should raise without trying Playwright)
+        with pytest.raises(ContentFetchError) as exc_info:
+            fetch_and_extract_metadata(
+                "https://example.com/rate-limited",
+                playwright_enabled=True,
+                playwright_phase="phase1",
+            )
+
+        # Verify error message
+        assert "429" in str(exc_info.value)
+
+        # Verify HTTP was tried
+        mock_fetch_content.assert_called_once()
+
+        # Verify Playwright was NOT called (429 not in phase1)
+        mock_playwright.assert_not_called()
+
+    def test_fallback_on_403_phase1(self, mocker: MockerFixture) -> None:
+        """Should fallback to Playwright on HTTP 403 in Phase 1."""
+        from summarize_links.extract import fetch_and_extract_metadata
+
+        # Mock HTTP fetch to return 403 error
+        mock_fetch_content = mocker.patch("summarize_links.extract.fetch_content")
+        mock_fetch_content.side_effect = ContentFetchError("HTTP 403: Forbidden")
+
+        # Mock Playwright to succeed
+        mock_playwright = mocker.patch("summarize_links.extract.fetch_content_with_playwright")
+        mock_playwright.return_value = (
+            """
+            <html>
+                <head><title>Protected Article</title></head>
+                <body><article><p>Content fetched via Playwright after 403 error.</p></article></body>
+            </html>
+            """,
+            "html",
+        )
+
+        # Call with phase1 enabled (403 is in phase1)
+        metadata = fetch_and_extract_metadata(
+            "https://example.com/protected",
+            playwright_enabled=True,
+            playwright_phase="phase1",
+        )
+
+        # Verify HTTP was tried first
+        mock_fetch_content.assert_called_once_with("https://example.com/protected")
+
+        # Verify Playwright was called as fallback
+        mock_playwright.assert_called_once_with("https://example.com/protected", timeout=30)
+
+        # Verify content was extracted successfully
+        assert metadata.title == "Protected Article"
+        assert "Playwright" in metadata.content
+        assert metadata.fetch_method == "playwright"
+        assert metadata.http_error_category == "bot_detection"
+
+    def test_fallback_on_401_phase2(self, mocker: MockerFixture) -> None:
+        """Should fallback to Playwright on HTTP 401 in Phase 2 (includes Phase 1)."""
+        from summarize_links.extract import fetch_and_extract_metadata
+
+        # Mock HTTP fetch to return 401 error
+        mock_fetch_content = mocker.patch("summarize_links.extract.fetch_content")
+        mock_fetch_content.side_effect = ContentFetchError("HTTP 401: Unauthorized")
+
+        # Mock Playwright to succeed
+        mock_playwright = mocker.patch("summarize_links.extract.fetch_content_with_playwright")
+        mock_playwright.return_value = (
+            """
+            <html>
+                <head><title>Auth Protected</title></head>
+                <body><article><p>Content fetched via Playwright after 401 error.</p></article></body>
+            </html>
+            """,
+            "html",
+        )
+
+        # Call with phase2 (should include phase1 errors)
+        metadata = fetch_and_extract_metadata(
+            "https://example.com/auth-required",
+            playwright_enabled=True,
+            playwright_phase="phase2",
+        )
+
+        # Verify Playwright was called
+        mock_playwright.assert_called_once()
+
+        # Verify content was extracted successfully
+        assert metadata.title == "Auth Protected"
+        assert metadata.fetch_method == "playwright"
+        assert metadata.http_error_category == "bot_detection"
+
+    def test_both_methods_fail(self, mocker: MockerFixture) -> None:
+        """Should raise enhanced error when both HTTP and Playwright fail."""
+        from summarize_links.extract import fetch_and_extract_metadata
+
+        # Mock HTTP fetch to return 403 error
+        mock_fetch_content = mocker.patch("summarize_links.extract.fetch_content")
+        mock_fetch_content.side_effect = ContentFetchError("HTTP 403: Forbidden")
+
+        # Mock Playwright to also fail
+        mock_playwright = mocker.patch("summarize_links.extract.fetch_content_with_playwright")
+        mock_playwright.side_effect = ContentFetchError("Playwright timeout")
+
+        # Should raise with both errors mentioned
+        with pytest.raises(ContentFetchError) as exc_info:
+            fetch_and_extract_metadata(
+                "https://example.com/blocked",
+                playwright_enabled=True,
+                playwright_phase="phase1",
+            )
+
+        # Verify error message mentions both failures
+        error_msg = str(exc_info.value)
+        assert "403" in error_msg
+        assert "Playwright fallback also failed" in error_msg
+        assert "timeout" in error_msg.lower()
+
+    def test_playwright_disabled(self, mocker: MockerFixture) -> None:
+        """Should not fallback when Playwright is disabled."""
+        from summarize_links.extract import fetch_and_extract_metadata
+
+        # Mock HTTP fetch to return 403 error
+        mock_fetch_content = mocker.patch("summarize_links.extract.fetch_content")
+        mock_fetch_content.side_effect = ContentFetchError("HTTP 403: Forbidden")
+
+        # Mock Playwright (should not be called)
+        mock_playwright = mocker.patch("summarize_links.extract.fetch_content_with_playwright")
+
+        # Call with Playwright disabled
+        with pytest.raises(ContentFetchError) as exc_info:
+            fetch_and_extract_metadata(
+                "https://example.com/blocked",
+                playwright_enabled=False,
+                playwright_phase="phase1",
+            )
+
+        # Verify error is original HTTP error
+        assert "403" in str(exc_info.value)
+
+        # Verify Playwright was not called
+        mock_playwright.assert_not_called()
+
+    def test_no_fallback_on_404(self, mocker: MockerFixture) -> None:
+        """Should NOT fallback to Playwright on HTTP 404 (not retryable)."""
+        from summarize_links.extract import fetch_and_extract_metadata
+
+        # Mock HTTP fetch to return 404 error
+        mock_fetch_content = mocker.patch("summarize_links.extract.fetch_content")
+        mock_fetch_content.side_effect = ContentFetchError("HTTP 404: Not Found")
+
+        # Mock Playwright (should not be called)
+        mock_playwright = mocker.patch("summarize_links.extract.fetch_content_with_playwright")
+
+        # Should raise without trying Playwright (404 is never retryable)
+        with pytest.raises(ContentFetchError) as exc_info:
+            fetch_and_extract_metadata(
+                "https://example.com/not-found",
+                playwright_enabled=True,
+                playwright_phase="phase2",
+            )
+
+        # Verify error message
+        assert "404" in str(exc_info.value)
+
+        # Verify Playwright was NOT called (404 is not retryable)
+        mock_playwright.assert_not_called()
