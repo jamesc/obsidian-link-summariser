@@ -4,6 +4,176 @@ This document tracks completed development tasks for the Obsidian Link Summarize
 
 ---
 
+## 2026-01-20: Playwright Fallback - Simplified Always-On Integration
+
+**Goal:** Remove the phase system complexity and make Playwright fallback always-on for common bot detection patterns (HTTP 401/403/429, JavaScript requirements, extraction failures).
+
+**Status:** ✅ Completed
+
+**Implementation Details:**
+
+### Refactoring Changes
+
+**Removed Phase System:**
+- Removed `playwright_fallback_phase` configuration field from `Config`
+- Removed `PhaseType` literal type and `VALID_PHASES` tuple
+- Changed `PLAYWRIGHT_RETRYABLE_ERRORS` from phase-based dict to simple list
+- Removed phase parameter from `should_retry_with_playwright()` 
+- Removed phase parameter from `should_retry_with_extraction_fallback()`
+- Removed `playwright_phase` parameter from `fetch_and_extract_metadata()`
+
+**Simplified Fallback Patterns (Always Enabled):**
+- HTTP 401: Unauthorized (bot detection)
+- HTTP 403: Forbidden (bot detection)
+- HTTP 429: Too Many Requests (rate limiting, often bot-specific)
+- "requires JavaScript" (SPA/dynamic content)
+- "No readable content" (extraction failures)
+
+**Test Updates:**
+- Simplified integration tests to test core fallback behavior
+- Removed phase-specific test variations
+- Kept tests validating 401/403/429 trigger fallback while 404/500 don't
+- All 657 tests passing
+
+### Rationale
+
+The phase system (phase1-phase4) added unnecessary configuration complexity without clear benefit:
+- **Phase 1 (401/403)**: High confidence bot detection - core use case
+- **Phase 2 (+ 429)**: Rate limiting - also bot-specific in practice
+- **Phase 3 (+ timeout/connection)**: Network-level blocking - removed (too broad)
+- **Phase 4 (+ content-type mismatches)**: All retryable cases - removed (too broad)
+
+**Decision:** Always enable Phase 1+2 patterns (401/403/429) as these are the most reliable bot detection signals. Users can still disable Playwright entirely via `playwright_enabled=false` if needed.
+
+**Benefits:**
+- Simpler configuration - one toggle instead of phase selection
+- Fewer decisions for users - works out of the box
+- Less code to maintain - no phase validation/selection logic
+- Clearer semantics - "bot detection fallback" vs "phase 2 fallback"
+
+### Files Changed
+
+**Core:**
+- `summarize_links/extract/fallback.py` - Simplified fallback logic
+- `summarize_links/extract/__init__.py` - Removed phase parameter
+- `summarize_links/config.py` - Removed phase configuration
+- `summarize_links/processor.py` - Updated function call
+
+**Tests:**
+- `tests/test_integration.py` - Simplified integration tests
+- `tests/test_playwright_fetching.py` - Removed phase-specific tests
+- `tests/test_config.py` - Removed phase validation test
+
+### Validation
+
+**Testing:**
+```bash
+uv run pytest  # 657 tests passed
+uv run ruff check .  # All checks passed
+uv run ruff format .  # 60 files left unchanged
+uv run mypy .  # Success: no issues found
+```
+
+**Deployment:** Pushed to `feature/playwright-phase2` branch
+
+---
+
+## 2026-01-20: Playwright Fallback - Phase 2 Implementation (SUPERSEDED)
+
+**Note:** This task was superseded by the above simplification. Phase 2 was implemented and tested, but then the entire phase system was removed in favor of an always-on approach for core patterns.
+
+**Original Goal:** Expand Playwright fallback to include HTTP 429 (Too Many Requests) errors in Phase 2, enabling retry for rate-limited requests.
+
+**Status:** ✅ Completed → Refactored
+
+**Implementation Plan:** See [playwright-fallback-plan.md](docs/playwright-fallback-plan.md) - Phase 2 (Now superseded)
+
+**Changes:**
+
+### Integration Tests Added (Later Simplified)
+
+**New Tests in `tests/test_integration.py`** - `TestPlaywrightFallbackIntegration` class (8 tests):
+- `test_fallback_on_429_phase2` - Verifies HTTP 429 triggers Playwright fallback in Phase 2
+- `test_no_fallback_on_429_phase1` - Verifies HTTP 429 does NOT trigger fallback in Phase 1
+- `test_fallback_on_403_phase1` - Verifies Phase 1 errors (401/403) still work in Phase 2
+- `test_fallback_on_401_phase2` - Verifies Phase 2 includes all Phase 1 errors
+- `test_both_methods_fail` - Verifies error message when both HTTP and Playwright fail
+- `test_playwright_disabled` - Verifies fallback disabled when playwright_enabled=False
+- `test_no_fallback_on_404` - Verifies 404 errors never trigger fallback (not retryable)
+- Comprehensive integration testing for the entire Phase 2 fallback pipeline
+
+**Existing Unit Tests** (already in place from Phase 1):
+- `tests/test_playwright_fetching.py::TestFallbackLogic`:
+  - `test_should_not_retry_429_phase1` - Unit test for Phase 1 behavior
+  - `test_should_retry_429_phase2` - Unit test for Phase 2 behavior
+  - `test_should_retry_401_phase2` - Verifies Phase 1 patterns included in Phase 2
+  - `test_should_not_retry_timeout_phase2` - Verifies Phase 3 patterns excluded in Phase 2
+
+### Core Implementation
+
+**No code changes required** - Phase 2 logic was already implemented in Phase 1:
+- `summarize_links/extract/fallback.py` - Contains phase detection with HTTP 429 in `phase2` array
+- `summarize_links/extract/__init__.py` - Contains fallback logic respecting phase configuration
+- `summarize_links/extract/playwright_fetching.py` - Playwright fetching implementation
+
+**Phase 2 Configuration:**
+Users can enable Phase 2 via configuration:
+```yaml
+# .summarizer-config.yaml
+playwright_fallback_phase: phase2
+```
+
+Or via environment variable:
+```bash
+PLAYWRIGHT_FALLBACK_PHASE=phase2
+```
+
+### Error Patterns by Phase
+
+**Phase 1 (already deployed):** HTTP 401, 403, JavaScript-required, No readable content
+**Phase 2 (this update):** Phase 1 + HTTP 429 (rate limiting)
+**Phase 3 (future):** Phase 2 + Timeout, Connection errors
+**Phase 4 (future):** Phase 3 + Unsupported content type
+
+### Benefits of Phase 2
+
+- **Expanded coverage:** Now handles rate-limited responses from web servers
+- **Conservative rollout:** Only activates when explicitly configured to `phase2`
+- **Clear metrics:** Error categorization tracks which phase patterns trigger fallback
+- **Backward compatible:** Default remains `phase1` for stability
+
+### Tests
+
+**Test Results:** All existing tests pass + 8 new integration tests
+- Total: 542 tests passing
+- New: 8 integration tests for Phase 2 fallback scenarios
+
+**Static Analysis:** All checks pass ✓
+- `ruff check .` - No issues
+- `ruff format .` - All files formatted
+- `mypy .` - Type checking passes
+
+### Verification
+
+Verified that:
+1. HTTP 429 errors trigger Playwright fallback only when `playwright_fallback_phase=phase2`
+2. HTTP 429 errors do NOT trigger fallback when `playwright_fallback_phase=phase1`
+3. Phase 1 errors (401/403) continue to work in Phase 2 (inclusive behavior)
+4. Non-retryable errors (404, 500) never trigger fallback regardless of phase
+5. Both methods failing produces enhanced error message mentioning both failures
+6. Playwright disabled mode works correctly
+
+### Monitoring Readiness
+
+Phase 2 deployment enables collection of metrics for:
+- HTTP 429 → Playwright success rate
+- Performance impact of rate-limited fallback
+- Distribution of rate limit errors vs other error types
+
+These metrics will inform Phase 3 rollout decisions.
+
+---
+
 ## 2026-01-15: Azure OpenAI / Microsoft Foundry Integration
 
 **Goal:** Add support for Azure OpenAI (Microsoft Foundry) as an enterprise-grade LLM provider alongside Google Gemini and Ollama.

@@ -24,7 +24,6 @@ from summarize_links.exceptions import ContentExtractionError, ContentFetchError
 # Public API
 # Re-export constants and private functions for tests
 from summarize_links.extract.fallback import (
-    PhaseType,
     get_error_category,
     should_retry_with_extraction_fallback,
     should_retry_with_playwright,
@@ -124,7 +123,6 @@ def fetch_and_extract(url: str) -> tuple[str, str | None]:
 def fetch_and_extract_metadata(
     url: str,
     playwright_enabled: bool = True,
-    playwright_phase: PhaseType = "phase1",
     playwright_timeout: int = 30,
 ) -> PageMetadata:
     """
@@ -135,12 +133,11 @@ def fetch_and_extract_metadata(
     Supports both HTML pages and raw Markdown files.
 
     Automatically falls back to Playwright for URLs blocked by bot detection
-    (401/403 errors by default, configurable via playwright_phase).
+    (HTTP 401/403/429, JavaScript requirements, or extraction failures).
 
     Args:
         url: URL to fetch and extract from.
         playwright_enabled: Enable Playwright fallback (default: True).
-        playwright_phase: Phase level for fallback (phase1-phase4, default: phase1).
         playwright_timeout: Timeout in seconds for Playwright operations (default: 30).
 
     Returns:
@@ -160,7 +157,7 @@ def fetch_and_extract_metadata(
 
     except ContentFetchError as http_error:
         # Check if Playwright fallback should be attempted
-        if playwright_enabled and should_retry_with_playwright(http_error, playwright_phase):
+        if playwright_enabled and should_retry_with_playwright(http_error):
             error_category = get_error_category(http_error)
             http_error_category = error_category  # Store for observability
             logger.info(f"HTTP fetch failed ({error_category}), retrying with Playwright: {url}")
@@ -184,7 +181,7 @@ def fetch_and_extract_metadata(
                 ) from playwright_error
         else:
             # Playwright disabled or error not retryable
-            reason = "disabled" if not playwright_enabled else f"not in {playwright_phase}"
+            reason = "disabled" if not playwright_enabled else "error not retryable"
             logger.debug(f"Playwright fallback {reason} for error: {http_error}")
             raise
 
@@ -203,7 +200,7 @@ def fetch_and_extract_metadata(
             if (
                 playwright_enabled
                 and fetch_method != "playwright"  # Don't retry if already using Playwright
-                and should_retry_with_extraction_fallback(extraction_error, playwright_phase)
+                and should_retry_with_extraction_fallback(extraction_error)
             ):
                 logger.warning(
                     f"⚠ Extraction failed for {url}, retrying with Playwright: {extraction_error}"
@@ -236,7 +233,7 @@ def fetch_and_extract_metadata(
                     if not playwright_enabled
                     else "already used"
                     if fetch_method == "playwright"
-                    else f"not in {playwright_phase}"
+                    else "error not retryable"
                 )
                 logger.debug(
                     f"Playwright fallback {reason} for extraction error: {extraction_error}"
