@@ -184,13 +184,14 @@ def _is_javascript_required(html: str) -> bool:
     body_content = html[body_content_start:body_end]
 
     # Remove script and style tags from body content
+    # Note: End tags allow whitespace before > (e.g., </script >)
     import re
 
     body_no_scripts = re.sub(
-        r"<script[^>]*>.*?</script>", "", body_content, flags=re.IGNORECASE | re.DOTALL
+        r"<script[^>]*>.*?</script\s*>", "", body_content, flags=re.IGNORECASE | re.DOTALL
     )
     body_no_scripts = re.sub(
-        r"<style[^>]*>.*?</style>", "", body_no_scripts, flags=re.IGNORECASE | re.DOTALL
+        r"<style[^>]*>.*?</style\s*>", "", body_no_scripts, flags=re.IGNORECASE | re.DOTALL
     )
 
     # Remove HTML tags and check remaining text length
