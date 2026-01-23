@@ -71,10 +71,6 @@ class TestCreateParser:
         args = parser.parse_args(["--model", "gemini-pro", "from-note"])
         assert args.model == "gemini-pro"
 
-        # Test --mock
-        args = parser.parse_args(["--mock", "from-note"])
-        assert args.mock is True
-
         # Test --dry-run
         args = parser.parse_args(["--dry-run", "from-note"])
         assert args.dry_run is True
@@ -188,7 +184,9 @@ class TestMain:
         mock_config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
-            mock_mode=True,  # Use mock mode to skip Langfuse
+            model_provider="google",
+            langfuse_public_key="pk-lf-test",
+            langfuse_secret_key="sk-lf-test",
         )
         mock_load_config.return_value = mock_config
         mock_cmd.return_value = EXIT_SUCCESS
@@ -210,7 +208,9 @@ class TestMain:
         mock_config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
-            mock_mode=True,  # Use mock mode to skip Langfuse
+            model_provider="google",
+            langfuse_public_key="pk-lf-test",
+            langfuse_secret_key="sk-lf-test",
         )
         mock_load_config.return_value = mock_config
         mock_cmd.return_value = EXIT_SUCCESS
@@ -232,7 +232,9 @@ class TestMain:
         mock_config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
-            mock_mode=True,  # Use mock mode to skip Langfuse
+            model_provider="google",
+            langfuse_public_key="pk-lf-test",
+            langfuse_secret_key="sk-lf-test",
         )
         mock_load_config.return_value = mock_config
         mock_cmd.return_value = EXIT_SUCCESS
@@ -944,7 +946,9 @@ class TestCliIntegration:
         mock_config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
-            mock_mode=True,
+            model_provider="google",
+            langfuse_public_key="pk-lf-test",
+            langfuse_secret_key="sk-lf-test",
         )
         mock_load_config.return_value = mock_config
         mock_read.return_value = "Note with URLs"
@@ -988,7 +992,9 @@ class TestCliIntegration:
         mock_config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
-            mock_mode=True,
+            model_provider="google",
+            langfuse_public_key="pk-lf-test",
+            langfuse_secret_key="sk-lf-test",
         )
         mock_load_config.return_value = mock_config
         mock_exists.return_value = False
@@ -1009,81 +1015,9 @@ class TestCliIntegration:
         assert mock_fetch.call_count == 2
         assert mock_write.call_count == 2
 
-    @patch("summarize_links.cli.load_config")
-    def test_mock_mode_flag(
-        self,
-        mock_load_config: MagicMock,
-        mock_vault: Path,
-    ) -> None:
-        """Should pass mock mode to config."""
-        mock_config = Config(
-            vault_path=mock_vault,
-            gemini_api_key="test-key",
-            mock_mode=True,
-        )
-        mock_load_config.return_value = mock_config
-
-        with patch("summarize_links.cli.cmd_from_note", return_value=EXIT_SUCCESS):
-            main(["--mock", "from-note"])
-
-        # Verify mock_mode was passed
-        call_kwargs = mock_load_config.call_args[1]
-        assert call_kwargs["mock_mode"] is True
-
 
 class TestUrlLineDeletion:
     """Tests for URL line deletion behavior after successful processing."""
-
-    @patch("summarize_links.processor.remove_url_line_from_note")
-    @patch("summarize_links.processor.add_summary_link_to_daily_note")
-    @patch("summarize_links.processor.write_summary_note_with_metadata")
-    @patch("summarize_links.processor.create_llm_client")
-    @patch("summarize_links.processor.fetch_and_extract_metadata")
-    @patch("summarize_links.processor.summary_exists")
-    @patch("summarize_links.commands.from_note.extract_urls_with_context")
-    @patch("summarize_links.commands.from_note.read_daily_note")
-    @patch("summarize_links.cli.load_config")
-    def test_mock_mode_does_not_delete_url_lines(
-        self,
-        mock_load_config: MagicMock,
-        mock_read: MagicMock,
-        mock_extract: MagicMock,
-        mock_exists: MagicMock,
-        mock_fetch: MagicMock,
-        mock_create_llm_client: MagicMock,
-        mock_write: MagicMock,
-        mock_add_link: MagicMock,
-        mock_remove_url: MagicMock,
-        mock_vault: Path,
-    ) -> None:
-        """Mock mode should NOT delete URL lines from daily note."""
-        # Setup mocks - mock mode enabled
-        mock_config = Config(
-            vault_path=mock_vault,
-            gemini_api_key="test-key",
-            mock_mode=True,  # Mock mode!
-        )
-        mock_load_config.return_value = mock_config
-        mock_read.return_value = "Note with URLs"
-        mock_extract.return_value = [UrlWithContext(url="https://example.com")]
-        mock_exists.return_value = False
-        mock_fetch.return_value = PageMetadata(
-            title="Article Title",
-            domain="example.com",
-            content="Article content",
-        )
-        mock_write.return_value = mock_vault / "Summaries" / "2025-12-16-example.md"
-
-        mock_client = MagicMock()
-        mock_client.summarize_with_metadata.return_value = SummaryResult(content="## Summary")
-        mock_create_llm_client.return_value = mock_client
-
-        # Run CLI
-        result = main(["from-note", "--date", "2025-12-16"])
-
-        assert result == EXIT_SUCCESS
-        # URL line should NOT be deleted in mock mode
-        mock_remove_url.assert_not_called()
 
     @patch("summarize_links.processor.remove_url_line_from_note")
     @patch("summarize_links.processor.add_summary_link_to_daily_note")
@@ -1107,12 +1041,14 @@ class TestUrlLineDeletion:
         mock_remove_url: MagicMock,
         mock_vault: Path,
     ) -> None:
-        """Real mode (not mock) should delete URL lines from daily note."""
-        # Setup mocks - NOT mock mode
+        """Should delete URL lines from daily note after successful processing."""
+        # Setup mocks
         mock_config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
-            mock_mode=False,  # Real mode!
+            model_provider="google",
+            langfuse_public_key="pk-lf-test",
+            langfuse_secret_key="sk-lf-test",
         )
         mock_load_config.return_value = mock_config
         mock_read.return_value = "Note with URLs"
@@ -1165,7 +1101,9 @@ class TestUrlLineDeletion:
         mock_config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
-            mock_mode=False,
+            model_provider="google",
+            langfuse_public_key="pk-lf-test",
+            langfuse_secret_key="sk-lf-test",
             dry_run=True,  # Dry-run mode!
         )
         mock_load_config.return_value = mock_config
@@ -1209,7 +1147,9 @@ class TestUrlLineDeletion:
         mock_config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
-            mock_mode=False,
+            model_provider="google",
+            langfuse_public_key="pk-lf-test",
+            langfuse_secret_key="sk-lf-test",
         )
         mock_load_config.return_value = mock_config
         mock_read.return_value = "Note with URLs"
@@ -1251,7 +1191,9 @@ class TestUrlLineDeletion:
         mock_config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
-            mock_mode=False,
+            model_provider="google",
+            langfuse_public_key="pk-lf-test",
+            langfuse_secret_key="sk-lf-test",
         )
         mock_load_config.return_value = mock_config
         mock_read.return_value = "Note with URLs"
@@ -1298,7 +1240,9 @@ class TestUrlLineDeletion:
         mock_config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
-            mock_mode=False,  # Real mode this time
+            model_provider="google",
+            langfuse_public_key="pk-lf-test",
+            langfuse_secret_key="sk-lf-test",
         )
         mock_load_config.return_value = mock_config
         mock_read.return_value = "Note with URLs"

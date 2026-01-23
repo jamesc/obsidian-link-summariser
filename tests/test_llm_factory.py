@@ -15,7 +15,7 @@ from summarize_links.config import (
     VALID_PROVIDERS,
 )
 from summarize_links.exceptions import ConfigError
-from summarize_links.llm import AzureClient, GeminiClient, MockGeminiClient, OllamaClient
+from summarize_links.llm import AzureClient, GeminiClient, OllamaClient
 from summarize_links.llm.factory import create_llm_client, validate_provider
 
 
@@ -65,15 +65,6 @@ class TestValidateProvider:
 
 class TestCreateLLMClient:
     """Tests for create_llm_client factory function."""
-
-    def test_create_mock_client(self) -> None:
-        """Test creation of mock client."""
-        client = create_llm_client(
-            model="any-model",
-            provider="google",
-            mock_mode=True,
-        )
-        assert isinstance(client, MockGeminiClient)
 
     def test_create_ollama_client(self) -> None:
         """Test creation of Ollama client."""

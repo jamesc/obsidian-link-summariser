@@ -270,7 +270,6 @@ def mock_config(tmp_path: Path) -> Config:
         vault_path=tmp_path,
         out_folder="Summaries",
         max_links=10,
-        mock_mode=False,
         dry_run=False,
         verbose=False,
         force=False,

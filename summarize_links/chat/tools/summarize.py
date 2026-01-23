@@ -173,7 +173,6 @@ class SummarizeUrlTool(Tool):
                 azure_endpoint=config.azure_endpoint,
                 azure_deployment_name=config.azure_deployment_name,
                 azure_api_version=config.azure_api_version,
-                mock_mode=config.mock_mode,
                 state_path=config.vault_path,
                 yaml_model_limits=config.model_limits,
             )
@@ -298,8 +297,8 @@ class SummarizeUrlTool(Tool):
             tags=tags or [],
         )
 
-        # Determine status
-        summary_status = "mocked" if config.mock_mode else "success"
+        # Summary succeeded
+        summary_status = "success"
 
         # Write the summary note
         try:
@@ -569,7 +568,6 @@ class ResummarizeTool(Tool):
                 azure_endpoint=config.azure_endpoint,
                 azure_deployment_name=config.azure_deployment_name,
                 azure_api_version=config.azure_api_version,
-                mock_mode=config.mock_mode,
                 state_path=config.vault_path,
                 yaml_model_limits=config.model_limits,
             )
@@ -684,8 +682,8 @@ class ResummarizeTool(Tool):
                     error=str(e),
                 )
 
-        # Determine status
-        summary_status = "mocked" if config.mock_mode else "success"
+        # Summary succeeded
+        summary_status = "success"
 
         # Write the summary note (overwrite existing)
         try:

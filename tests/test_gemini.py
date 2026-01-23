@@ -9,7 +9,6 @@ from summarize_links.config import DEFAULT_MODEL
 from summarize_links.exceptions import GeminiAPIError, RateLimitError
 from summarize_links.llm.gemini import (
     GeminiClient,
-    MockGeminiClient,
     create_client,
 )
 from summarize_links.llm.parsing import (
@@ -34,70 +33,8 @@ def mock_rate_limiter() -> RateLimiter:
 
 # Note: Tests for _build_content_type_list, _get_system_prompt, and _build_prompt
 # were removed as these functions are no longer used. Prompts now come from Langfuse.
-
-
-class TestMockGeminiClient:
-    """Tests for the mock client."""
-
-    def test_returns_mock_summary(self) -> None:
-        """Should return predictable mock summary."""
-        client = MockGeminiClient()
-        summary = client.summarize("Test content", "https://example.com", "Test Title")
-
-        assert "Summary: Test Title" in summary
-        assert "https://example.com" in summary
-        assert "MockGeminiClient" in summary
-
-    def test_uses_untitled_when_no_title(self) -> None:
-        """Should use 'Untitled Page' when title not provided."""
-        client = MockGeminiClient()
-        summary = client.summarize("Test content", "https://example.com")
-
-        assert "Untitled Page" in summary
-
-    def test_custom_responses(self) -> None:
-        """Should return custom response when URL matches."""
-        responses = {"https://example.com": "Custom summary"}
-        client = MockGeminiClient(responses=responses)
-
-        summary = client.summarize("Content", "https://example.com")
-        assert summary == "Custom summary"
-
-    def test_custom_response_not_matched(self) -> None:
-        """Should return default mock when URL doesn't match."""
-        responses = {"https://example.com": "Custom summary"}
-        client = MockGeminiClient(responses=responses)
-
-        summary = client.summarize("Content", "https://other.com")
-        assert "Custom summary" not in summary
-        assert "MockGeminiClient" in summary
-
-    def test_fail_urls(self) -> None:
-        """Should raise error for URLs in fail_urls set."""
-        client = MockGeminiClient(fail_urls={"https://fail.com"})
-
-        with pytest.raises(GeminiAPIError, match="Simulated API error"):
-            client.summarize("Content", "https://fail.com")
-
-    def test_call_count(self) -> None:
-        """Should track number of summarize calls."""
-        client = MockGeminiClient()
-        assert client.call_count == 0
-
-        client.summarize("Content", "https://example.com")
-        assert client.call_count == 1
-
-        client.summarize("Content", "https://other.com")
-        assert client.call_count == 2
-
-    def test_content_preview_truncation(self) -> None:
-        """Should truncate long content in preview."""
-        long_content = "A" * 500
-        client = MockGeminiClient()
-        summary = client.summarize(long_content, "https://example.com")
-
-        assert "..." in summary
-        assert f"Content length: {len(long_content)}" in summary
+# Note: Tests for MockGeminiClient were removed as mock mode has been deprecated.
+# Use pytest fixtures or Ollama for testing instead.
 
 
 class TestGeminiClient:
@@ -276,35 +213,25 @@ class TestGeminiClient:
 class TestCreateClient:
     """Tests for the client factory function."""
 
-    def test_creates_mock_client_in_mock_mode(self) -> None:
-        """Should return MockGeminiClient when mock_mode=True."""
-        client = create_client(api_key=None, mock_mode=True)
-        assert isinstance(client, MockGeminiClient)
-
-    def test_creates_mock_client_with_api_key_in_mock_mode(self) -> None:
-        """Should return MockGeminiClient in mock mode even with api_key."""
-        client = create_client(api_key="test-key", mock_mode=True)
-        assert isinstance(client, MockGeminiClient)
-
     def test_creates_real_client_with_api_key(self) -> None:
         """Should return GeminiClient when api_key provided."""
-        client = create_client(api_key="test-key", mock_mode=False)
+        client = create_client(api_key="test-key")
         assert isinstance(client, GeminiClient)
 
-    def test_raises_without_api_key_in_real_mode(self) -> None:
-        """Should raise error when api_key missing in non-mock mode."""
+    def test_raises_without_api_key(self) -> None:
+        """Should raise error when api_key missing."""
         with pytest.raises(GeminiAPIError, match="API key required"):
-            create_client(api_key=None, mock_mode=False)
+            create_client(api_key=None)
 
     def test_passes_model_to_client(self) -> None:
         """Should pass model parameter to client."""
-        client = create_client(api_key="test-key", model="custom-model", mock_mode=False)
+        client = create_client(api_key="test-key", model="custom-model")
         assert isinstance(client, GeminiClient)
         assert client._model_name == "custom-model"  # noqa: SLF001
 
     def test_default_model(self) -> None:
         """Should use DEFAULT_MODEL when not specified."""
-        client = create_client(api_key="test-key", mock_mode=False)
+        client = create_client(api_key="test-key")
         assert isinstance(client, GeminiClient)
         assert client._model_name == DEFAULT_MODEL  # noqa: SLF001
 
@@ -404,60 +331,6 @@ class TestParseGeminiResponse:
 
         assert "Line 1" in result.content
         assert result.suggested_tags == ["tag1", "tag2"]
-
-
-class TestMockGeminiClientWithMetadata:
-    """Tests for MockGeminiClient.summarize_with_metadata."""
-
-    def test_returns_summary_result(self) -> None:
-        """Should return SummaryResult object."""
-        client = MockGeminiClient()
-        result = client.summarize_with_metadata("Content", "https://example.com", "Title")
-
-        assert isinstance(result, SummaryResult)
-        assert "Summary: Title" in result.content
-        assert "mock-tag" in result.suggested_tags
-        assert result.content_type == "article"
-
-    def test_infers_tutorial_content_type(self) -> None:
-        """Should infer tutorial content type from URL."""
-        client = MockGeminiClient()
-        result = client.summarize_with_metadata("Content", "https://example.com/tutorial/python")
-
-        assert result.content_type == "tutorial"
-
-    def test_infers_documentation_content_type(self) -> None:
-        """Should infer documentation content type from URL."""
-        client = MockGeminiClient()
-        result = client.summarize_with_metadata("Content", "https://docs.example.com/api")
-
-        assert result.content_type == "documentation"
-
-    def test_infers_blog_content_type(self) -> None:
-        """Should infer blog content type from URL."""
-        client = MockGeminiClient()
-        result = client.summarize_with_metadata("Content", "https://blog.example.com/post")
-
-        assert result.content_type == "blog"
-
-    def test_infers_video_content_type(self) -> None:
-        """Should infer video content type from YouTube URL."""
-        client = MockGeminiClient()
-        result = client.summarize_with_metadata("Content", "https://youtube.com/watch?v=123")
-
-        assert result.content_type == "video"
-
-    def test_fail_urls_still_work(self) -> None:
-        """Should raise error for fail_urls."""
-        client = MockGeminiClient(fail_urls={"https://fail.com"})
-
-        with pytest.raises(GeminiAPIError, match="Simulated API error"):
-            client.summarize_with_metadata("Content", "https://fail.com")
-
-    def test_get_cached_prompt_returns_none(self) -> None:
-        """Mock client should return None for get_cached_prompt (no Langfuse)."""
-        client = MockGeminiClient()
-        assert client.get_cached_prompt() is None
 
 
 class TestGeminiClientWithMetadata:

@@ -79,9 +79,6 @@ Examples:
 
   # Dry run - show what would be done
   summarize-links from-note --dry-run
-
-  # Use mock mode for testing
-  summarize-links from-note --mock
 """,
     )
 
@@ -113,11 +110,6 @@ Examples:
         "--model",
         type=str,
         help="Model name to use (overrides config)",
-    )
-    parser.add_argument(
-        "--mock",
-        action="store_true",
-        help="Use mock Gemini client (no API calls)",
     )
     parser.add_argument(
         "--dry-run",
@@ -257,18 +249,16 @@ def main(argv: list[str] | None = None) -> int:
             provider=getattr(args, "provider", None),
             model=args.model,
             max_links=args.max_links,
-            mock_mode=args.mock,
             dry_run=args.dry_run,
             verbose=args.verbose,
             force=args.force,
         )
         setup_logging(config.verbose)
 
-        # Initialize Langfuse tracer (skip in mock mode)
-        if not config.mock_mode:
-            from summarize_links.langfuse_tracer import initialize_tracer
+        # Initialize Langfuse tracer
+        from summarize_links.langfuse_tracer import initialize_tracer
 
-            initialize_tracer(config)
+        initialize_tracer(config)
 
         # Dispatch to command handler
         if args.command == "chat":

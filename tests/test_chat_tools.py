@@ -190,7 +190,7 @@ class TestSummarizeUrlTool:
         config.out_folder = "Summaries"
         config.daily_notes_folder = "Journal"
         config.force = False
-        config.mock_mode = False
+
         config.model = "test-model"
         config.model_provider = "test"
         config.default_tags = []
@@ -258,7 +258,6 @@ class TestSummarizeUrlTool:
         config.out_folder = "Summaries"
         config.daily_notes_folder = "Journal"
         config.force = False
-        config.mock_mode = False
         config.model = "test-model"
         config.model_provider = "test"
         config.default_tags = []

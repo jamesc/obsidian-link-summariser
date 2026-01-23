@@ -846,9 +846,6 @@ def _validate_chat_config(config: Config) -> None:
     Raises:
         ConfigError: If chat configuration is invalid.
     """
-    if config.mock_mode:
-        return
-
     if not config.chat_azure_api_key:
         raise ConfigError(
             "Chat mode requires Azure OpenAI credentials. "

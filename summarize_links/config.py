@@ -249,7 +249,6 @@ class Config:
         out_folder: Folder name for summary notes (relative to vault)
         max_links: Maximum number of URLs to process in one run
         daily_notes_folder: Folder containing daily notes (relative to vault)
-        mock_mode: If True, use mock summarizer instead of real API
         dry_run: If True, show what would happen without making changes
         verbose: If True, enable debug logging
         force: If True, overwrite existing summaries
@@ -279,7 +278,6 @@ class Config:
     out_folder: str = DEFAULT_OUT_FOLDER
     max_links: int = DEFAULT_MAX_LINKS
     daily_notes_folder: str = DEFAULT_DAILY_NOTES_FOLDER
-    mock_mode: bool = False
     dry_run: bool = False
     verbose: bool = False
     force: bool = False
@@ -335,19 +333,18 @@ class Config:
                 f"Valid options: {', '.join(sorted(VALID_PROVIDERS))}"
             )
 
-        # Provider-specific validation (unless in mock mode)
-        if not self.mock_mode:
-            if self.model_provider == PROVIDER_GOOGLE and not self.gemini_api_key:
-                raise ConfigError(
-                    "GEMINI_API_KEY is required when MODEL_PROVIDER=google. "
-                    "Get one at https://aistudio.google.com/apikey"
-                )
+        # Provider-specific validation
+        if self.model_provider == PROVIDER_GOOGLE and not self.gemini_api_key:
+            raise ConfigError(
+                "GEMINI_API_KEY is required when MODEL_PROVIDER=google. "
+                "Get one at https://aistudio.google.com/apikey"
+            )
 
-            if self.model_provider == PROVIDER_AZURE:
-                if not self.azure_api_key:
-                    raise ConfigError("AZURE_API_KEY is required when MODEL_PROVIDER=azure.")
-                if not self.azure_endpoint:
-                    raise ConfigError("AZURE_ENDPOINT is required when MODEL_PROVIDER=azure.")
+        if self.model_provider == PROVIDER_AZURE:
+            if not self.azure_api_key:
+                raise ConfigError("AZURE_API_KEY is required when MODEL_PROVIDER=azure.")
+            if not self.azure_endpoint:
+                raise ConfigError("AZURE_ENDPOINT is required when MODEL_PROVIDER=azure.")
 
         # Vault path must be set and exist
         if self.vault_path is None:
@@ -363,8 +360,8 @@ class Config:
         if self.max_links < 1:
             raise ConfigError(f"max_links must be at least 1, got {self.max_links}")
 
-        # Langfuse credentials are required (not in mock mode)
-        if not self.mock_mode and (not self.langfuse_public_key or not self.langfuse_secret_key):
+        # Langfuse credentials are required
+        if not self.langfuse_public_key or not self.langfuse_secret_key:
             raise ConfigError(
                 "Langfuse credentials are required. Set LANGFUSE_PUBLIC_KEY and "
                 "LANGFUSE_SECRET_KEY environment variables or configure in YAML."
@@ -413,7 +410,6 @@ def load_config(
     provider: str | None = None,
     out_folder: str | None = None,
     max_links: int | None = None,
-    mock_mode: bool = False,
     dry_run: bool = False,
     verbose: bool = False,
     force: bool = False,
@@ -433,7 +429,6 @@ def load_config(
         provider: LLM provider (CLI override): google, ollama, azure.
         out_folder: Output folder name (CLI override).
         max_links: Maximum links to process (CLI override).
-        mock_mode: Use mock summarizer.
         dry_run: Show what would happen without changes.
         verbose: Enable debug logging.
         force: Overwrite existing summaries.
@@ -449,7 +444,6 @@ def load_config(
 
     # Start with defaults
     config = Config(
-        mock_mode=mock_mode,
         dry_run=dry_run,
         verbose=verbose,
         force=force,

@@ -225,7 +225,6 @@ class GetVaultStatusTool(Tool):
         lines.append("\n**Current configuration**:")
         lines.append(f"  - Model: {config.model}")
         lines.append(f"  - Provider: {config.model_provider}")
-        lines.append(f"  - Mock mode: {'Yes' if config.mock_mode else 'No'}")
 
         return ToolResult(
             success=True,

@@ -93,25 +93,6 @@ def cmd_summaries(config: Config) -> int:
         print_message(f"[cyan]Date range:[/] {stats['oldest_date']} to {stats['newest_date']}")
         print_message()
 
-    # Display mocked summaries if any
-    if stats["mocked"] > 0:
-        print_message("[yellow]⚠ Mocked Summaries (run without --mock to regenerate):[/]")
-        mocked_table = Table(show_header=True)
-        mocked_table.add_column("File", style="cyan")
-        mocked_table.add_column("Date", style="white")
-
-        for filename, date in stats["mocked_summaries"][:10]:  # Show first 10
-            mocked_table.add_row(filename, date)
-
-        if len(stats["mocked_summaries"]) > 10:
-            mocked_table.add_row(
-                f"... and {len(stats['mocked_summaries']) - 10} more",
-                "",
-            )
-
-        print_message(mocked_table)
-        print_message()
-
     # Display error summaries if any
     if stats["error"] > 0:
         print_message("[red]✗ Error Summaries (run with --force to retry):[/]")

@@ -181,7 +181,6 @@ summary_status: error
             out_folder="Summaries",
             model="gemini-2.5-flash",
             model_provider="google",
-            mock_mode=False,
         )
         result = tool.execute(config)
 
