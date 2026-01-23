@@ -302,6 +302,19 @@ class Config:
     playwright_enabled: bool = True
     playwright_timeout: int = 30
     playwright_browser: str = "chromium"
+    # Chat mode configuration (uses Azure OpenAI Responses API exclusively)
+    # Note: Responses API uses /openai/v1/ endpoint without api-version parameter
+    chat_model: str = "gpt-4.1-mini"
+    chat_azure_endpoint: str = ""
+    chat_azure_api_key: str = ""
+    chat_azure_deployment: str = ""
+    # Chat session configuration
+    chat_max_history_messages: int = 50
+    chat_max_context_tokens: int = 100000  # Leave room for response
+    chat_auto_save: bool = False
+    chat_save_path: str = ".chat-history.json"
+    chat_streaming: bool = True
+    chat_confirm_tools: bool = False
 
     def validate(self) -> None:
         """
@@ -584,6 +597,74 @@ def load_config(
         config.playwright_browser = os.getenv("PLAYWRIGHT_BROWSER", "chromium")
     elif "playwright_browser" in yaml_config:
         config.playwright_browser = yaml_config["playwright_browser"]
+
+    # Chat mode configuration (env vars > YAML > defaults)
+    # Chat uses Azure OpenAI exclusively with a separate model/deployment
+    if os.getenv("CHAT_MODEL"):
+        config.chat_model = os.getenv("CHAT_MODEL", "gpt-4.1-mini")
+    elif yaml_config.get("chat", {}).get("model"):
+        config.chat_model = yaml_config["chat"]["model"]
+
+    if os.getenv("CHAT_AZURE_ENDPOINT"):
+        config.chat_azure_endpoint = os.getenv("CHAT_AZURE_ENDPOINT", "")
+    elif yaml_config.get("chat", {}).get("azure_endpoint"):
+        config.chat_azure_endpoint = yaml_config["chat"]["azure_endpoint"]
+    # Fall back to main Azure endpoint if chat-specific not set
+    if not config.chat_azure_endpoint:
+        config.chat_azure_endpoint = config.azure_endpoint
+
+    if os.getenv("CHAT_AZURE_API_KEY"):
+        config.chat_azure_api_key = os.getenv("CHAT_AZURE_API_KEY", "")
+    elif yaml_config.get("chat", {}).get("azure_api_key"):
+        config.chat_azure_api_key = yaml_config["chat"]["azure_api_key"]
+    # Fall back to main Azure API key if chat-specific not set
+    if not config.chat_azure_api_key:
+        config.chat_azure_api_key = config.azure_api_key
+
+    if os.getenv("CHAT_AZURE_DEPLOYMENT"):
+        config.chat_azure_deployment = os.getenv("CHAT_AZURE_DEPLOYMENT", "")
+    elif yaml_config.get("chat", {}).get("azure_deployment"):
+        config.chat_azure_deployment = yaml_config["chat"]["azure_deployment"]
+    # Fall back to chat_model if deployment not set
+    if not config.chat_azure_deployment:
+        config.chat_azure_deployment = config.chat_model
+
+    # Chat session configuration (env vars > YAML > defaults)
+    chat_yaml = yaml_config.get("chat", {})
+
+    if os.getenv("CHAT_MAX_HISTORY_MESSAGES"):
+        config.chat_max_history_messages = int(os.getenv("CHAT_MAX_HISTORY_MESSAGES", "50"))
+    elif "max_history_messages" in chat_yaml:
+        config.chat_max_history_messages = int(chat_yaml["max_history_messages"])
+
+    if os.getenv("CHAT_MAX_CONTEXT_TOKENS"):
+        config.chat_max_context_tokens = int(os.getenv("CHAT_MAX_CONTEXT_TOKENS", "100000"))
+    elif "max_context_tokens" in chat_yaml:
+        config.chat_max_context_tokens = int(chat_yaml["max_context_tokens"])
+
+    if os.getenv("CHAT_AUTO_SAVE"):
+        config.chat_auto_save = os.getenv("CHAT_AUTO_SAVE", "").lower() in ("true", "1", "yes")
+    elif "auto_save" in chat_yaml:
+        config.chat_auto_save = bool(chat_yaml["auto_save"])
+
+    if os.getenv("CHAT_SAVE_PATH"):
+        config.chat_save_path = os.getenv("CHAT_SAVE_PATH", ".chat-history.json")
+    elif "save_path" in chat_yaml:
+        config.chat_save_path = chat_yaml["save_path"]
+
+    if os.getenv("CHAT_STREAMING"):
+        config.chat_streaming = os.getenv("CHAT_STREAMING", "").lower() in ("true", "1", "yes")
+    elif "streaming" in chat_yaml:
+        config.chat_streaming = bool(chat_yaml["streaming"])
+
+    if os.getenv("CHAT_CONFIRM_TOOLS"):
+        config.chat_confirm_tools = os.getenv("CHAT_CONFIRM_TOOLS", "").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+    elif "confirm_tools" in chat_yaml:
+        config.chat_confirm_tools = bool(chat_yaml["confirm_tools"])
 
     logger.debug(
         "Loaded config: provider=%s, model=%s, out_folder=%s",

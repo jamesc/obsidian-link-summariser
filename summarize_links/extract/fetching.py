@@ -9,11 +9,9 @@ This module handles fetching content from URLs with:
 """
 
 import logging
-import re
 from urllib.parse import urlparse
 
 import requests
-from bs4 import BeautifulSoup
 from tenacity import (
     RetryCallState,
     retry,
@@ -186,10 +184,14 @@ def _is_javascript_required(html: str) -> bool:
     body_content = html[body_content_start:body_end]
 
     # Remove script and style tags from body content
-    soup = BeautifulSoup(body_content, "lxml")
-    for tag in soup(["script", "style"]):
-        tag.decompose()
-    body_no_scripts = str(soup)
+    import re
+
+    body_no_scripts = re.sub(
+        r"<script[^>]*>.*?</script>", "", body_content, flags=re.IGNORECASE | re.DOTALL
+    )
+    body_no_scripts = re.sub(
+        r"<style[^>]*>.*?</style>", "", body_no_scripts, flags=re.IGNORECASE | re.DOTALL
+    )
 
     # Remove HTML tags and check remaining text length
     text_only = re.sub(r"<[^>]+>", "", body_no_scripts)

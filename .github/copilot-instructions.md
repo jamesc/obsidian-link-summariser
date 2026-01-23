@@ -229,7 +229,7 @@ def test_summarize_url_success(mock_client):
 ### Running Tests
 
 ```bash
-# All tests
+# All unit tests (excludes integration tests by default)
 uv run pytest
 
 # Specific test file
@@ -243,7 +243,26 @@ uv run pytest --cov=summarize_links
 
 # Verbose output
 uv run pytest -v
+
+# Integration tests (require real API credentials)
+# These tests run against the actual Azure OpenAI Responses API
+uv run pytest -m integration -v
+
+# All tests including integration tests
+uv run pytest --ignore-glob='*_integration.py' -v && uv run pytest -m integration -v
 ```
+
+### Integration Tests
+
+Integration tests for the Azure OpenAI Responses API are located in:
+- `tests/test_azure_responses_api_integration.py` - Low-level API client tests
+- `tests/test_chat_engine_integration.py` - ChatEngine workflow tests
+
+**Required environment variables for integration tests:**
+- `CHAT_AZURE_API_KEY` or `AZURE_API_KEY`
+- `CHAT_AZURE_ENDPOINT` or `AZURE_ENDPOINT`
+- `CHAT_MODEL` (optional, defaults to gpt-4.1-mini)
+- `CHAT_AZURE_DEPLOYMENT` (optional)
 
 ## Configuration
 

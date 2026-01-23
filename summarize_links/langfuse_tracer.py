@@ -35,6 +35,16 @@ This comprehensive data capture enables:
 - Quality monitoring and regression detection
 - Debugging failed or low-quality responses
 - A/B testing of prompts, models, and parameters
+
+## Session-Level Tracing for Conversations
+
+For multi-turn conversations (e.g., chat CLI), we use Langfuse Sessions:
+- Each conversation gets a unique `session_id`
+- Each user message creates a separate trace within the session
+- All traces in a session are grouped in the Langfuse UI
+- Enables conversation replay and per-session metrics
+
+See: https://langfuse.com/docs/observability/features/sessions
 """
 
 import logging
@@ -89,6 +99,25 @@ class MockLangfuseTracer:
     ) -> Generator[None, None, None]:
         """No-op generation - yields None."""
         yield None
+
+    @contextmanager
+    def trace_message(
+        self,
+        session_id: str,
+        message_number: int,
+        user_input: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> Generator[None, None, None]:
+        """No-op message trace - yields None."""
+        yield None
+
+    def update_trace_output(
+        self,
+        output: Any,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """No-op update trace output."""
+        pass
 
     def score_trace(
         self,
@@ -283,6 +312,97 @@ class LangfuseTracer:
             # Log the error but re-raise to allow proper exception handling
             logger.warning(f"Langfuse trace_generation encountered error: {e}")
             raise
+
+    @contextmanager
+    def trace_message(
+        self,
+        session_id: str,
+        message_number: int,
+        user_input: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> Generator[Any, None, None]:
+        """
+        Create a trace for a single conversation turn with session context.
+
+        This method creates a root-level trace for a single message in a conversation,
+        with session_id, name, and input/output properly set at the trace level for
+        visibility in the Langfuse session view.
+
+        The session_id links multiple traces (message turns) together, enabling:
+        - Session replay in Langfuse UI showing full conversation
+        - Per-session metrics aggregation (cost, latency, tokens)
+        - Session-level scoring and evaluation
+
+        Args:
+            session_id: Unique identifier for the conversation session.
+            message_number: The sequence number of this message in the conversation.
+            user_input: The user's message text.
+            metadata: Additional metadata to attach to the trace.
+
+        Yields:
+            The root span object for this message turn.
+            All nested trace_generation/trace_span calls become children.
+        """
+        trace_metadata = {
+            "message_number": message_number,
+            "timestamp": datetime.now().isoformat(),
+            **(metadata or {}),
+        }
+
+        try:
+            # Create trace name with session prefix for visual linking in Langfuse UI
+            # Format: "chat-{session_prefix}#{msg_num}" e.g., "chat-a1b2c3d4#3"
+            session_prefix = session_id[:8] if len(session_id) >= 8 else session_id
+            trace_name = f"chat-{session_prefix}#{message_number}"
+
+            # Create a root-level span that will become the trace
+            with self._client.start_as_current_observation(
+                as_type="span",
+                name=trace_name,
+                input={"user_message": user_input},
+                metadata=trace_metadata,
+            ) as trace:
+                # Update the trace with session_id, name, and input at the trace level
+                # This ensures the session view shows proper names and input/output
+                self._client.update_current_trace(
+                    session_id=session_id,
+                    name=trace_name,
+                    input={"user_message": user_input},
+                    metadata=trace_metadata,
+                )
+                yield trace
+        except Exception as e:
+            logger.warning(f"Langfuse trace_message encountered error: {e}")
+            raise
+        finally:
+            # Flush to ensure trace is sent
+            try:
+                self._client.flush()
+            except Exception as flush_error:
+                logger.debug(f"Failed to flush Langfuse client: {flush_error}")
+
+    def update_trace_output(
+        self,
+        output: Any,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """
+        Update the current trace with output data.
+
+        This should be called at the end of a trace_message context to ensure
+        the trace-level output is visible in the Langfuse session view.
+
+        Args:
+            output: Output data for the trace (typically the assistant response).
+            metadata: Additional metadata to attach to the trace.
+        """
+        try:
+            update_kwargs: dict[str, Any] = {"output": output}
+            if metadata:
+                update_kwargs["metadata"] = metadata
+            self._client.update_current_trace(**update_kwargs)
+        except Exception as e:
+            logger.debug(f"Failed to update trace output: {e}")
 
     def score_trace(
         self,

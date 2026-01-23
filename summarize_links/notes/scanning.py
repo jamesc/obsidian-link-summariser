@@ -36,6 +36,7 @@ class SummaryStats(TypedDict):
     newest_date: str | None
     error_summaries: list[tuple[str, str]]
     mocked_summaries: list[tuple[str, str]]
+    unknown_summaries: list[tuple[str, str | None, str | None]]  # (filename, status, source)
 
 
 def scan_summaries(
@@ -79,6 +80,7 @@ def scan_summaries(
             "newest_date": None,
             "error_summaries": [],
             "mocked_summaries": [],
+            "unknown_summaries": [],
         }
 
     total = 0
@@ -88,6 +90,7 @@ def scan_summaries(
     unknown_count = 0
     error_summaries: list[tuple[str, str]] = []
     mocked_summaries: list[tuple[str, str]] = []
+    unknown_summaries: list[tuple[str, str | None, str | None]] = []  # (filename, status, source)
     dates: list[str] = []
 
     # Scan all markdown files
@@ -117,11 +120,14 @@ def scan_summaries(
                 error_summaries.append((filepath.name, reason))
             else:
                 unknown_count += 1
+                source = _extract_frontmatter_field(content, "source")
+                unknown_summaries.append((filepath.name, status, source))
                 logger.debug(f"Unknown status for {filepath.name}: {status}")
 
         except OSError as e:
             logger.warning(f"Failed to read summary {filepath}: {e}")
             unknown_count += 1
+            unknown_summaries.append((filepath.name, None, None))
 
     # Determine date range
     oldest_date = min(dates) if dates else None
@@ -143,6 +149,7 @@ def scan_summaries(
         "newest_date": newest_date,
         "error_summaries": error_summaries,
         "mocked_summaries": mocked_summaries,
+        "unknown_summaries": unknown_summaries,
     }
 
 

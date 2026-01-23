@@ -45,7 +45,7 @@ def mock_langfuse_globally(monkeypatch: pytest.MonkeyPatch, request: pytest.Fixt
     mock_lf = Mock()
     mock_lf.auth_check.return_value = True
 
-    # Create a chat prompt mock with proper structure
+    # Create a chat prompt mock with proper structure for summarization
     mock_chat_prompt = Mock()
     mock_chat_prompt.prompt = [
         {
@@ -72,7 +72,36 @@ def mock_langfuse_globally(monkeypatch: pytest.MonkeyPatch, request: pytest.Fixt
             {"role": "user", "content": "compiled user prompt"},
         ]
     )
-    mock_lf.get_prompt.return_value = mock_chat_prompt
+
+    # Create a text prompt mock for chat system prompt
+    mock_text_prompt = Mock()
+    mock_text_prompt.prompt = (
+        "You are a helpful assistant for managing an Obsidian vault.\n"
+        "Today is {{current_date}} ({{current_weekday}}).\n"
+        "Vault: {{vault_path}}\n"
+        "Model: {{model}}\n"
+        "Provider: {{provider}}"
+    )
+    mock_text_prompt.version = 1
+    mock_text_prompt.name = "chat-assistant/system"
+    # compile() returns a simple string with variables substituted
+    mock_text_prompt.compile = Mock(
+        return_value=(
+            "You are a helpful assistant for managing an Obsidian vault.\n"
+            "Today is 2026-01-23 (Friday).\n"
+            "Vault: /test/vault\n"
+            "Model: gpt-4o-mini\n"
+            "Provider: azure"
+        )
+    )
+
+    # Mock get_prompt to return different mocks based on prompt name
+    def get_prompt_mock(name: str, **kwargs: Any) -> Mock:
+        if name == "chat-assistant/system":
+            return mock_text_prompt
+        return mock_chat_prompt
+
+    mock_lf.get_prompt = Mock(side_effect=get_prompt_mock)
 
     mock_lf.start_as_current_observation.return_value.__enter__ = Mock(return_value=Mock())
     mock_lf.start_as_current_observation.return_value.__exit__ = Mock(return_value=False)

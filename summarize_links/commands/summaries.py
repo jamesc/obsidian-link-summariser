@@ -125,6 +125,31 @@ def cmd_summaries(config: Config) -> int:
         print_message(error_table)
         print_message()
 
+    # Display unknown summaries if any
+    if stats["unknown"] > 0:
+        print_message("[dim]? Unknown Summaries (missing or unrecognized status):[/]")
+        unknown_table = Table(show_header=True)
+        unknown_table.add_column("File", style="cyan")
+        unknown_table.add_column("Status", style="dim")
+        unknown_table.add_column("Source", style="blue")
+
+        for filename, status, source in stats["unknown_summaries"][:10]:  # Show first 10
+            status_display = status if status else "(missing)"
+            source_display = (
+                source[:50] + "..." if source and len(source) > 50 else (source or "(unknown)")
+            )
+            unknown_table.add_row(filename, status_display, source_display)
+
+        if len(stats["unknown_summaries"]) > 10:
+            unknown_table.add_row(
+                f"... and {len(stats['unknown_summaries']) - 10} more",
+                "",
+                "",
+            )
+
+        print_message(unknown_table)
+        print_message()
+
     # Helpful tips
     if stats["mocked"] > 0 or stats["error"] > 0:
         print_message("[bold]Tips:[/]")
