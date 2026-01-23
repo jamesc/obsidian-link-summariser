@@ -33,7 +33,7 @@ Created `LazyClientMixin` base class in `summarize_links/llm/base.py`:
 ```python
 class LazyClientMixin(Generic[T]):
     """Mixin for lazy client initialization."""
-    
+
     _client: T | None
 
     def _get_or_create_client(
@@ -443,22 +443,80 @@ Mock mode was obsolete because:
 
 ## Phase 3: Test Coverage Improvements (High Priority)
 
-### Current Coverage: 83%
+### Current Coverage: 85%
 
-| Module | Coverage | Missing Lines | Priority |
-|--------|----------|--------------|----------|
-| `chat/tui.py` | 43% | 202 lines | HIGH |
-| `chat/tools/summarize.py` | 49% | 128 lines | HIGH |
-| `commands/summaries.py` | 12% | 65 lines | MEDIUM |
-| `llm/azure.py` | 74% | 38 lines | MEDIUM |
-| `extract/fetching.py` | 76% | 24 lines | LOW |
-| `chat/azure_client.py` | 87% | 33 lines | LOW |
+| Module | Coverage | Missing Lines | Priority | Status |
+|--------|----------|--------------|----------|--------|
+| `chat/tui.py` | 74% | 90 lines | HIGH | ✅ **IMPROVED** (+31%) |
+| `chat/tools/summarize.py` | 47% | 128 lines | HIGH | TODO |
+| `commands/summaries.py` | 14% | 54 lines | MEDIUM | TODO |
+| `llm/azure.py` | 74% | 38 lines | MEDIUM | TODO |
+| `extract/fetching.py` | 76% | 24 lines | LOW | TODO |
+| `chat/azure_client.py` | 86% | 33 lines | LOW | TODO |
 
 **Target: 95% coverage**
 
 ---
 
-### 3.1 TUI Test Coverage (Priority: HIGH)
+### ✅ 3.1 TUI Test Coverage (Priority: HIGH) [COMPLETED]
+
+**Date Completed:** 2026-01-23
+**Commit:** To be added
+
+**Previous:** 43% (202 untested lines)
+**Current:** 74% (90 untested lines)
+**Improvement:** +31 percentage points, removed 112 lines from untested
+
+**Tests Added:**
+- Created `tests/test_chat_tui_coverage.py` with 36 new tests
+- History navigation: 2 tests
+- Slash command handling: 11 tests (quit, exit, help, clear, status, save, load, config, unknown commands)
+- Message rendering: 6 tests (user, assistant, error messages, thinking indicators)
+- Streaming messages: 7 tests (start, update, finalize, cancel, progress updates)
+- Status bar updates: 1 test
+- Progress callbacks: 2 tests
+- Tool confirmation: 1 test
+- Keyboard actions: 3 tests
+- Streaming message sending: 2 tests
+
+**Coverage Improvements:**
+- `_handle_slash_command()` - All major branches tested
+- `_add_user_message()`, `_add_assistant_message()`, `_add_error_message()` - Fully tested
+- `_show_thinking()`, `_hide_thinking()`, `_update_thinking_message()` - Fully tested
+- `_start_streaming_message()`, `_update_streaming_message()`, `_finalize_streaming_message()`, `_cancel_streaming_message()` - Fully tested
+- `_update_progress_message()` - All branches tested
+- `_update_status()` - Tested
+- `_tool_confirm_callback()` - Tested
+- `_send_message_streaming()` - Success and error paths tested
+- Action methods (`action_show_help()`, `action_clear_messages()`, `action_save_session()`) - Tested
+
+**Remaining Uncovered Areas (90 lines):**
+- `_send_message()` worker thread method (difficult to test due to @work decorator)
+- `on_mount()` initialization (requires full Textual app context)
+- `handle_input_submitted()` event handler (requires Textual event system)
+- Complex UI interactions requiring full app lifecycle
+- Some edge cases in reactive properties
+
+**Results:**
+- ✅ 36 new tests added
+- ✅ All tests passing
+- ✅ TUI coverage improved from 43% → 74% (+31%)
+- ✅ Overall project coverage at 85%
+- ✅ Comprehensive coverage of slash commands, message rendering, and streaming
+- ✅ Well-documented test file with clear test descriptions
+
+**Testing Approach:**
+- Direct method testing rather than full app pilot testing (simpler, more reliable)
+- Used mocking for Textual widgets and app queries
+- Focused on business logic rather than UI framework internals
+- Avoided testing Textual's reactive properties which require full app context
+
+**Actual Effort:** 4 hours (test creation, debugging, refinement)
+**Risk:** Low (isolated tests, no production code changes) ✓
+
+---
+
+### 3.2 Summarize Tool Test Coverage (Priority: HIGH)
 
 **Current:** 43% (202 untested lines)
 **Target:** 85%+
