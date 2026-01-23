@@ -387,6 +387,7 @@ Content here.
         assert result.data["title"] == "Full Metadata"
         # YAML parsing converts ISO date strings to datetime.date objects
         from datetime import date
+
         assert result.data["date"] == date(2025, 1, 22)
         assert result.data["source"] == "https://example.com"
         assert result.data["tags"] == ["test", "metadata"]
@@ -407,4 +408,3 @@ Content here.
 
         assert result.success is False
         assert "not found" in result.message.lower()
-

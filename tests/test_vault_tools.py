@@ -396,4 +396,3 @@ And some more text here.
 
         assert result.success is False
         assert "title" in result.message.lower()
-

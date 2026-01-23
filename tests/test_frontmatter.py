@@ -326,4 +326,3 @@ Body."""
         # Null value should return None
         author = get_frontmatter_field(content, "author")
         assert author is None
-
