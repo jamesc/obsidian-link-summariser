@@ -18,9 +18,6 @@ from summarize_links.notes import (
 from summarize_links.services.summarization import ProcessOutcome, process_urls
 from summarize_links.ui import print_error, print_message, print_results
 
-# Legacy shim for tests
-process_urls_batch = process_urls
-
 # Module logger
 logger = logging.getLogger(__name__)
 
