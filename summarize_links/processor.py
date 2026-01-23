@@ -1,16 +1,25 @@
 """
 URL processing logic for the Obsidian Link Summarizer.
 
+.. deprecated::
+    This module is deprecated and will be removed in a future version.
+    Use :mod:`summarize_links.services.summarization` instead.
+
 This module handles the core processing logic for URLs including:
 - Single URL processing with metadata extraction
-- Batch processing with progress tracking  - Error handling and retry logic
+- Batch processing with progress tracking
+- Error handling and retry logic
 - Signal handling for graceful shutdown
+
+All functionality has been migrated to the services layer for better
+separation of concerns and reusability across CLI and chat tools.
 """
 
 import contextlib
 import logging
 import re
 import signal
+import warnings
 from datetime import datetime
 from typing import Any
 
@@ -89,6 +98,10 @@ def process_url_with_metadata(
     """
     Process a single URL with full metadata extraction and enriched frontmatter.
 
+    .. deprecated::
+        Use :func:`summarize_links.services.summarization.process_url` instead.
+        This function will be removed in a future version.
+
     This version uses the new metadata pipeline to generate rich frontmatter
     including author, tags from multiple sources, and content type.
 
@@ -106,6 +119,12 @@ def process_url_with_metadata(
         should_delete_source is True only when a new summary was created
         (not skipped, not dry-run, not error).
     """
+    warnings.warn(
+        "process_url_with_metadata is deprecated. "
+        "Use summarize_links.services.summarization.process_url() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     # Get tracer and propagate_attributes for Langfuse tracing
     from summarize_links.langfuse_tracer import get_tracer, propagate_attributes
 
@@ -553,6 +572,10 @@ def process_urls_batch(
     """
     Process a batch of URLs with full metadata extraction.
 
+    .. deprecated::
+        Use :func:`summarize_links.services.summarization.process_urls` instead.
+        This function will be removed in a future version.
+
     Supports graceful shutdown - if Ctrl+C is pressed, finishes the current URL
     and reports partial results.
 
@@ -567,6 +590,12 @@ def process_urls_batch(
     Returns:
         Tuple of (exit_code, results).
     """
+    warnings.warn(
+        "process_urls_batch is deprecated. "
+        "Use summarize_links.services.summarization.process_urls() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     global _shutdown_requested
 
     # Reset shutdown flag at the start of each batch so that multiple invocations
@@ -714,6 +743,11 @@ def process_resummarize_batch(
     """
     Process a batch of URLs for resummarization.
 
+    .. deprecated::
+        Use :func:`summarize_links.services.summarization.resummarize` instead.
+        This function will be removed in a future version. Note that the new
+        function processes URLs individually rather than in batches.
+
     Similar to process_urls_batch but preserves original dates
     and source notes, and doesn't attempt to remove URLs from daily notes.
 
@@ -726,6 +760,13 @@ def process_resummarize_batch(
     Returns:
         Tuple of (exit_code, results).
     """
+    warnings.warn(
+        "process_resummarize_batch is deprecated. "
+        "Use summarize_links.services.summarization.resummarize() instead for single URLs, "
+        "or call it in a loop for batch processing.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     global _shutdown_requested
 
     # Reset shutdown flag at the start of each batch so that a previous

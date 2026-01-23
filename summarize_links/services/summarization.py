@@ -359,7 +359,7 @@ def _write_summary_and_link(
         Tuple of (summary_path, final_tags).
     """
     assert config.vault_path is not None, "vault_path must be set"
-    
+
     summary_status = "success"
     final_tags = merge_tags(
         user_tags=url_ctx.tags or [],

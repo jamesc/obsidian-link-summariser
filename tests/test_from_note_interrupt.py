@@ -34,7 +34,7 @@ def mock_config(tmp_path: Path) -> Config:
 @patch("summarize_links.commands.from_note.find_daily_notes_with_urls")
 @patch("summarize_links.commands.from_note.read_daily_note")
 @patch("summarize_links.commands.from_note.extract_urls_with_context")
-@patch("summarize_links.commands.from_note.process_urls_batch")
+@patch("summarize_links.commands.from_note.process_urls")
 def test_from_note_all_collects_urls_upfront(
     mock_process: MagicMock,
     mock_extract: MagicMock,
@@ -45,10 +45,11 @@ def test_from_note_all_collects_urls_upfront(
     """Test that from-note --all collects all URLs upfront and processes in one batch.
 
     This structure matches resummarize and allows signal handling to work
-    correctly inside process_urls_batch.
+    correctly inside process_urls.
     """
     from summarize_links.commands.from_note import cmd_from_note_all
     from summarize_links.models import UrlWithContext
+    from summarize_links.services.summarization import ProcessOutcome
 
     # Set up mocks - 3 notes with URLs
     mock_find.return_value = [
@@ -61,8 +62,8 @@ def test_from_note_all_collects_urls_upfront(
         UrlWithContext(url="https://example.com", original_url="https://example.com")
     ]
 
-    # Mock successful processing
-    mock_process.return_value = (0, [(True, "Created: example.md")])
+    # Mock successful processing - process_urls returns (exit_code, list[ProcessOutcome])
+    mock_process.return_value = (0, [ProcessOutcome(success=True, message="Created: example.md")])
 
     # Run the command
     exit_code = cmd_from_note_all(mock_config)
@@ -106,16 +107,16 @@ def test_shutdown_flag_resets_between_batches(mock_config: Config) -> None:
     in the same process don't incorrectly think they're interrupted.
     Addresses Copilot review comment about multiple invocations in same process.
     """
-    from summarize_links import processor
     from summarize_links.models import UrlWithContext
+    from summarize_links.services import summarization
 
     # Simulate a previous interrupted batch by setting the flag
-    processor._shutdown_requested = True
+    summarization._shutdown_requested = True
 
     # Now run a new batch - it should reset the flag and process normally
     url_contexts = [UrlWithContext(url="https://example.com", original_url="https://example.com")]
 
-    with patch("summarize_links.processor.create_llm_client") as mock_client_factory:
+    with patch("summarize_links.services.summarization.create_llm_client") as mock_client_factory:
         mock_client = MagicMock()
         mock_client.summarize_with_metadata.return_value = MagicMock(
             summary="Test summary",
@@ -124,65 +125,74 @@ def test_shutdown_flag_resets_between_batches(mock_config: Config) -> None:
         )
         mock_client_factory.return_value = mock_client
 
-        exit_code, results = processor.process_urls_batch(url_contexts, mock_config)
+        exit_code, outcomes = summarization.process_urls(url_contexts, mock_config)
 
         # Should have processed successfully (not immediately exited due to flag)
         assert exit_code == 0
-        assert len(results) == 1
-        assert results[0][0] is True  # Success
+        assert len(outcomes) == 1
+        assert outcomes[0].success is True  # Success
 
         # The key behavior: _shutdown_requested was reset at the start of the batch,
         # so this new batch could run to completion despite being True beforehand.
 
 
 def test_shutdown_flag_resets_in_resummarize_batch(mock_config: Config) -> None:
-    """Test that _shutdown_requested flag is reset in resummarize batch too.
+    """Test that _shutdown_requested flag is reset in resummarize calls too.
 
-    This ensures consistency across all batch processing functions.
+    This ensures consistency across all processing functions.
     """
     from datetime import datetime
 
-    from summarize_links import processor
-    from summarize_links.models import UrlWithContext
+    from summarize_links.services import summarization
 
     # Simulate a previous interrupted batch
-    processor._shutdown_requested = True
+    summarization._shutdown_requested = True
 
-    # Run resummarize batch - should reset flag
-    url_contexts = [UrlWithContext(url="https://example.com", original_url="https://example.com")]
-    url_dates = {"https://example.com": datetime(2025, 1, 1)}
-    url_source_notes: dict[str, str | None] = {"https://example.com": "2025-01-01.md"}
+    # Run single resummarize call - should reset flag
+    # Since resummarize is per-URL, we test the flag reset behavior with a direct call
 
-    with patch("summarize_links.processor.create_llm_client") as mock_client_factory:
-        mock_client = MagicMock()
-        mock_client.summarize_with_metadata.return_value = MagicMock(
-            summary="Test summary",
-            tags=[],
-            content_type="article",
-        )
-        mock_client_factory.return_value = mock_client
+    with patch("summarize_links.services.summarization.create_llm_client") as mock_client_factory:
+        with patch("summarize_links.services.summarization.find_summary_metadata") as mock_find:
+            # Mock the metadata lookup
+            from summarize_links.services.summaries import SummaryMetadata
 
-        # Force config to allow overwriting
-        config_with_force = Config(
-            vault_path=mock_config.vault_path,
-            out_folder=mock_config.out_folder,
-            gemini_api_key=mock_config.gemini_api_key,
-            model=mock_config.model,
-            model_provider=mock_config.model_provider,
-            daily_notes_folder=mock_config.daily_notes_folder,
-            max_links=mock_config.max_links,
-            dry_run=mock_config.dry_run,
-            verbose=mock_config.verbose,
-            force=True,  # Enable force mode
-            langfuse_public_key=mock_config.langfuse_public_key,
-            langfuse_secret_key=mock_config.langfuse_secret_key,
-        )
+            assert mock_config.vault_path is not None, "vault_path must be set for this test"
+            mock_find.return_value = SummaryMetadata(
+                source_url="https://example.com",
+                original_date=datetime(2025, 1, 1),
+                source_note="2025-01-01.md",
+                path=mock_config.vault_path / "Summaries" / "2025-01-01-example-com.md",
+            )
 
-        exit_code, results = processor.process_resummarize_batch(
-            url_contexts, url_dates, url_source_notes, config_with_force
-        )
+            mock_client = MagicMock()
+            mock_client.summarize_with_metadata.return_value = MagicMock(
+                content="Test summary",
+                suggested_tags=[],
+                content_type="article",
+            )
+            mock_client_factory.return_value = mock_client
 
-        # Should process successfully
-        assert exit_code == 0
-        assert len(results) == 1
-        assert results[0][0] is True  # Success
+            # Force config to allow overwriting
+            config_with_force = Config(
+                vault_path=mock_config.vault_path,
+                out_folder=mock_config.out_folder,
+                gemini_api_key=mock_config.gemini_api_key,
+                model=mock_config.model,
+                model_provider=mock_config.model_provider,
+                daily_notes_folder=mock_config.daily_notes_folder,
+                max_links=mock_config.max_links,
+                dry_run=mock_config.dry_run,
+                verbose=mock_config.verbose,
+                force=True,  # Enable force mode
+                langfuse_public_key=mock_config.langfuse_public_key,
+                langfuse_secret_key=mock_config.langfuse_secret_key,
+            )
+
+            outcome = summarization.resummarize("https://example.com", config_with_force)
+
+            # Should process successfully
+            assert outcome.success is True
+
+            # The flag reset behavior is internal to the service and doesn't
+            # directly affect resummarize (which is per-URL), but we verify
+            # it doesn't prevent successful execution

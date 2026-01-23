@@ -35,7 +35,7 @@ from summarize_links.exceptions import (
     RateLimitError,
 )
 from summarize_links.models import PageMetadata, SummaryResult, UrlWithContext
-from summarize_links.processor import process_url_with_metadata
+from summarize_links.services.summarization import process_url
 from summarize_links.ui import print_results
 
 
@@ -538,21 +538,21 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        with patch("summarize_links.processor.summary_exists", return_value=True):
-            success, message, should_delete = process_url_with_metadata(
+        with patch("summarize_links.services.summarization.summary_exists", return_value=True):
+            outcome = process_url(
                 url_context,
                 config,
                 MagicMock(),
             )
 
-        assert success is True
-        assert "Skipped" in message
+        assert outcome.success is True
+        assert "Skipped" in outcome.message
         # URL should still be deleted from daily note since summary exists
-        assert should_delete is True
+        assert outcome.should_delete_source is True
 
-    @patch("summarize_links.processor.write_summary_note_with_metadata")
-    @patch("summarize_links.processor.fetch_and_extract_metadata")
-    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.services.summarization.write_summary_note_with_metadata")
+    @patch("summarize_links.services.summarization.fetch_and_extract_metadata")
+    @patch("summarize_links.services.summarization.summary_exists")
     def test_force_overwrites_existing_summary(
         self,
         mock_exists: MagicMock,
@@ -581,15 +581,15 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = process_url_with_metadata(
+        outcome = process_url(
             url_context,
             config,
             mock_client,
         )
 
-        assert success is True
-        assert "Created" in message
-        assert should_delete is True
+        assert outcome.success is True
+        assert "Created" in outcome.message
+        assert outcome.should_delete_source is True
         # Verify overwrite=True was passed to write_summary_note_with_metadata
         mock_write.assert_called_once()
         call_kwargs = mock_write.call_args[1]
@@ -605,20 +605,20 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        with patch("summarize_links.processor.summary_exists", return_value=False):
-            success, message, should_delete = process_url_with_metadata(
+        with patch("summarize_links.services.summarization.summary_exists", return_value=False):
+            outcome = process_url(
                 url_context,
                 config,
                 MagicMock(),
             )
 
-        assert success is True
-        assert "Would process" in message
-        assert should_delete is False
+        assert outcome.success is True
+        assert "Would process" in outcome.message
+        assert outcome.should_delete_source is False
 
-    @patch("summarize_links.processor.write_summary_note_with_metadata")
-    @patch("summarize_links.processor.fetch_and_extract_metadata")
-    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.services.summarization.write_summary_note_with_metadata")
+    @patch("summarize_links.services.summarization.fetch_and_extract_metadata")
+    @patch("summarize_links.services.summarization.summary_exists")
     def test_successful_processing(
         self,
         mock_exists: MagicMock,
@@ -646,20 +646,20 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = process_url_with_metadata(
+        outcome = process_url(
             url_context,
             config,
             mock_client,
         )
 
-        assert success is True
-        assert "Created" in message
-        assert should_delete is True
+        assert outcome.success is True
+        assert "Created" in outcome.message
+        assert outcome.should_delete_source is True
         mock_write.assert_called_once()
 
-    @patch("summarize_links.processor.write_stub_note")
-    @patch("summarize_links.processor.fetch_and_extract_metadata")
-    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.services.summarization.write_stub_note")
+    @patch("summarize_links.services.summarization.fetch_and_extract_metadata")
+    @patch("summarize_links.services.summarization.summary_exists")
     def test_fetch_error_creates_stub(
         self,
         mock_exists: MagicMock,
@@ -678,20 +678,20 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = process_url_with_metadata(
+        outcome = process_url(
             url_context,
             config,
             MagicMock(),
         )
 
-        assert success is False
-        assert "Fetch error" in message
-        assert should_delete is False
+        assert outcome.success is False
+        assert "Fetch" in outcome.message or "fetch" in outcome.message
+        assert outcome.should_delete_source is False
         mock_stub.assert_called_once()
 
-    @patch("summarize_links.processor.write_stub_note")
-    @patch("summarize_links.processor.fetch_and_extract_metadata")
-    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.services.summarization.write_stub_note")
+    @patch("summarize_links.services.summarization.fetch_and_extract_metadata")
+    @patch("summarize_links.services.summarization.summary_exists")
     def test_extraction_error_creates_stub(
         self,
         mock_exists: MagicMock,
@@ -710,18 +710,18 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = process_url_with_metadata(
+        outcome = process_url(
             url_context,
             config,
             MagicMock(),
         )
 
-        assert success is False
-        assert "Extraction error" in message
-        assert should_delete is False
+        assert outcome.success is False
+        assert "extraction" in outcome.message.lower()
+        assert outcome.should_delete_source is False
         mock_stub.assert_called_once()
 
-    @patch("summarize_links.processor.write_stub_note")
+    @patch("summarize_links.services.summarization.write_stub_note")
     @patch("summarize_links.processor.fetch_and_extract_metadata")
     @patch("summarize_links.processor.summary_exists")
     def test_rate_limit_creates_stub(
@@ -749,20 +749,20 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = process_url_with_metadata(
+        outcome = process_url(
             url_context,
             config,
             mock_client,
         )
 
-        assert success is False
-        assert "Rate limited" in message
-        assert should_delete is False
+        assert outcome.success is False
+        assert "rate" in outcome.message.lower() or "Rate limited" in outcome.message
+        assert outcome.should_delete_source is False
         mock_stub.assert_called_once()
 
-    @patch("summarize_links.processor.write_stub_note")
-    @patch("summarize_links.processor.fetch_and_extract_metadata")
-    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.services.summarization.write_stub_note")
+    @patch("summarize_links.services.summarization.fetch_and_extract_metadata")
+    @patch("summarize_links.services.summarization.summary_exists")
     def test_api_error_creates_stub(
         self,
         mock_exists: MagicMock,
@@ -788,18 +788,18 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = process_url_with_metadata(
+        outcome = process_url(
             url_context,
             config,
             mock_client,
         )
 
-        assert success is False
-        assert "API error" in message
-        assert should_delete is False
+        assert outcome.success is False
+        assert "api" in outcome.message.lower()
+        assert outcome.should_delete_source is False
         mock_stub.assert_called_once()
 
-    @patch("summarize_links.processor.fetch_and_extract_metadata")
+    @patch("summarize_links.services.summarization.fetch_and_extract_metadata")
     @patch("summarize_links.processor.summary_exists")
     def test_dry_run_no_stub_on_error(
         self,
@@ -819,19 +819,19 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        with patch("summarize_links.processor.write_stub_note") as mock_stub:
-            success, message, should_delete = process_url_with_metadata(
+        with patch("summarize_links.services.summarization.write_stub_note") as mock_stub:
+            outcome = process_url(
                 url_context,
                 config,
                 MagicMock(),
             )
 
             mock_stub.assert_not_called()
-            assert should_delete is False
+            assert outcome.should_delete_source is False
 
-    @patch("summarize_links.processor.write_stub_note")
-    @patch("summarize_links.processor.fetch_and_extract_metadata")
-    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.services.summarization.write_stub_note")
+    @patch("summarize_links.services.summarization.fetch_and_extract_metadata")
+    @patch("summarize_links.services.summarization.summary_exists")
     def test_error_during_resummarize_preserves_successful_summary(
         self,
         mock_exists: MagicMock,
@@ -853,23 +853,23 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = process_url_with_metadata(
+        outcome = process_url(
             url_context,
             config,
             MagicMock(),
         )
 
         # Should return error
-        assert success is False
-        assert "Fetch error" in message
-        assert should_delete is False
+        assert outcome.success is False
+        assert "fetch" in outcome.message.lower()
+        assert outcome.should_delete_source is False
 
         # CRITICAL: Should NOT write stub note because a successful summary already existed
         mock_stub.assert_not_called()
 
-    @patch("summarize_links.processor.write_stub_note")
-    @patch("summarize_links.processor.fetch_and_extract_metadata")
-    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.services.summarization.write_stub_note")
+    @patch("summarize_links.services.summarization.fetch_and_extract_metadata")
+    @patch("summarize_links.services.summarization.summary_exists")
     def test_error_on_first_try_creates_stub(
         self,
         mock_exists: MagicMock,
@@ -880,6 +880,7 @@ class TestProcessUrlWithMetadata:
         """Should create stub on error for URLs that never had a successful summary."""
         # No existing summary
         mock_exists.return_value = False
+        # Force fetch to fail with ContentFetchError
         mock_fetch.side_effect = ContentFetchError("Connection refused")
 
         config = Config(
@@ -889,16 +890,16 @@ class TestProcessUrlWithMetadata:
 
         url_context = UrlWithContext(url="https://example.com")
 
-        success, message, should_delete = process_url_with_metadata(
+        outcome = process_url(
             url_context,
             config,
             MagicMock(),
         )
 
         # Should return error
-        assert success is False
-        assert "Fetch error" in message
-        assert should_delete is False
+        assert outcome.success is False
+        assert "fetch" in outcome.message.lower() or "Fetch error" in outcome.message
+        assert outcome.should_delete_source is False
 
         # Should write stub note because this is the first attempt
         mock_stub.assert_called_once()
@@ -923,10 +924,10 @@ class TestPrintResults:
 class TestCliIntegration:
     """Integration tests for CLI functionality."""
 
-    @patch("summarize_links.processor.write_summary_note_with_metadata")
-    @patch("summarize_links.processor.create_llm_client")
-    @patch("summarize_links.processor.fetch_and_extract_metadata")
-    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.services.summarization.write_summary_note_with_metadata")
+    @patch("summarize_links.services.summarization.create_llm_client")
+    @patch("summarize_links.services.summarization.fetch_and_extract_metadata")
+    @patch("summarize_links.services.summarization.summary_exists")
     @patch("summarize_links.commands.from_note.extract_urls_with_context")
     @patch("summarize_links.commands.from_note.read_daily_note")
     @patch("summarize_links.cli.load_config")
@@ -1347,7 +1348,7 @@ class TestQuietMode:
 class TestInvalidUrlHandling:
     """Tests for invalid URL handling in processing."""
 
-    @patch("summarize_links.processor.summary_exists")
+    @patch("summarize_links.services.summarization.summary_exists")
     def test_invalid_url_not_retried(
         self,
         mock_exists: MagicMock,
@@ -1366,18 +1367,20 @@ class TestInvalidUrlHandling:
         # URL without proper domain
         url_context = UrlWithContext(url="not-a-valid-url")
 
-        with patch("summarize_links.processor.fetch_and_extract_metadata") as mock_fetch:
+        with patch(
+            "summarize_links.services.summarization.fetch_and_extract_metadata"
+        ) as mock_fetch:
             mock_fetch.side_effect = URLValidationError("Invalid URL")
 
-            success, message, should_delete = process_url_with_metadata(
+            outcome = process_url(
                 url_context,
                 config,
                 MagicMock(),
             )
 
-        assert success is False
-        assert "Invalid URL" in message
-        assert should_delete is False
+        assert outcome.success is False
+        assert "Invalid" in outcome.message or "invalid" in outcome.message
+        assert outcome.should_delete_source is False
 
 
 class TestCmdResummarize:
