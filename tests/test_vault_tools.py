@@ -10,29 +10,29 @@ from summarize_links.chat.tools.vault import (
     ListSummariesTool,
     ReadSummaryTool,
     SearchVaultTool,
-    _extract_frontmatter,
     _get_body_content,
 )
 from summarize_links.config import Config
+from summarize_links.utils.frontmatter import parse_frontmatter
 
 
 class TestExtractFrontmatter:
-    """Tests for _extract_frontmatter helper function."""
+    """Tests for parse_frontmatter utility function."""
 
     def test_extract_simple_fields(self) -> None:
         """Test extracting simple key-value pairs."""
         content = """---
 title: Test Title
-date: 2025-01-22
+url: https://example.com
 source: https://example.com
 ---
 
 Body content here.
 """
-        result = _extract_frontmatter(content)
+        result = parse_frontmatter(content)
 
         assert result["title"] == "Test Title"
-        assert result["date"] == "2025-01-22"
+        assert result["url"] == "https://example.com"
         assert result["source"] == "https://example.com"
 
     def test_extract_quoted_values(self) -> None:
@@ -44,7 +44,7 @@ from: "[[Daily Note]]"
 
 Body.
 """
-        result = _extract_frontmatter(content)
+        result = parse_frontmatter(content)
 
         assert result["title"] == "Title with: colon"
         assert result["from"] == "[[Daily Note]]"
@@ -61,14 +61,14 @@ tags:
 
 Body.
 """
-        result = _extract_frontmatter(content)
+        result = parse_frontmatter(content)
 
         assert result["tags"] == ["python", "tutorial", "ai"]
 
     def test_no_frontmatter(self) -> None:
         """Test content without frontmatter."""
         content = "Just some content without frontmatter."
-        result = _extract_frontmatter(content)
+        result = parse_frontmatter(content)
 
         assert result == {}
 
@@ -80,7 +80,7 @@ date: 2025-01-22
 
 Body without closing delimiter.
 """
-        result = _extract_frontmatter(content)
+        result = parse_frontmatter(content)
 
         assert result == {}
 
@@ -396,3 +396,4 @@ And some more text here.
 
         assert result.success is False
         assert "title" in result.message.lower()
+

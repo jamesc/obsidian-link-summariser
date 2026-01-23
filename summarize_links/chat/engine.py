@@ -139,7 +139,7 @@ class ChatEngine(LazyClientMixin[AzureChatClient]):
                 model=self.config.chat_model,
                 deployment_name=self.config.chat_azure_deployment,
             ),
-            "AzureChatClient"
+            "AzureChatClient",
         )
 
     def _report_progress(self, stage: str, detail: str) -> None:

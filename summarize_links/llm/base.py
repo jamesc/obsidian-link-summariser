@@ -12,8 +12,9 @@ Used by GeminiClient, AzureClient, and OllamaClient.
 
 import logging
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 if TYPE_CHECKING:
     from summarize_links.models import SummaryResult

@@ -408,7 +408,7 @@ class AzureChatClient(LazyClientMixin[OpenAI]):
                 api_key=self._api_key,
                 base_url=base_url,
             ),
-            "AzureResponses"
+            "AzureResponses",
         )
 
     def _convert_tools_for_responses_api(self, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:

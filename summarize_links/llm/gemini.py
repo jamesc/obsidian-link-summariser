@@ -111,10 +111,7 @@ class GeminiClient(BaseLLMClient, LazyClientMixin[Any]):
         Returns:
             Configured genai.Client instance.
         """
-        return self._get_or_create_client(
-            lambda: genai.Client(api_key=self._api_key),
-            "Gemini"
-        )
+        return self._get_or_create_client(lambda: genai.Client(api_key=self._api_key), "Gemini")
 
     def summarize(self, content: str, url: str, title: str | None = None) -> str:
         """

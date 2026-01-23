@@ -149,7 +149,7 @@ class AzureClient(BaseLLMClient, LazyClientMixin[AzureOpenAI]):
                 api_version=self._api_version,
                 azure_endpoint=self._endpoint,
             ),
-            "AzureOpenAI"
+            "AzureOpenAI",
         )
 
     def summarize(self, content: str, url: str, title: str | None = None) -> str:

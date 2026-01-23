@@ -9,10 +9,11 @@ This module handles:
 """
 
 import logging
-import re
 from datetime import datetime
 from pathlib import Path
 from typing import TypedDict
+
+from summarize_links.utils.frontmatter import get_frontmatter_field
 
 __all__ = [
     "SummaryStats",
@@ -100,9 +101,9 @@ def scan_summaries(
         try:
             content = filepath.read_text(encoding="utf-8")
 
-            # Extract status from frontmatter
-            status = _extract_frontmatter_field(content, "summary_status")
-            date = _extract_frontmatter_field(content, "date")
+            # Extract status from frontmatter using utility function
+            status = get_frontmatter_field(content, "summary_status")
+            date = get_frontmatter_field(content, "date")
 
             if date:
                 dates.append(date)
@@ -120,7 +121,7 @@ def scan_summaries(
                 error_summaries.append((filepath.name, reason))
             else:
                 unknown_count += 1
-                source = _extract_frontmatter_field(content, "source")
+                source = get_frontmatter_field(content, "source")
                 unknown_summaries.append((filepath.name, status, source))
                 logger.debug(f"Unknown status for {filepath.name}: {status}")
 
@@ -186,12 +187,12 @@ def scan_summaries_for_resummarize(
         try:
             content = filepath.read_text(encoding="utf-8")
 
-            # Extract source URL, dates, and source note from frontmatter
-            source_url = _extract_frontmatter_field(content, "source")
-            date_str = _extract_frontmatter_field(content, "date")
-            summary_date_str = _extract_frontmatter_field(content, "summary_date")
-            status = _extract_frontmatter_field(content, "summary_status")
-            from_field = _extract_frontmatter_field(content, "from")
+            # Extract source URL, dates, and source note from frontmatter using utilities
+            source_url = get_frontmatter_field(content, "source")
+            date_str = get_frontmatter_field(content, "date")
+            summary_date_str = get_frontmatter_field(content, "summary_date")
+            status = get_frontmatter_field(content, "summary_status")
+            from_field = get_frontmatter_field(content, "from")
 
             if not source_url or not date_str:
                 logger.debug(f"Skipping {filepath.name}: missing source or date")
@@ -252,41 +253,6 @@ def scan_summaries_for_resummarize(
 
     logger.info(f"Found {len(results)} summaries for resummarization")
     return results
-
-
-def _extract_frontmatter_field(content: str, field: str) -> str | None:
-    """
-    Extract a field value from YAML frontmatter.
-
-    Args:
-        content: Note content with frontmatter.
-        field: Field name to extract.
-
-    Returns:
-        Field value as string, or None if not found.
-    """
-    if not content.startswith("---"):
-        return None
-
-    # Find end of frontmatter
-    end_idx = content.find("---", 3)
-    if end_idx == -1:
-        return None
-
-    frontmatter = content[3:end_idx]
-
-    # Simple field extraction (works for single-line values)
-    # Format: "field: value" or "field: 'value'" or 'field: "value"'
-    pattern = rf"^{re.escape(field)}:\s*(.+)$"
-    match = re.search(pattern, frontmatter, re.MULTILINE)
-
-    if match:
-        value = match.group(1).strip()
-        # Remove quotes if present
-        value = value.strip('"').strip("'")
-        return value
-
-    return None
 
 
 def _extract_error_reason(content: str) -> str:
