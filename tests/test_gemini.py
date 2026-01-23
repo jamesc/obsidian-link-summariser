@@ -1,5 +1,6 @@
 """Tests for the Gemini client module."""
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -21,15 +22,10 @@ from summarize_links.llm.parsing import (
     parse_llm_json_response as _parse_gemini_response,
 )
 from summarize_links.models import SummaryResult
-from summarize_links.rate_limiter import ModelRateLimits, RateLimiter
+from summarize_links.rate_limiter import RateLimiter
 
-
-@pytest.fixture
-def mock_rate_limiter() -> RateLimiter:
-    """Create a rate limiter with high limits for testing."""
-    limits = ModelRateLimits(rpm_limit=1000, tpm_limit=10000000, daily_limit=10000)
-    return RateLimiter(model="test-model", limits=limits, _apply_safety_margin=False)
-
+# Import helper function from conftest
+from tests.conftest import create_mock_gemini_response
 
 # Note: Tests for _build_content_type_list, _get_system_prompt, and _build_prompt
 # were removed as these functions are no longer used. Prompts now come from Langfuse.
@@ -48,9 +44,7 @@ class TestGeminiClient:
     @patch("summarize_links.llm.gemini.genai.Client")
     def test_successful_summarization(self, mock_client_class: MagicMock) -> None:
         """Should return summary on successful API call."""
-        mock_response = MagicMock()
-        mock_response.parts = [MagicMock()]
-        mock_response.text = "Generated summary"
+        mock_response = create_mock_gemini_response("Generated summary", 100, 50)
 
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
@@ -66,11 +60,11 @@ class TestGeminiClient:
         mock_client.models.generate_content.assert_called_once()
 
     @patch("summarize_links.llm.gemini.genai.Client")
-    def test_retry_on_rate_limit(self, mock_client_class: MagicMock) -> None:
+    def test_retry_on_rate_limit(
+        self, mock_client_class: MagicMock, mock_time_functions: tuple[Any, Any]
+    ) -> None:
         """Should retry on rate limit error."""
-        mock_response = MagicMock()
-        mock_response.parts = [MagicMock()]
-        mock_response.text = "Generated summary"
+        mock_response = create_mock_gemini_response("Generated summary", 100, 50)
 
         # Fail twice, then succeed
         # Create a proper ClientError with required parameters
@@ -84,30 +78,16 @@ class TestGeminiClient:
         ]
         mock_client_class.return_value = mock_client
 
-        # Create a mock time that advances when sleep is called
-        current_time = [1000.0]  # Use list to allow mutation in nested function
-
-        def mock_time() -> float:
-            return current_time[0]
-
-        def mock_sleep(seconds: float) -> None:
-            current_time[0] += seconds
-
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
-
-        with (
-            patch("summarize_links.llm.gemini.time.sleep", side_effect=mock_sleep),
-            patch("summarize_links.llm.gemini.time.time", side_effect=mock_time),
-            patch("summarize_links.rate_limiter.time.sleep", side_effect=mock_sleep),
-            patch("summarize_links.rate_limiter.time.time", side_effect=mock_time),
-        ):
-            result = client.summarize("Content", "https://example.com")
+        result = client.summarize("Content", "https://example.com")
 
         assert result == "Generated summary"
         assert mock_client.models.generate_content.call_count == 3
 
     @patch("summarize_links.llm.gemini.genai.Client")
-    def test_rate_limit_error_after_retries(self, mock_client_class: MagicMock) -> None:
+    def test_rate_limit_error_after_retries(
+        self, mock_client_class: MagicMock, mock_time_functions: tuple[Any, Any]
+    ) -> None:
         """Should raise RateLimitError after all retries exhausted."""
         rate_limit_error = errors.ClientError(429, {"error": {"message": "Rate limit exceeded"}})
 
@@ -115,24 +95,9 @@ class TestGeminiClient:
         mock_client.models.generate_content.side_effect = rate_limit_error
         mock_client_class.return_value = mock_client
 
-        # Create a mock time that advances when sleep is called
-        current_time = [1000.0]
-
-        def mock_time() -> float:
-            return current_time[0]
-
-        def mock_sleep(seconds: float) -> None:
-            current_time[0] += seconds
-
         client = GeminiClient(api_key="test-key", rate_limiter=self._rate_limiter)
 
-        with (
-            patch("summarize_links.llm.gemini.time.sleep", side_effect=mock_sleep),
-            patch("summarize_links.llm.gemini.time.time", side_effect=mock_time),
-            patch("summarize_links.rate_limiter.time.sleep", side_effect=mock_sleep),
-            patch("summarize_links.rate_limiter.time.time", side_effect=mock_time),
-            pytest.raises(RateLimitError, match="Rate limit exceeded"),
-        ):
+        with pytest.raises(RateLimitError, match="Rate limit exceeded"):
             client.summarize("Content", "https://example.com")
 
     @patch("summarize_links.llm.gemini.genai.Client")

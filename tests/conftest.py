@@ -16,6 +16,9 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
+from summarize_links.config import Config
+from summarize_links.rate_limiter import RateLimiter
+
 if TYPE_CHECKING:
     from summarize_links.config import Config
 
@@ -434,3 +437,153 @@ def mock_playwright_browser() -> Mock:
     mock_browser.close.return_value = None
 
     return mock_browser
+
+
+@pytest.fixture
+def mock_rate_limiter() -> RateLimiter:
+    """
+    Create a rate limiter with high limits for testing.
+
+    Returns a RateLimiter configured with generous limits that won't
+    interfere with test execution, and safety margin disabled.
+    """
+    from summarize_links.rate_limiter import ModelRateLimits, RateLimiter
+
+    limits = ModelRateLimits(rpm_limit=1000, tpm_limit=10000000, daily_limit=10000)
+    return RateLimiter(model="test-model", limits=limits, _apply_safety_margin=False)
+
+
+@pytest.fixture
+def mock_time_functions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[tuple[Any, Any], None, None]:
+    """
+    Create mock time functions that advance time when sleep is called.
+
+    This is essential for testing rate limiting and retry logic without
+    real delays. The mock time advances whenever sleep() is called.
+
+    Yields:
+        Tuple of (mock_time, mock_sleep) functions.
+    """
+    current_time = [1000.0]  # Use list to allow mutation in nested function
+
+    def mock_time() -> float:
+        return current_time[0]
+
+    def mock_sleep(seconds: float) -> None:
+        current_time[0] += seconds
+
+    # Patch both llm modules and rate_limiter
+    monkeypatch.setattr("summarize_links.llm.azure.time.sleep", mock_sleep)
+    monkeypatch.setattr("summarize_links.llm.azure.time.time", mock_time)
+    monkeypatch.setattr("summarize_links.llm.gemini.time.sleep", mock_sleep)
+    monkeypatch.setattr("summarize_links.llm.gemini.time.time", mock_time)
+    monkeypatch.setattr("summarize_links.rate_limiter.time.sleep", mock_sleep)
+    monkeypatch.setattr("summarize_links.rate_limiter.time.time", mock_time)
+
+    yield mock_time, mock_sleep
+
+
+@pytest.fixture
+def mock_chat_config(tmp_path: Path) -> MagicMock:
+    """
+    Create a mock Config object for chat testing.
+
+    Provides a standard Azure chat configuration suitable for most
+    chat-related tests. Override specific fields as needed in tests.
+    """
+    config = MagicMock(spec=Config)
+    config.model_provider = "azure"
+    config.model = "gpt-4o"
+    config.chat_model = "gpt-4o-mini"
+    config.chat_azure_endpoint = "https://test.openai.azure.com"
+    config.chat_azure_api_key = "test-key"
+    config.chat_azure_deployment = "gpt-4o-mini"
+    config.vault_path = tmp_path / "vault"
+    config.out_folder = "Summaries"
+    config.force = False
+    config.default_tags = None
+    config.model_limits = None
+    # Chat session config
+    config.chat_max_history_messages = 50
+    config.chat_max_context_tokens = 100000
+    config.chat_auto_save = False
+    config.chat_save_path = ".chat-history.json"
+    config.chat_streaming = True
+    config.chat_confirm_tools = False
+    return config
+
+
+def create_mock_azure_response(
+    content: str,
+    prompt_tokens: int = 100,
+    completion_tokens: int = 50,
+    function_call: dict[str, Any] | None = None,
+) -> MagicMock:
+    """
+    Create a mock Azure OpenAI API response.
+
+    Args:
+        content: The response text content
+        prompt_tokens: Number of prompt tokens (default: 100)
+        completion_tokens: Number of completion tokens (default: 50)
+        function_call: Optional function call dict with 'name' and 'arguments'
+
+    Returns:
+        Mock response object matching Azure OpenAI response structure
+    """
+    mock_response = MagicMock()
+    mock_choice = MagicMock()
+    mock_message = MagicMock()
+
+    if function_call:
+        mock_function_call = MagicMock()
+        mock_function_call.name = function_call["name"]
+        mock_function_call.arguments = function_call["arguments"]
+        mock_message.function_call = mock_function_call
+        mock_message.content = None
+    else:
+        mock_message.content = content
+        mock_message.function_call = None
+
+    mock_choice.message = mock_message
+    mock_response.choices = [mock_choice]
+
+    mock_usage = MagicMock()
+    mock_usage.prompt_tokens = prompt_tokens
+    mock_usage.completion_tokens = completion_tokens
+    mock_usage.total_tokens = prompt_tokens + completion_tokens
+    mock_response.usage = mock_usage
+
+    return mock_response
+
+
+def create_mock_gemini_response(
+    text: str,
+    prompt_tokens: int = 100,
+    completion_tokens: int = 50,
+) -> MagicMock:
+    """
+    Create a mock Gemini API response.
+
+    Args:
+        text: The response text content
+        prompt_tokens: Number of prompt tokens (default: 100)
+        completion_tokens: Number of completion tokens (default: 50)
+
+    Returns:
+        Mock response object matching Gemini response structure
+    """
+    mock_response = MagicMock()
+    mock_response.parts = [MagicMock()]
+    mock_response.text = text
+
+    # Mock usage metadata
+    mock_usage = MagicMock()
+    mock_usage.prompt_token_count = prompt_tokens
+    mock_usage.candidates_token_count = completion_tokens
+    mock_usage.total_token_count = prompt_tokens + completion_tokens
+    mock_response.usage_metadata = mock_usage
+
+    return mock_response

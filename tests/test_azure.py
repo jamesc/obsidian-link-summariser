@@ -6,7 +6,6 @@ retry logic, and response parsing.
 """
 
 import json
-from collections.abc import Callable, Generator
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -23,44 +22,10 @@ from summarize_links.exceptions import (
 )
 from summarize_links.llm.azure import AzureClient
 from summarize_links.models import SummaryResult
-from summarize_links.rate_limiter import ModelRateLimits, RateLimiter
+from summarize_links.rate_limiter import RateLimiter
 
-
-@pytest.fixture
-def mock_rate_limiter() -> RateLimiter:
-    """Create a rate limiter with high limits for testing."""
-    limits = ModelRateLimits(rpm_limit=1000, tpm_limit=10000000, daily_limit=10000)
-    return RateLimiter(model="gpt-4", limits=limits, _apply_safety_margin=False)
-
-
-@pytest.fixture
-def mock_time_functions() -> Generator[
-    tuple[Callable[[], float], Callable[[float], None]], None, None
-]:
-    """
-    Create mock time functions that advance time when sleep is called.
-
-    This is essential for testing rate limiting and retry logic without
-    real delays. The mock time advances whenever sleep() is called.
-
-    Yields:
-        Tuple of (mock_time, mock_sleep) functions.
-    """
-    current_time = [1000.0]  # Use list to allow mutation in nested function
-
-    def mock_time() -> float:
-        return current_time[0]
-
-    def mock_sleep(seconds: float) -> None:
-        current_time[0] += seconds
-
-    with (
-        patch("summarize_links.llm.azure.time.sleep", side_effect=mock_sleep),
-        patch("summarize_links.llm.azure.time.time", side_effect=mock_time),
-        patch("summarize_links.rate_limiter.time.sleep", side_effect=mock_sleep),
-        patch("summarize_links.rate_limiter.time.time", side_effect=mock_time),
-    ):
-        yield mock_time, mock_sleep
+# Import helper function from conftest
+from tests.conftest import create_mock_azure_response
 
 
 class TestAzureClientInit:
@@ -146,12 +111,7 @@ class TestAzureClientSummarize:
         mock_time_functions: tuple[Any, Any],
     ) -> None:
         """Should return summary on successful API call."""
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "Generated summary"
-        mock_response.usage.prompt_tokens = 100
-        mock_response.usage.completion_tokens = 50
-        mock_response.usage.total_tokens = 150
+        mock_response = create_mock_azure_response("Generated summary", 100, 50)
 
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = mock_response
@@ -181,12 +141,7 @@ class TestAzureClientSummarize:
         mock_time_functions: tuple[Any, Any],
     ) -> None:
         """Should reuse client across multiple calls."""
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "Summary"
-        mock_response.usage.prompt_tokens = 100
-        mock_response.usage.completion_tokens = 50
-        mock_response.usage.total_tokens = 150
+        mock_response = create_mock_azure_response("Summary", 100, 50)
 
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = mock_response

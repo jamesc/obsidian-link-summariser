@@ -25,25 +25,6 @@ from summarize_links.chat.tui import (
     MessageBubble,
     StatusBar,
 )
-from summarize_links.config import Config
-
-
-@pytest.fixture
-def mock_config() -> MagicMock:
-    """Create a mock configuration."""
-    config = MagicMock(spec=Config)
-    config.chat_azure_api_key = "test-key"
-    config.chat_azure_endpoint = "https://test.openai.azure.com"
-    config.chat_model = "gpt-4"
-    config.chat_azure_deployment = "test-deployment"
-    config.chat_max_history_messages = 10
-    config.chat_max_context_tokens = 100000
-    config.chat_auto_save = False
-    config.chat_save_path = "chat_sessions"
-    config.chat_streaming = False
-    config.chat_confirm_tools = False
-    config.vault_path = "/test/vault"
-    return config
 
 
 @pytest.fixture
@@ -109,9 +90,9 @@ class TestChatInputHistoryNavigation:
 class TestSlashCommandHandling:
     """Test slash command handling in TUI."""
 
-    def test_quit_command_exits(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_quit_command_exits(self, mock_chat_config: MagicMock, mock_engine: MagicMock) -> None:
         """Test /quit command exits the app."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
 
         with patch.object(tui, "query_one", return_value=mock_messages):
@@ -119,9 +100,9 @@ class TestSlashCommandHandling:
                 tui._handle_slash_command("/quit")
                 mock_exit.assert_called_once_with(0)
 
-    def test_exit_command_exits(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_exit_command_exits(self, mock_chat_config: MagicMock, mock_engine: MagicMock) -> None:
         """Test /exit command also exits the app."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
 
         with patch.object(tui, "query_one", return_value=mock_messages):
@@ -129,9 +110,11 @@ class TestSlashCommandHandling:
                 tui._handle_slash_command("/exit")
                 mock_exit.assert_called_once_with(0)
 
-    def test_help_command_shows_help(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_help_command_shows_help(
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
+    ) -> None:
         """Test /help command shows help."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
 
         with patch.object(tui, "query_one", return_value=mock_messages):
@@ -140,10 +123,10 @@ class TestSlashCommandHandling:
                 mock_show_help.assert_called_once()
 
     def test_clear_command_clears_history(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test /clear command clears conversation."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
 
         # Mock the query_one to return a mock messages widget
         mock_messages = MagicMock(spec=ChatMessages)
@@ -156,10 +139,10 @@ class TestSlashCommandHandling:
             mock_engine.clear_history.assert_called_once()
 
     def test_status_command_shows_status(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test /status command displays status information."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
 
         mock_messages = MagicMock(spec=ChatMessages)
 
@@ -172,10 +155,10 @@ class TestSlashCommandHandling:
             mock_messages.add_message.assert_called_once()
 
     def test_save_command_saves_session(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test /save command saves session."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
 
         with patch.object(tui, "query_one", return_value=mock_messages):
@@ -187,11 +170,11 @@ class TestSlashCommandHandling:
             assert mock_messages.add_message.call_count == 1
 
     def test_save_command_handles_error(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test /save command handles errors gracefully."""
         mock_engine.save_session.side_effect = Exception("Save failed")
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
 
         with patch.object(tui, "query_one", return_value=mock_messages):
@@ -203,11 +186,11 @@ class TestSlashCommandHandling:
             assert "error" in str(calls[0]).lower() or "role" in str(calls[0])
 
     def test_load_command_loads_session(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test /load command loads saved session."""
         mock_engine.load_session.return_value = True
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
         mock_messages.children = []
 
@@ -220,10 +203,12 @@ class TestSlashCommandHandling:
                 # Should update status
                 mock_update_status.assert_called_once()
 
-    def test_load_command_no_session(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_load_command_no_session(
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
+    ) -> None:
         """Test /load command when no saved session exists."""
         mock_engine.load_session.return_value = False
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
 
         with patch.object(tui, "query_one", return_value=mock_messages):
@@ -234,11 +219,11 @@ class TestSlashCommandHandling:
             mock_messages.add_message.assert_called_once()
 
     def test_load_command_handles_error(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test /load command handles errors gracefully."""
         mock_engine.load_session.side_effect = Exception("Load failed")
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
 
         with patch.object(tui, "query_one", return_value=mock_messages):
@@ -248,10 +233,10 @@ class TestSlashCommandHandling:
             assert mock_messages.add_message.call_count == 1
 
     def test_config_command_shows_config(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test /config command displays configuration."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
 
         with patch.object(tui, "query_one", return_value=mock_messages):
@@ -261,10 +246,10 @@ class TestSlashCommandHandling:
             mock_messages.add_message.assert_called_once()
 
     def test_unknown_command_shows_error(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test unknown command shows error message."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
 
         with patch.object(tui, "query_one", return_value=mock_messages):
@@ -279,9 +264,9 @@ class TestSlashCommandHandling:
 class TestMessageRendering:
     """Test message rendering and display."""
 
-    def test_add_user_message(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_add_user_message(self, mock_chat_config: MagicMock, mock_engine: MagicMock) -> None:
         """Test adding a user message."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
 
         with patch.object(tui, "query_one", return_value=mock_messages):
@@ -292,9 +277,11 @@ class TestMessageRendering:
             assert call_args[0][0] == "Test user message"
             assert call_args[1]["role"] == "user"
 
-    def test_add_assistant_message(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_add_assistant_message(
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
+    ) -> None:
         """Test adding an assistant message."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
 
         with patch.object(tui, "query_one", return_value=mock_messages):
@@ -305,9 +292,9 @@ class TestMessageRendering:
             assert call_args[0][0] == "Test assistant message"
             assert call_args[1]["role"] == "assistant"
 
-    def test_add_error_message(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_add_error_message(self, mock_chat_config: MagicMock, mock_engine: MagicMock) -> None:
         """Test adding an error message."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
 
         with patch.object(tui, "query_one", return_value=mock_messages):
@@ -318,9 +305,9 @@ class TestMessageRendering:
             assert "Test error" in call_args[0][0]
             assert call_args[1]["role"] == "error"
 
-    def test_show_thinking(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_show_thinking(self, mock_chat_config: MagicMock, mock_engine: MagicMock) -> None:
         """Test showing thinking indicator."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
         mock_bubble = MagicMock(spec=MessageBubble)
 
@@ -331,9 +318,9 @@ class TestMessageRendering:
                 assert tui._thinking_message is mock_bubble
                 mock_messages.mount.assert_called_once_with(mock_bubble)
 
-    def test_hide_thinking(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_hide_thinking(self, mock_chat_config: MagicMock, mock_engine: MagicMock) -> None:
         """Test hiding thinking indicator."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_bubble = MagicMock(spec=MessageBubble)
         tui._thinking_message = mock_bubble
 
@@ -342,9 +329,11 @@ class TestMessageRendering:
         mock_bubble.remove.assert_called_once()
         assert tui._thinking_message is None
 
-    def test_update_thinking_message(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_update_thinking_message(
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
+    ) -> None:
         """Test updating thinking indicator text."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_bubble = MagicMock(spec=MessageBubble)
         mock_static = MagicMock(spec=Static)
         mock_bubble.query_one.return_value = mock_static
@@ -358,9 +347,11 @@ class TestMessageRendering:
 class TestStreamingMessages:
     """Test streaming message display."""
 
-    def test_start_streaming_message(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_start_streaming_message(
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
+    ) -> None:
         """Test starting a streaming message."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
         mock_bubble = MagicMock(spec=MessageBubble)
 
@@ -371,9 +362,11 @@ class TestStreamingMessages:
                 assert tui._streaming_message is mock_bubble
                 mock_messages.mount.assert_called_once_with(mock_bubble)
 
-    def test_update_streaming_message(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_update_streaming_message(
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
+    ) -> None:
         """Test updating streaming message content."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_bubble = MagicMock(spec=MessageBubble)
         mock_static = MagicMock(spec=Static)
         mock_bubble.query_one.return_value = mock_static
@@ -386,10 +379,10 @@ class TestStreamingMessages:
         assert "Partial content..." in call_args[0][0]
 
     def test_finalize_streaming_message(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test finalizing streaming message."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_bubble = MagicMock(spec=MessageBubble)
         mock_static = MagicMock(spec=Static)
         mock_bubble.query_one.return_value = mock_static
@@ -400,9 +393,11 @@ class TestStreamingMessages:
         mock_static.update.assert_called_once()
         assert tui._streaming_message is None
 
-    def test_cancel_streaming_message(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_cancel_streaming_message(
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
+    ) -> None:
         """Test canceling streaming message on error."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_bubble = MagicMock(spec=MessageBubble)
         tui._streaming_message = mock_bubble
 
@@ -412,10 +407,10 @@ class TestStreamingMessages:
         assert tui._streaming_message is None
 
     def test_update_progress_message_with_thinking(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test updating progress when thinking message is visible."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_bubble = MagicMock(spec=MessageBubble)
         mock_static = MagicMock(spec=Static)
         mock_bubble.query_one.return_value = mock_static
@@ -426,10 +421,10 @@ class TestStreamingMessages:
         mock_static.update.assert_called_once_with("Fetching URL...")
 
     def test_update_progress_message_with_streaming(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test updating progress when streaming message is visible."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_bubble = MagicMock(spec=MessageBubble)
         mock_static = MagicMock(spec=Static)
         mock_bubble.query_one.return_value = mock_static
@@ -443,10 +438,10 @@ class TestStreamingMessages:
         assert "Summarizing..." in call_args
 
     def test_update_progress_message_no_messages(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test updating progress when no message bubbles are visible."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         tui._thinking_message = None
         tui._streaming_message = None
 
@@ -457,9 +452,11 @@ class TestStreamingMessages:
 class TestStatusBarUpdates:
     """Test status bar update functionality."""
 
-    def test_update_status_all_fields(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_update_status_all_fields(
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
+    ) -> None:
         """Test updating all status bar fields."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_status_bar = MagicMock(spec=StatusBar)
 
         status = {
@@ -482,10 +479,10 @@ class TestProgressCallback:
     """Test progress callback integration."""
 
     def test_progress_callback_updates_thinking(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test that progress callback updates thinking message."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_bubble = MagicMock(spec=MessageBubble)
         mock_static = MagicMock(spec=Static)
         mock_bubble.query_one.return_value = mock_static
@@ -498,10 +495,10 @@ class TestProgressCallback:
             mock_call.assert_called_once()
 
     def test_progress_callback_with_long_detail(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test that long detail strings are truncated."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_bubble = MagicMock(spec=MessageBubble)
         tui._thinking_message = mock_bubble
 
@@ -521,10 +518,10 @@ class TestToolConfirmCallback:
     """Test tool confirmation callback."""
 
     def test_tool_confirm_callback_auto_confirms(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test that tool confirm callback returns True by default."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         result = tui._tool_confirm_callback("test_tool", {"arg": "value"})
         assert result is True
 
@@ -532,9 +529,9 @@ class TestToolConfirmCallback:
 class TestKeyboardActions:
     """Test keyboard action methods."""
 
-    def test_action_show_help(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_action_show_help(self, mock_chat_config: MagicMock, mock_engine: MagicMock) -> None:
         """Test show help action."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
         mock_messages = MagicMock(spec=ChatMessages)
 
         with patch.object(tui, "query_one", return_value=mock_messages):
@@ -545,17 +542,19 @@ class TestKeyboardActions:
             call_args = mock_messages.add_message.call_args
             assert "help" in str(call_args).lower() or "command" in str(call_args).lower()
 
-    def test_action_clear_messages(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_action_clear_messages(
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
+    ) -> None:
         """Test clear messages action."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
 
         with patch.object(tui, "_handle_slash_command") as mock_handle:
             tui.action_clear_messages()
             mock_handle.assert_called_once_with("/clear")
 
-    def test_action_save_session(self, mock_config: MagicMock, mock_engine: MagicMock) -> None:
+    def test_action_save_session(self, mock_chat_config: MagicMock, mock_engine: MagicMock) -> None:
         """Test save session action."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
 
         with patch.object(tui, "_handle_slash_command") as mock_handle:
             tui.action_save_session()
@@ -566,10 +565,10 @@ class TestSendMessageStreaming:
     """Test streaming message sending."""
 
     def test_send_message_streaming_success(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test successful streaming message send."""
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
 
         with patch.object(tui, "call_from_thread") as mock_call:
             tui._send_message_streaming(mock_engine, "Test message")
@@ -578,11 +577,11 @@ class TestSendMessageStreaming:
             assert mock_call.call_count >= 4
 
     def test_send_message_streaming_error(
-        self, mock_config: MagicMock, mock_engine: MagicMock
+        self, mock_chat_config: MagicMock, mock_engine: MagicMock
     ) -> None:
         """Test streaming with error."""
         mock_engine.process_message_streaming.side_effect = Exception("Stream failed")
-        tui = ChatTUI(mock_config, engine=mock_engine)
+        tui = ChatTUI(mock_chat_config, engine=mock_engine)
 
         with patch.object(tui, "call_from_thread") as mock_call:
             with pytest.raises(Exception, match="Stream failed"):
