@@ -54,6 +54,8 @@ __all__ = [
     "GEMINI_TPM_LIMIT",
     "GEMINI_DAILY_LIMIT",
     "DEFAULT_MODEL_LIMITS",
+    "FALLBACK_MODEL_LIMITS",
+    "FALLBACK_AZURE_MODEL_LIMITS",
     # Constants - Ollama
     "DEFAULT_OLLAMA_ENDPOINT",
     "OLLAMA_TIMEOUT",
@@ -104,7 +106,10 @@ OLLAMA_TIMEOUT = 120  # Seconds (local models can be slower)
 DEFAULT_AZURE_API_VERSION = "2024-02-15-preview"
 AZURE_RPM_LIMIT = 100  # Requests per minute (varies by tier)
 AZURE_TPM_LIMIT = 90000  # Tokens per minute (varies by tier)
-AZURE_DAILY_LIMIT = 5000  # Requests per day (varies by tier)
+# Note: Azure OpenAI has NO daily request limits - only RPM/TPM limits.
+# The daily_limit values below are set high (1M) to effectively disable
+# daily limiting for Azure models while preserving RPM/TPM enforcement.
+AZURE_DAILY_LIMIT = 1_000_000  # Effectively unlimited (Azure has no daily limits)
 
 # Default rate limits per model (actual API limits before safety margin)
 # These are the raw API limits - the rate limiter applies a 10% safety margin
@@ -130,50 +135,93 @@ DEFAULT_MODEL_LIMITS: dict[str, dict[str, int]] = {
         "daily_limit": 20,
     },
     # Azure / OpenAI models (standard tier limits)
+    # Note: Azure has NO daily limits - only RPM/TPM. daily_limit=1M effectively disables it.
+    # RPM/TPM values are for Default tier. Enterprise tiers have much higher limits.
+    # See: https://learn.microsoft.com/en-us/azure/ai-services/openai/quotas-limits
     "gpt-4": {
         "rpm_limit": 100,
         "tpm_limit": 90000,
-        "daily_limit": 5000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
     },
     "gpt-4-turbo": {
         "rpm_limit": 60,
         "tpm_limit": 80000,
-        "daily_limit": 3000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
     },
     "gpt-4o": {
-        "rpm_limit": 100,
-        "tpm_limit": 90000,
-        "daily_limit": 5000,
+        "rpm_limit": 2700,  # Default tier: 450K TPM / 6 RPM per 1K TPM
+        "tpm_limit": 450000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
+    },
+    "gpt-4o-mini": {
+        "rpm_limit": 12000,  # Default tier: 2M TPM
+        "tpm_limit": 2_000_000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
     },
     "gpt-35-turbo": {
         "rpm_limit": 350,
         "tpm_limit": 90000,
-        "daily_limit": 10000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
     },
-    # GPT-4.1 mini (Azure deployment - various naming conventions)
+    # GPT-4.1 series (Azure deployment - various naming conventions)
+    # Default tier: 5M TPM, 5K RPM for gpt-4.1-mini Global Standard
+    "gpt-4.1": {
+        "rpm_limit": 1000,  # Default tier
+        "tpm_limit": 1_000_000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
+    },
     "gpt-4.1-mini": {
-        "rpm_limit": 100,
-        "tpm_limit": 100000,
-        "daily_limit": 1000000,  # Effectively unlimited
+        "rpm_limit": 5000,  # Default tier: 5M TPM, 5K RPM
+        "tpm_limit": 5_000_000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
     },
     "gpt-41-mini": {
-        "rpm_limit": 100,
-        "tpm_limit": 100000,
-        "daily_limit": 1000000,
+        "rpm_limit": 5000,
+        "tpm_limit": 5_000_000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
     },
     "gpt4.1-mini": {
-        "rpm_limit": 100,
-        "tpm_limit": 100000,
-        "daily_limit": 1000000,
+        "rpm_limit": 5000,
+        "tpm_limit": 5_000_000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
+    },
+    "gpt-4.1-nano": {
+        "rpm_limit": 5000,  # Default tier: 5M TPM, 5K RPM
+        "tpm_limit": 5_000_000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
     },
 }
 
 # Fallback limits for unknown models (conservative)
+# Note: Used for Gemini/other models. For Azure/OpenAI models, see _is_azure_model().
 FALLBACK_MODEL_LIMITS: dict[str, int] = {
     "rpm_limit": 2,
     "tpm_limit": 32000,
     "daily_limit": 20,
 }
+
+# Fallback limits for unknown Azure/OpenAI models
+# Azure has no daily limits, so we set a high value to effectively disable it.
+FALLBACK_AZURE_MODEL_LIMITS: dict[str, int] = {
+    "rpm_limit": 100,
+    "tpm_limit": 100000,
+    "daily_limit": 1_000_000,  # Azure has no daily limit
+}
+
+
+def _is_azure_model(model: str) -> bool:
+    """
+    Check if a model name appears to be an Azure/OpenAI model.
+
+    Args:
+        model: Model name to check.
+
+    Returns:
+        True if the model name suggests it's an Azure/OpenAI model.
+    """
+    model_lower = model.lower()
+    azure_prefixes = ("gpt-", "gpt4", "o1", "o3", "o4", "text-embedding", "dall-e")
+    return any(model_lower.startswith(prefix) for prefix in azure_prefixes)
 
 
 def get_model_rate_limits(
@@ -186,7 +234,8 @@ def get_model_rate_limits(
     Looks up limits in this order:
     1. YAML config model_limits (if provided)
     2. DEFAULT_MODEL_LIMITS
-    3. FALLBACK_MODEL_LIMITS (for unknown models)
+    3. Azure-specific fallback (for gpt-* and o-series models)
+    4. FALLBACK_MODEL_LIMITS (for other unknown models)
 
     Args:
         model: Model name (e.g., "gemini-2.5-flash").
@@ -218,7 +267,23 @@ def get_model_rate_limits(
             daily_limit=limits_dict["daily_limit"],
         )
 
-    # Fallback for unknown models
+    # For Azure/OpenAI models not in defaults, use Azure-specific fallback
+    # (Azure has no daily limits, so we use a high value)
+    if _is_azure_model(model):
+        logger.info(
+            "Unknown Azure/OpenAI model '%s', using Azure fallback limits: "
+            "RPM=%d, TPM=%d, Daily=unlimited",
+            model,
+            FALLBACK_AZURE_MODEL_LIMITS["rpm_limit"],
+            FALLBACK_AZURE_MODEL_LIMITS["tpm_limit"],
+        )
+        return ModelRateLimits(
+            rpm_limit=FALLBACK_AZURE_MODEL_LIMITS["rpm_limit"],
+            tpm_limit=FALLBACK_AZURE_MODEL_LIMITS["tpm_limit"],
+            daily_limit=FALLBACK_AZURE_MODEL_LIMITS["daily_limit"],
+        )
+
+    # Fallback for other unknown models (e.g., Gemini variants)
     logger.warning(
         "Unknown model '%s', using conservative fallback limits: RPM=%d, TPM=%d, Daily=%d",
         model,

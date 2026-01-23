@@ -69,9 +69,11 @@ class GetRateLimitStatusTool(Tool):
         """
         try:
             # Get the rate limiter (if initialized)
+            # Pass yaml_model_limits so it can auto-detect correct limits for the model
             limiter = get_rate_limiter(
                 model=config.model,
                 state_path=config.vault_path,
+                yaml_model_limits=config.model_limits,
             )
             status = limiter.get_status()
 

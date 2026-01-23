@@ -197,7 +197,7 @@ def _build_summary_line_with_context(content: str, url: str, obsidian_link: str)
 
     Args:
         content: Full content of the daily note.
-        url: The original URL to find.
+        url: The original URL to find (may be cleaned/normalized).
         obsidian_link: The Obsidian internal link to use (e.g., "[[summary-name]]").
 
     Returns:
@@ -209,14 +209,21 @@ def _build_summary_line_with_context(content: str, url: str, obsidian_link: str)
             continue
 
         # Found the line - now replace the URL with the obsidian link
-        # First try to match a markdown link containing this URL: [text](url)
-        markdown_link_pattern = rf"\[[^\]]*\]\({re.escape(url)}\)"
+        # First try to match a markdown link containing this URL (with optional query string)
+        # Pattern: [text](url) or [text](url?query) or [text](url#fragment)
+        markdown_link_pattern = rf"\[[^\]]*\]\({re.escape(url)}[^)]*\)"
         if re.search(markdown_link_pattern, line):
-            # Replace the markdown link with the obsidian link
+            # Replace the entire markdown link (including any query string in the URL)
             new_line = re.sub(markdown_link_pattern, obsidian_link, line)
         else:
-            # It's a bare URL - replace it directly
-            new_line = line.replace(url, obsidian_link)
+            # It's a bare URL - replace it along with any trailing query string/fragment
+            # Pattern matches: url followed by optional ?query and/or #fragment
+            bare_url_pattern = rf"{re.escape(url)}(?:[?#][^\s)]*)?(?=[\s)]|$)"
+            if re.search(bare_url_pattern, line):
+                new_line = re.sub(bare_url_pattern, obsidian_link, line)
+            else:
+                # Fallback to simple replace if pattern doesn't match
+                new_line = line.replace(url, obsidian_link)
 
         # Clean up the line - ensure it starts with a bullet if it doesn't already
         new_line = new_line.strip()

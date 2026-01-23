@@ -493,6 +493,37 @@ class TestGetModelRateLimits:
 
         assert isinstance(limits, ModelRateLimits)
 
+    def test_unknown_azure_model_uses_azure_fallback(self) -> None:
+        """Unknown Azure/OpenAI models should use Azure-specific fallback (no daily limit)."""
+        # Test various Azure/OpenAI model name patterns
+        azure_models = [
+            "gpt-5",
+            "gpt-4o-2024-latest",
+            "gpt-4.1-turbo-custom",
+            "o1-preview",
+            "o3-mini",
+            "o4-mini-custom",
+        ]
+
+        from summarize_links.config import FALLBACK_AZURE_MODEL_LIMITS
+
+        for model in azure_models:
+            limits = get_model_rate_limits(model)
+            # Should use Azure fallback (high daily limit)
+            assert limits.daily_limit == FALLBACK_AZURE_MODEL_LIMITS["daily_limit"], (
+                f"Model {model} should use Azure fallback"
+            )
+            assert limits.rpm_limit == FALLBACK_AZURE_MODEL_LIMITS["rpm_limit"]
+            assert limits.tpm_limit == FALLBACK_AZURE_MODEL_LIMITS["tpm_limit"]
+
+    def test_unknown_non_azure_model_uses_conservative_fallback(self) -> None:
+        """Unknown non-Azure models should use conservative fallback."""
+        limits = get_model_rate_limits("claude-3-opus")
+
+        assert limits.rpm_limit == FALLBACK_MODEL_LIMITS["rpm_limit"]
+        assert limits.tpm_limit == FALLBACK_MODEL_LIMITS["tpm_limit"]
+        assert limits.daily_limit == FALLBACK_MODEL_LIMITS["daily_limit"]
+
 
 class TestModelLimitsConfig:
     """Tests for model_limits in YAML config."""
