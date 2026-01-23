@@ -31,12 +31,11 @@ class TestConfig:
         assert config.model == DEFAULT_MODEL
         assert config.out_folder == DEFAULT_OUT_FOLDER
         assert config.max_links == DEFAULT_MAX_LINKS
-        assert config.mock_mode is False
         assert config.dry_run is False
         assert config.verbose is False
 
     def test_validate_missing_api_key(self, tmp_path: Path) -> None:
-        """Validation should fail without API key (unless mock mode)."""
+        """Validation should fail without API key."""
         config = Config(
             model_provider="google",
             vault_path=tmp_path,
@@ -46,12 +45,6 @@ class TestConfig:
         )
         with pytest.raises(ConfigError, match="GEMINI_API_KEY"):
             config.validate()
-
-    def test_validate_mock_mode_no_api_key(self, tmp_path: Path) -> None:
-        """Mock mode should not require API key."""
-        config = Config(model_provider="google", vault_path=tmp_path, mock_mode=True)
-        # Should not raise
-        config.validate()
 
     def test_validate_missing_vault_path(self) -> None:
         """Validation should fail without vault path."""
@@ -244,17 +237,20 @@ class TestLoadConfig:
 
         assert config.vault_path == tmp_path
 
-    def test_mock_and_dry_run_flags(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Mock and dry run flags should be set correctly."""
+    def test_dry_run_and_verbose_flags(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Dry run and verbose flags should be set correctly."""
         monkeypatch.setenv("MODEL_PROVIDER", "google")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
+        monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
         config = load_config(
             vault_path=tmp_path,
-            mock_mode=True,
             dry_run=True,
             verbose=True,
         )
 
-        assert config.mock_mode is True
         assert config.dry_run is True
         assert config.verbose is True
 
@@ -497,6 +493,37 @@ class TestGetModelRateLimits:
 
         assert isinstance(limits, ModelRateLimits)
 
+    def test_unknown_azure_model_uses_azure_fallback(self) -> None:
+        """Unknown Azure/OpenAI models should use Azure-specific fallback (no daily limit)."""
+        # Test various Azure/OpenAI model name patterns
+        azure_models = [
+            "gpt-5",
+            "gpt-4o-2024-latest",
+            "gpt-4.1-turbo-custom",
+            "o1-preview",
+            "o3-mini",
+            "o4-mini-custom",
+        ]
+
+        from summarize_links.config import FALLBACK_AZURE_MODEL_LIMITS
+
+        for model in azure_models:
+            limits = get_model_rate_limits(model)
+            # Should use Azure fallback (high daily limit)
+            assert limits.daily_limit == FALLBACK_AZURE_MODEL_LIMITS["daily_limit"], (
+                f"Model {model} should use Azure fallback"
+            )
+            assert limits.rpm_limit == FALLBACK_AZURE_MODEL_LIMITS["rpm_limit"]
+            assert limits.tpm_limit == FALLBACK_AZURE_MODEL_LIMITS["tpm_limit"]
+
+    def test_unknown_non_azure_model_uses_conservative_fallback(self) -> None:
+        """Unknown non-Azure models should use conservative fallback."""
+        limits = get_model_rate_limits("claude-3-opus")
+
+        assert limits.rpm_limit == FALLBACK_MODEL_LIMITS["rpm_limit"]
+        assert limits.tpm_limit == FALLBACK_MODEL_LIMITS["tpm_limit"]
+        assert limits.daily_limit == FALLBACK_MODEL_LIMITS["daily_limit"]
+
 
 class TestModelLimitsConfig:
     """Tests for model_limits in YAML config."""
@@ -584,7 +611,7 @@ class TestLangfuseConfig:
     def test_langfuse_requires_credentials(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Langfuse credentials are required (except mock mode)."""
+        """Langfuse credentials are required."""
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
         monkeypatch.setenv("MODEL_PROVIDER", "google")
         # No Langfuse credentials set
@@ -657,19 +684,6 @@ class TestLangfuseConfig:
         # Env should override YAML
         assert config.langfuse_public_key == "pk-lf-env-public"
         assert config.langfuse_secret_key == "sk-lf-env-secret"
-
-    def test_langfuse_mock_mode_skips_validation(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Mock mode should skip Langfuse credential validation."""
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        monkeypatch.setenv("MODEL_PROVIDER", "google")
-        # No Langfuse credentials set
-
-        config = load_config(vault_path=tmp_path, mock_mode=True)
-
-        # Should pass validation in mock mode
-        config.validate()
 
     def test_langfuse_default_base_url(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

@@ -133,7 +133,7 @@ def process_url_with_metadata(
         summary_date = datetime.now()
 
     # Check if summary already exists (skip check if force is enabled)
-    # summary_exists returns False for mocked/error stubs, so they get reprocessed
+    # summary_exists returns False for error stubs, so they get reprocessed
     existing_summary_complete = summary_exists(
         config.vault_path, config.out_folder, url, summary_date
     )
@@ -165,7 +165,7 @@ def process_url_with_metadata(
         with propagate_attributes(
             session_id=daily_note_filename or "direct-url",
             tags=[
-                "production" if not config.mock_mode else "mock",
+                "production",
                 config.model.split(":")[0] if ":" in config.model else config.model,
             ],
             metadata={
@@ -343,8 +343,8 @@ def process_url_with_metadata(
                                 )
                         raise
 
-                # Determine status based on mock mode
-                summary_status = "mocked" if config.mock_mode else "success"
+                # Summary succeeded
+                summary_status = "success"
 
                 # Calculate final merged tags (needed for both write span and trace output)
                 from summarize_links.models import merge_tags
@@ -357,7 +357,7 @@ def process_url_with_metadata(
                 )
 
                 # Write the summary note with rich frontmatter
-                # Use needs_overwrite to ensure mocked/error stubs get replaced
+                # Use needs_overwrite to ensure error stubs get replaced
                 # Use summary_date to preserve original date when re-summarizing
                 with tracer.trace_span(
                     name="write",
@@ -438,9 +438,7 @@ def process_url_with_metadata(
                         )
 
                 # Signal that this URL was successfully processed and should be deleted from source
-                # Don't delete for mock mode - those summaries will be regenerated later
-                should_delete = not config.mock_mode
-                return True, f"Created: {slug}.md", should_delete
+                return True, f"Created: {slug}.md", True
 
             except URLValidationError as e:
                 logger.warning("Invalid URL %s: %s", url, e)
@@ -591,13 +589,10 @@ def process_urls_batch(
             azure_endpoint=config.azure_endpoint,
             azure_deployment_name=config.azure_deployment_name,
             azure_api_version=config.azure_api_version,
-            mock_mode=config.mock_mode,
             state_path=config.vault_path,
             yaml_model_limits=config.model_limits,
         )
 
-        if config.mock_mode:
-            print_message("[yellow]Running in mock mode (no API calls)[/]")
         if config.dry_run:
             print_message("[yellow]Running in dry-run mode (no changes)[/]")
 
@@ -754,13 +749,10 @@ def process_resummarize_batch(
             azure_endpoint=config.azure_endpoint,
             azure_deployment_name=config.azure_deployment_name,
             azure_api_version=config.azure_api_version,
-            mock_mode=config.mock_mode,
             state_path=config.vault_path,
             yaml_model_limits=config.model_limits,
         )
 
-        if config.mock_mode:
-            print_message("[yellow]Running in mock mode (no API calls)[/]")
         if config.dry_run:
             print_message("[yellow]Running in dry-run mode (no changes)[/]")
 

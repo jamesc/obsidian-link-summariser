@@ -78,15 +78,15 @@ Good summary.
             encoding="utf-8",
         )
 
-        # Mocked summary
-        (summaries / "2025-01-21-mocked.md").write_text(
+        # Another success summary
+        (summaries / "2025-01-21-another.md").write_text(
             """---
-title: Mocked Article
+title: Another Article
 date: 2025-01-21
-summary_status: mocked
+summary_status: success
 ---
 
-Mock summary.
+Another summary.
 """,
             encoding="utf-8",
         )
@@ -139,8 +139,7 @@ summary_status: error
 
         stats = result.data["stats"]
         assert stats["total"] == 3
-        assert stats["success"] == 1
-        assert stats["mocked"] == 1
+        assert stats["success"] == 2
         assert stats["error"] == 1
 
     def test_shows_date_range(
@@ -181,7 +180,6 @@ summary_status: error
             out_folder="Summaries",
             model="gemini-2.5-flash",
             model_provider="google",
-            mock_mode=False,
         )
         result = tool.execute(config)
 

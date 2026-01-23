@@ -51,20 +51,9 @@ class TestSlashCommands:
 class TestValidateChatConfig:
     """Test chat configuration validation."""
 
-    def test_mock_mode_always_valid(self) -> None:
-        """Mock mode bypasses validation."""
-        config = MagicMock(spec=Config)
-        config.mock_mode = True
-        config.chat_azure_api_key = None
-        config.chat_azure_endpoint = None
-
-        # Should not raise
-        _validate_chat_config(config)
-
     def test_missing_api_key_raises_error(self) -> None:
         """Missing API key raises ConfigError."""
         config = MagicMock(spec=Config)
-        config.mock_mode = False
         config.chat_azure_api_key = None
         config.chat_azure_endpoint = "https://example.openai.azure.com"
 
@@ -74,7 +63,6 @@ class TestValidateChatConfig:
     def test_missing_endpoint_raises_error(self) -> None:
         """Missing endpoint raises ConfigError."""
         config = MagicMock(spec=Config)
-        config.mock_mode = False
         config.chat_azure_api_key = "test-key"
         config.chat_azure_endpoint = None
 
@@ -84,7 +72,6 @@ class TestValidateChatConfig:
     def test_valid_config_passes(self) -> None:
         """Valid config passes validation."""
         config = MagicMock(spec=Config)
-        config.mock_mode = False
         config.chat_azure_api_key = "test-key"
         config.chat_azure_endpoint = "https://example.openai.azure.com"
 
@@ -149,7 +136,6 @@ class TestRunChatTui:
     def test_invalid_config_returns_error(self) -> None:
         """Test that invalid config returns error code."""
         config = MagicMock(spec=Config)
-        config.mock_mode = False
         config.chat_azure_api_key = None
         config.chat_azure_endpoint = None
 
@@ -160,7 +146,6 @@ class TestRunChatTui:
     def test_valid_config_runs_app(self, mock_app_class: MagicMock) -> None:
         """Test that valid config runs the app."""
         config = MagicMock(spec=Config)
-        config.mock_mode = False
         config.chat_azure_api_key = "test-key"
         config.chat_azure_endpoint = "https://example.openai.azure.com"
 
@@ -178,7 +163,6 @@ class TestRunChatTui:
     def test_handles_none_return(self, mock_app_class: MagicMock) -> None:
         """Test that None return from app.run() is handled."""
         config = MagicMock(spec=Config)
-        config.mock_mode = False
         config.chat_azure_api_key = "test-key"
         config.chat_azure_endpoint = "https://example.openai.azure.com"
 

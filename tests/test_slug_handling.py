@@ -245,6 +245,8 @@ Advanced content.
 
     def test_exact_slug_match_preferred(self, vault_with_multiple_summaries: Path) -> None:
         """Test that exact slug match is preferred over partial matches."""
+        from datetime import date
+
         tool = ReadSummaryTool()
         config = Config(vault_path=vault_with_multiple_summaries, out_folder="Summaries")
 
@@ -254,10 +256,12 @@ Advanced content.
         assert result.success is True
         # Should get the first one, not the advanced one
         assert result.data["title"] == "Python Tutorial"
-        assert result.data["date"] == "2026-01-20"
+        assert result.data["date"] == date(2026, 1, 20)
 
     def test_slug_with_suffix_matches_correctly(self, vault_with_multiple_summaries: Path) -> None:
         """Test that slugs with suffixes match the right file."""
+        from datetime import date
+
         tool = ReadSummaryTool()
         config = Config(vault_path=vault_with_multiple_summaries, out_folder="Summaries")
 
@@ -265,4 +269,4 @@ Advanced content.
 
         assert result.success is True
         assert result.data["title"] == "Python Tutorial Advanced"
-        assert result.data["date"] == "2026-01-21"
+        assert result.data["date"] == date(2026, 1, 21)

@@ -25,7 +25,7 @@ def cmd_summaries(config: Config) -> int:
     Report on summary status.
 
     Scans all summaries and displays statistics including
-    successful, mocked, and error summaries.
+    successful and error summaries.
 
     Args:
         config: Application configuration.
@@ -69,11 +69,6 @@ def cmd_summaries(config: Config) -> int:
         f"{stats['success'] * 100 // total}%" if total > 0 else "0%",
     )
     summary_table.add_row(
-        "⚠ Mocked (needs real API)",
-        str(stats["mocked"]),
-        f"{stats['mocked'] * 100 // total}%" if total > 0 else "0%",
-    )
-    summary_table.add_row(
         "✗ Errors (failed)",
         str(stats["error"]),
         f"{stats['error'] * 100 // total}%" if total > 0 else "0%",
@@ -91,25 +86,6 @@ def cmd_summaries(config: Config) -> int:
     # Display date range
     if stats["oldest_date"] and stats["newest_date"]:
         print_message(f"[cyan]Date range:[/] {stats['oldest_date']} to {stats['newest_date']}")
-        print_message()
-
-    # Display mocked summaries if any
-    if stats["mocked"] > 0:
-        print_message("[yellow]⚠ Mocked Summaries (run without --mock to regenerate):[/]")
-        mocked_table = Table(show_header=True)
-        mocked_table.add_column("File", style="cyan")
-        mocked_table.add_column("Date", style="white")
-
-        for filename, date in stats["mocked_summaries"][:10]:  # Show first 10
-            mocked_table.add_row(filename, date)
-
-        if len(stats["mocked_summaries"]) > 10:
-            mocked_table.add_row(
-                f"... and {len(stats['mocked_summaries']) - 10} more",
-                "",
-            )
-
-        print_message(mocked_table)
         print_message()
 
     # Display error summaries if any
@@ -151,16 +127,10 @@ def cmd_summaries(config: Config) -> int:
         print_message()
 
     # Helpful tips
-    if stats["mocked"] > 0 or stats["error"] > 0:
+    if stats["error"] > 0:
         print_message("[bold]Tips:[/]")
-        if stats["mocked"] > 0:
-            print_message(
-                "  • Run [cyan]summarize-links from-note --all --force[/] "
-                "to regenerate mocked summaries"
-            )
-        if stats["error"] > 0:
-            print_message(
-                "  • Run [cyan]summarize-links from-note --all --force[/] to retry failed summaries"
-            )
+        print_message(
+            "  • Run [cyan]summarize-links from-note --all --force[/] to retry failed summaries"
+        )
 
     return EXIT_SUCCESS

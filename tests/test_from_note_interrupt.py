@@ -23,10 +23,11 @@ def mock_config(tmp_path: Path) -> Config:
         model_provider="google",
         daily_notes_folder="",
         max_links=100,
-        mock_mode=True,
         dry_run=False,
         verbose=False,
         force=False,
+        langfuse_public_key="pk-lf-test",
+        langfuse_secret_key="sk-lf-test",
     )
 
 
@@ -170,10 +171,11 @@ def test_shutdown_flag_resets_in_resummarize_batch(mock_config: Config) -> None:
             model_provider=mock_config.model_provider,
             daily_notes_folder=mock_config.daily_notes_folder,
             max_links=mock_config.max_links,
-            mock_mode=mock_config.mock_mode,
             dry_run=mock_config.dry_run,
             verbose=mock_config.verbose,
             force=True,  # Enable force mode
+            langfuse_public_key=mock_config.langfuse_public_key,
+            langfuse_secret_key=mock_config.langfuse_secret_key,
         )
 
         exit_code, results = processor.process_resummarize_batch(

@@ -8,13 +8,13 @@ for visibility in the session trace.
 
 import contextlib
 import logging
-import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from summarize_links.chat.tools.base import ProgressCallback, Tool, ToolResult
 from summarize_links.config import Config
+from summarize_links.constants import CHAT_URL_PATTERN
 from summarize_links.exceptions import (
     ContentExtractionError,
     ContentFetchError,
@@ -33,6 +33,7 @@ from summarize_links.notes import (
     summary_exists,
     write_summary_note_with_metadata,
 )
+from summarize_links.utils.frontmatter import get_frontmatter_field
 
 __all__ = [
     "SummarizeUrlTool",
@@ -40,17 +41,6 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
-
-# Regex to extract URLs from text
-# Common TLDs for bare domain matching (without protocol)
-_COMMON_TLDS = r"com|org|net|io|dev|co|edu|gov|info|app|ai|me|xyz"
-URL_PATTERN = re.compile(
-    r"https?://[^\s<>\"')\]]+"  # Full URLs with protocol
-    r"|(?:www\.)[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:/[^\s<>\"')\]]*)?"  # www.
-    r"|[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}/[^\s<>\"')\]]*"  # Domain with path
-    rf"|[a-zA-Z0-9][-a-zA-Z0-9]*\.(?:{_COMMON_TLDS})",  # Bare domain
-    re.IGNORECASE,
-)
 
 
 def extract_url_from_text(text: str) -> str | None:
@@ -65,7 +55,7 @@ def extract_url_from_text(text: str) -> str | None:
     Returns:
         Extracted and normalized URL, or None if no URL found.
     """
-    match = URL_PATTERN.search(text)
+    match = CHAT_URL_PATTERN.search(text)
     if not match:
         return None
 
@@ -183,7 +173,6 @@ class SummarizeUrlTool(Tool):
                 azure_endpoint=config.azure_endpoint,
                 azure_deployment_name=config.azure_deployment_name,
                 azure_api_version=config.azure_api_version,
-                mock_mode=config.mock_mode,
                 state_path=config.vault_path,
                 yaml_model_limits=config.model_limits,
             )
@@ -308,8 +297,8 @@ class SummarizeUrlTool(Tool):
             tags=tags or [],
         )
 
-        # Determine status
-        summary_status = "mocked" if config.mock_mode else "success"
+        # Summary succeeded
+        summary_status = "success"
 
         # Write the summary note
         try:
@@ -483,10 +472,10 @@ class ResummarizeTool(Tool):
         try:
             content = filepath.read_text(encoding="utf-8")
 
-            # Extract frontmatter fields
-            source_url = self._extract_frontmatter_field(content, "source")
-            date_str = self._extract_frontmatter_field(content, "date")
-            from_field = self._extract_frontmatter_field(content, "from")
+            # Extract frontmatter fields using centralized utility
+            source_url = get_frontmatter_field(content, "source")
+            date_str = get_frontmatter_field(content, "date")
+            from_field = get_frontmatter_field(content, "from")
 
             if not source_url or not date_str:
                 return None
@@ -510,20 +499,6 @@ class ResummarizeTool(Tool):
 
         except OSError:
             return None
-
-    def _extract_frontmatter_field(self, content: str, field: str) -> str | None:
-        """Extract a field value from YAML frontmatter."""
-        pattern = rf"^{field}:\s*(.+?)$"
-        match = re.search(pattern, content, re.MULTILINE)
-        if match:
-            value = match.group(1).strip()
-            # Remove quotes if present
-            if (value.startswith('"') and value.endswith('"')) or (
-                value.startswith("'") and value.endswith("'")
-            ):
-                value = value[1:-1]
-            return value
-        return None
 
     def execute(
         self,
@@ -593,7 +568,6 @@ class ResummarizeTool(Tool):
                 azure_endpoint=config.azure_endpoint,
                 azure_deployment_name=config.azure_deployment_name,
                 azure_api_version=config.azure_api_version,
-                mock_mode=config.mock_mode,
                 state_path=config.vault_path,
                 yaml_model_limits=config.model_limits,
             )
@@ -708,8 +682,8 @@ class ResummarizeTool(Tool):
                     error=str(e),
                 )
 
-        # Determine status
-        summary_status = "mocked" if config.mock_mode else "success"
+        # Summary succeeded
+        summary_status = "success"
 
         # Write the summary note (overwrite existing)
         try:

@@ -250,28 +250,8 @@ class TestChatMessagesAddMessage:
         assert widget is not None
 
 
-class TestRunChatTuiWithMockMode:
-    """Tests for run_chat_tui with mock mode."""
-
-    @patch("summarize_links.chat.tui.ChatTUI")
-    def test_mock_mode_skips_validation(self, mock_app_class: MagicMock) -> None:
-        """Test that mock mode skips API key validation."""
-        from summarize_links.chat.tui import run_chat_tui
-
-        config = MagicMock(spec=Config)
-        config.mock_mode = True
-        config.chat_azure_api_key = None
-        config.chat_azure_endpoint = None
-
-        mock_app = MagicMock()
-        mock_app.run.return_value = 0
-        mock_app_class.return_value = mock_app
-
-        result = run_chat_tui(config)
-
-        # Should succeed even with no credentials
-        assert result == 0
-        mock_app_class.assert_called_once()
+class TestValidateEmptyStrings:
+    """Tests for validation with empty strings."""
 
     def test_empty_api_key_string_fails(self) -> None:
         """Test that empty string API key fails validation."""
@@ -279,7 +259,6 @@ class TestRunChatTuiWithMockMode:
         from summarize_links.exceptions import ConfigError
 
         config = MagicMock(spec=Config)
-        config.mock_mode = False
         config.chat_azure_api_key = ""
         config.chat_azure_endpoint = "https://example.openai.azure.com"
 
@@ -293,7 +272,6 @@ class TestRunChatTuiWithMockMode:
         from summarize_links.exceptions import ConfigError
 
         config = MagicMock(spec=Config)
-        config.mock_mode = False
         config.chat_azure_api_key = "test-key"
         config.chat_azure_endpoint = ""
 

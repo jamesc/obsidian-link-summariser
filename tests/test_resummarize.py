@@ -90,29 +90,6 @@ summary_status: fetch_error
 
         assert len(results) == 0
 
-    def test_skips_mocked_summaries(self, tmp_path: Path) -> None:
-        """Test that mocked summaries are skipped."""
-        vault = tmp_path / "vault"
-        summaries = vault / "Summaries"
-        summaries.mkdir(parents=True)
-
-        # Create a mocked summary
-        (summaries / "2024-01-01-mocked.md").write_text(
-            """---
-source: https://example.com
-date: 2024-01-01
-summary_status: mocked
----
-
-This is a mocked summary.
-""",
-            encoding="utf-8",
-        )
-
-        results = scan_summaries_for_resummarize(vault, "Summaries")
-
-        assert len(results) == 0
-
     def test_date_parsing_with_time(self, tmp_path: Path) -> None:
         """Test parsing summary_date with time component."""
         vault = tmp_path / "vault"
@@ -296,17 +273,6 @@ summary_status: success
 source: https://example1.com
 date: 2024-01-01
 summary_status: success
----
-""",
-            encoding="utf-8",
-        )
-
-        # Mocked - should be skipped
-        (summaries / "2024-01-02-mocked.md").write_text(
-            """---
-source: https://example2.com
-date: 2024-01-02
-summary_status: mocked
 ---
 """,
             encoding="utf-8",

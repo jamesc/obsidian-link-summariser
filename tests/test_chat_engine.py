@@ -24,7 +24,6 @@ def mock_config() -> MagicMock:
     config.chat_azure_deployment = "gpt-4o-mini"
     config.vault_path = "/test/vault"
     config.out_folder = "Summaries"
-    config.mock_mode = False
     config.force = False
     config.default_tags = None
     config.model_limits = None

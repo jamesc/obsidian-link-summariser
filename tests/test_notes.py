@@ -311,17 +311,6 @@ class TestSummaryExists:
         result = summary_exists(tmp_path, "Summaries", "https://example.com/error", date)
         assert result is False
 
-    def test_mocked_summary_can_be_retried(self, tmp_path: Path) -> None:
-        """Should return False for mocked summaries to allow regeneration."""
-        summaries = tmp_path / "Summaries"
-        summaries.mkdir()
-        date = datetime(2025, 12, 16)
-        filepath = get_summary_filepath(tmp_path, "Summaries", "https://example.com/mock", date)
-        filepath.write_text("---\nstatus: mocked\n---\nMock summary")
-
-        result = summary_exists(tmp_path, "Summaries", "https://example.com/mock", date)
-        assert result is False
-
     def test_success_summary_not_retried(self, tmp_path: Path) -> None:
         """Should return True for successful summaries."""
         summaries = tmp_path / "Summaries"
@@ -629,6 +618,63 @@ class TestAddSummaryLinkToDailyNote:
         summaries_section = content.split("## Summaries")[1]
         assert "- [[2025-12-16-article]]" in summaries_section
 
+    def test_strips_query_string_from_bare_url(self, tmp_path: Path) -> None:
+        """Should strip query string when URL has tracking params but cleaned URL doesn't."""
+        note_file = tmp_path / "2025-12-16.md"
+        # Original URL has tracking parameters
+        note_file.write_text(
+            "# 2025-12-16\n\n- https://example.com/blog?utm_source=tldrai&utm_medium=email #ai\n"
+        )
+
+        summary_path = tmp_path / "Summaries" / "2025-12-16-blog.md"
+        summary_path.parent.mkdir(parents=True)
+        summary_path.write_text("Summary content")
+
+        # URL passed is the cleaned version (without tracking params)
+        result = add_summary_link_to_daily_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            summary_path=summary_path,
+            url="https://example.com/blog",  # Cleaned URL
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        # The Summaries section should have the link WITHOUT the query string
+        summaries_section = content.split("## Summaries")[1]
+        assert "[[2025-12-16-blog]]" in summaries_section
+        assert (
+            "?utm_source" not in summaries_section
+        )  # Query string should be stripped from summary line
+        assert "#ai" in summaries_section  # Hashtag should be preserved
+
+    def test_strips_query_string_from_markdown_link(self, tmp_path: Path) -> None:
+        """Should strip query string from markdown link URLs."""
+        note_file = tmp_path / "2025-12-16.md"
+        note_file.write_text(
+            "# 2025-12-16\n\n- [Blog Post](https://example.com/blog?utm_source=newsletter) #tech\n"
+        )
+
+        summary_path = tmp_path / "Summaries" / "2025-12-16-blog.md"
+        summary_path.parent.mkdir(parents=True)
+        summary_path.write_text("Summary content")
+
+        result = add_summary_link_to_daily_note(
+            vault_path=tmp_path,
+            daily_notes_folder="",
+            note_filename="2025-12-16.md",
+            summary_path=summary_path,
+            url="https://example.com/blog",
+        )
+
+        assert result is True
+        content = note_file.read_text()
+        summaries_section = content.split("## Summaries")[1]
+        assert "[[2025-12-16-blog]]" in summaries_section
+        assert "?utm_source" not in summaries_section
+        assert "#tech" in summaries_section
+
 
 class TestExtractHashtagsFromLine:
     """Tests for hashtag extraction from lines."""
@@ -872,17 +918,6 @@ class TestBuildFrontmatter:
         )
 
         assert "summary_status: error" in result
-
-    def test_summary_status_mocked(self) -> None:
-        """Should include summary_status: mocked when specified."""
-        date = datetime(2025, 12, 16)
-        result = build_frontmatter(
-            url="https://example.com",
-            date=date,
-            summary_status="mocked",
-        )
-
-        assert "summary_status: mocked" in result
 
     def test_summary_model_included(self) -> None:
         """Should include summary_model when provided."""
@@ -1324,23 +1359,6 @@ class TestWriteSummaryNoteWithMetadata:
 
         content = filepath.read_text()
         assert "summary_status: error" in content
-
-    def test_includes_summary_status_mocked(self, tmp_path: Path) -> None:
-        """Should include summary_status: mocked when specified."""
-        date = datetime(2025, 12, 16)
-        summary = SummaryResult(content="Mocked summary")
-
-        filepath = write_summary_note_with_metadata(
-            vault_path=tmp_path,
-            out_folder="Summaries",
-            url="https://example.com",
-            summary_result=summary,
-            date=date,
-            summary_status="mocked",
-        )
-
-        content = filepath.read_text()
-        assert "summary_status: mocked" in content
 
     def test_includes_summary_model_when_provided(self, tmp_path: Path) -> None:
         """Should include summary_model field when provided."""

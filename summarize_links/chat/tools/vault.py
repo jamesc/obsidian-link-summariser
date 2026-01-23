@@ -14,6 +14,7 @@ from typing import Any
 from summarize_links.chat.tools.base import ProgressCallback, Tool, ToolResult
 from summarize_links.config import Config
 from summarize_links.notes import slug_from_url
+from summarize_links.utils.frontmatter import parse_frontmatter
 
 __all__ = [
     "ListSummariesTool",
@@ -22,66 +23,6 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
-
-
-def _extract_frontmatter(content: str) -> dict[str, Any]:
-    """
-    Extract frontmatter fields from a markdown file.
-
-    Args:
-        content: Full file content with YAML frontmatter.
-
-    Returns:
-        Dictionary of frontmatter fields.
-    """
-    if not content.startswith("---"):
-        return {}
-
-    # Find closing delimiter on its own line to avoid matching --- in values
-    # Look for \n---\n or \n--- at EOF
-    end_idx = content.find("\n---\n", 3)
-    if end_idx == -1:
-        # Try end of file case (no trailing newline after ---)
-        end_idx = content.find("\n---", 3)
-        if end_idx == -1 or end_idx + 4 < len(content) and content[end_idx + 4] not in ("\n", ""):
-            # Not a standalone line delimiter
-            end_idx = -1
-    if end_idx == -1:
-        return {}
-    # Adjust to skip the leading newline we matched
-    end_idx += 1
-
-    frontmatter = content[3:end_idx]
-    result: dict[str, Any] = {}
-
-    # Parse simple key-value pairs
-    for line in frontmatter.split("\n"):
-        if ":" not in line:
-            continue
-        key, _, value = line.partition(":")
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and value:
-            result[key] = value
-
-    # Parse tags as a list
-    if "tags:" in frontmatter:
-        tags = []
-        in_tags = False
-        for line in frontmatter.split("\n"):
-            if line.strip() == "tags:":
-                in_tags = True
-                continue
-            if in_tags:
-                if line.strip().startswith("-"):
-                    tag = line.strip().lstrip("-").strip()
-                    tags.append(tag)
-                elif line.strip() and not line.startswith(" "):
-                    break
-        if tags:
-            result["tags"] = tags
-
-    return result
 
 
 def _get_body_content(content: str) -> str:
@@ -135,7 +76,7 @@ class ListSummariesTool(Tool):
                 },
                 "status": {
                     "type": "string",
-                    "enum": ["all", "success", "error", "mocked"],
+                    "enum": ["all", "success", "error"],
                     "description": "Filter by summary status (default: all)",
                     "default": "all",
                 },
@@ -157,7 +98,7 @@ class ListSummariesTool(Tool):
             progress_callback: Optional callback for reporting progress.
             **kwargs: Tool parameters including:
                 - limit: Maximum summaries to return (default 10).
-                - status: Filter by status (all, success, error, mocked).
+                - status: Filter by status (all, success, error).
 
         Returns:
             ToolResult with list of summaries.
@@ -189,7 +130,7 @@ class ListSummariesTool(Tool):
 
             try:
                 content = filepath.read_text(encoding="utf-8")
-                frontmatter = _extract_frontmatter(content)
+                frontmatter = parse_frontmatter(content)
 
                 status = frontmatter.get("summary_status", "unknown")
 
@@ -349,7 +290,7 @@ class SearchVaultTool(Tool):
         for filepath in summaries_path.glob("*.md"):
             try:
                 content = filepath.read_text(encoding="utf-8")
-                frontmatter = _extract_frontmatter(content)
+                frontmatter = parse_frontmatter(content)
 
                 # Calculate match score
                 score = 0
@@ -537,7 +478,7 @@ class ReadSummaryTool(Tool):
             # Check title in frontmatter
             try:
                 content = filepath.read_text(encoding="utf-8")
-                frontmatter = _extract_frontmatter(content)
+                frontmatter = parse_frontmatter(content)
                 file_title = frontmatter.get("title", "").lower()
                 if file_title and title_normalized in file_title:
                     found_path = filepath
@@ -562,7 +503,7 @@ class ReadSummaryTool(Tool):
         # Read and return content
         try:
             content = found_path.read_text(encoding="utf-8")
-            frontmatter = _extract_frontmatter(content)
+            frontmatter = parse_frontmatter(content)
             body = _get_body_content(content)
 
             # Build response
