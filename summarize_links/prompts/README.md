@@ -9,16 +9,21 @@ This directory contains prompt templates for version control and upload to Langf
 - **`system.txt`** - System instructions for the LLM
   - Defines the assistant's role, output format (JSON), and guidelines
   - Used as the system message/instruction for both Gemini and Ollama
-  
+
 - **`user.txt`** - User prompt template
   - Template with variables: `{{title}}`, `{{url}}`, `{{content}}`
   - Variables are replaced with actual values at runtime
+
+- **`chat-system.txt`** - System prompt for chat assistant
+  - Template with variables: `{{current_date}}`, `{{current_weekday}}`, `{{vault_path}}`, `{{out_folder}}`, `{{model}}`, `{{provider}}`
+  - Defines the chat assistant's capabilities and behavior
 
 ## Langfuse Integration (REQUIRED)
 
 The application REQUIRES valid Langfuse credentials and will fetch prompts from:
 - `summarize-document/system` (corresponds to `system.txt`)
 - `summarize-document/user` (corresponds to `user.txt`)
+- `chat-assistant/system` (corresponds to `chat-system.txt`)
 
 **No Fallback:** If Langfuse prompts are not available, the application will raise an error.
 

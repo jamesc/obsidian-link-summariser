@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 PROMPTS_DIR = Path(__file__).parent.parent / "summarize_links" / "prompts"
 SYSTEM_PROMPT_PATH = PROMPTS_DIR / "system.txt"
 USER_PROMPT_PATH = PROMPTS_DIR / "user.txt"
+CHAT_SYSTEM_PROMPT_PATH = PROMPTS_DIR / "chat-system.txt"
 
 
 def load_system_prompt() -> str:
@@ -51,17 +52,33 @@ def load_user_prompt_template() -> str:
         raise
 
 
+def load_chat_system_prompt() -> str:
+    """Load chat system prompt from filesystem."""
+    try:
+        prompt = CHAT_SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
+        logger.debug(f"Loaded chat system prompt from {CHAT_SYSTEM_PROMPT_PATH}")
+        return prompt
+    except FileNotFoundError:
+        logger.error(f"Chat system prompt file not found: {CHAT_SYSTEM_PROMPT_PATH}")
+        raise
+
+
 def upload_prompts() -> None:
     """
     Upload prompts to Langfuse.
 
-    Creates a composable prompt structure:
+    Creates composable prompt structures:
+
+    For summarization:
     1. "summarize-document/system" (text prompt) - system instructions
     2. "summarize-document/user" (text prompt) - user template with variables
     3. "summarize-document" (chat prompt) - references the above prompts
 
-    This allows independent versioning of system/user prompts while maintaining
-    a single chat prompt that composes them.
+    For chat assistant:
+    1. "chat-assistant/system" (text prompt) - chat system instructions with variables
+
+    This allows independent versioning of prompts while maintaining
+    composable structures.
 
     Raises:
         ValueError: If Langfuse credentials are not configured.
@@ -95,6 +112,7 @@ def upload_prompts() -> None:
     logger.info("Loading prompts from filesystem...")
     system_prompt = load_system_prompt()
     user_prompt_template = load_user_prompt_template()
+    chat_system_prompt = load_chat_system_prompt()
 
     # Upload individual component prompts
     logger.info("Uploading component prompts to Langfuse...")
@@ -152,6 +170,20 @@ def upload_prompts() -> None:
         logger.error(f"Failed to upload composed chat prompt: {e}")
         raise
 
+    # Upload chat assistant system prompt
+    logger.info("Uploading chat assistant prompt to Langfuse...")
+    try:
+        langfuse.create_prompt(
+            name="chat-assistant/system",
+            prompt=chat_system_prompt,
+            type="text",
+            labels=["production"],
+        )
+        logger.info("✓ Chat system prompt 'chat-assistant/system' uploaded")
+    except Exception as e:
+        logger.error(f"Failed to upload chat system prompt: {e}")
+        raise
+
     # Flush any pending events
     langfuse.flush()
 
@@ -161,6 +193,7 @@ def upload_prompts() -> None:
         "  - summarize-document/system (text, component)\n"
         "  - summarize-document/user (text, component)\n"
         "  - summarize-document (chat, references components)\n"
+        "  - chat-assistant/system (text, standalone with variables)\n"
         "\nYou can now view and manage your prompts in the Langfuse UI."
     )
 

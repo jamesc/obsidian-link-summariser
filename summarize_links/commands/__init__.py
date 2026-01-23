@@ -6,6 +6,7 @@ and testability. Command handlers receive a Config object and return an
 exit code (0 for success, non-zero for errors).
 """
 
+from summarize_links.commands.chat import run_chat_tui
 from summarize_links.commands.clean import cmd_clean
 from summarize_links.commands.from_note import cmd_from_note, cmd_from_note_all
 from summarize_links.commands.list import cmd_list
@@ -23,4 +24,5 @@ __all__ = [
     "cmd_status",
     "cmd_summaries",
     "cmd_resummarize",
+    "run_chat_tui",
 ]

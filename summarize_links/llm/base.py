@@ -271,6 +271,11 @@ class BaseLLMClient:
         # Format title as " titled 'X'" or empty string (matches main branch behavior)
         title_text = f" titled '{title}'" if title else ""
 
+        # Format current date for temporal context (prevents LLM date hallucination)
+        from datetime import date
+
+        current_date = date.today().strftime("%B %d, %Y")  # e.g., "January 22, 2026"
+
         # Compile using Langfuse chat prompt object
         # compile() returns a list of messages with variables substituted
         prompt_obj = self._prompt_cache["prompt"]
@@ -278,6 +283,7 @@ class BaseLLMClient:
             title=title_text,
             url=url,
             content=content,
+            current_date=current_date,
         )
 
         # Extract the user message content from compiled messages

@@ -14,7 +14,15 @@ import signal
 from datetime import datetime
 from typing import Any
 
-from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TaskID,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
 from summarize_links.config import Config
 from summarize_links.exceptions import (
@@ -601,10 +609,15 @@ def process_urls_batch(
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
             console=console,
-            transient=True,
+            transient=False,
         ) as progress:
-            task = progress.add_task("[cyan]Processing...", total=len(url_contexts))
+            task = progress.add_task(
+                f"[cyan]Processing {len(url_contexts)} URLs...", total=len(url_contexts)
+            )
 
             for url_context in url_contexts:
                 # Check for shutdown request before processing each URL
@@ -758,10 +771,15 @@ def process_resummarize_batch(
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
             console=console,
-            transient=True,
+            transient=False,
         ) as progress:
-            task = progress.add_task("[cyan]Re-summarizing...", total=len(url_contexts))
+            task = progress.add_task(
+                f"[cyan]Re-summarizing {len(url_contexts)} URLs...", total=len(url_contexts)
+            )
 
             for url_context in url_contexts:
                 # Check for shutdown request before processing each URL
