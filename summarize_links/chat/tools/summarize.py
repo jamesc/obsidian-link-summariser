@@ -15,6 +15,7 @@ from typing import Any
 
 from summarize_links.chat.tools.base import ProgressCallback, Tool, ToolResult
 from summarize_links.config import Config
+from summarize_links.constants import CHAT_URL_PATTERN
 from summarize_links.exceptions import (
     ContentExtractionError,
     ContentFetchError,
@@ -41,17 +42,6 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-# Regex to extract URLs from text
-# Common TLDs for bare domain matching (without protocol)
-_COMMON_TLDS = r"com|org|net|io|dev|co|edu|gov|info|app|ai|me|xyz"
-URL_PATTERN = re.compile(
-    r"https?://[^\s<>\"')\]]+"  # Full URLs with protocol
-    r"|(?:www\.)[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:/[^\s<>\"')\]]*)?"  # www.
-    r"|[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}/[^\s<>\"')\]]*"  # Domain with path
-    rf"|[a-zA-Z0-9][-a-zA-Z0-9]*\.(?:{_COMMON_TLDS})",  # Bare domain
-    re.IGNORECASE,
-)
-
 
 def extract_url_from_text(text: str) -> str | None:
     """
@@ -65,7 +55,7 @@ def extract_url_from_text(text: str) -> str | None:
     Returns:
         Extracted and normalized URL, or None if no URL found.
     """
-    match = URL_PATTERN.search(text)
+    match = CHAT_URL_PATTERN.search(text)
     if not match:
         return None
 
