@@ -1,5 +1,7 @@
 """Tests for the frontmatter utilities module."""
 
+import datetime
+
 from summarize_links.utils.frontmatter import (
     extract_frontmatter_block,
     get_frontmatter_field,
@@ -216,6 +218,74 @@ Body."""
         fm = parse_frontmatter(content)
         assert fm["title"] == "Title with: colons and, commas"
         assert fm["url"] == "https://example.com/?param=value"
+
+    def test_parses_date_as_datetime_by_default(self) -> None:
+        """Test that ISO date strings are parsed as datetime.date objects."""
+        content = """---
+date: 2025-01-22
+---
+
+Body."""
+
+        fm = parse_frontmatter(content)
+        assert isinstance(fm["date"], datetime.date)
+        assert fm["date"] == datetime.date(2025, 1, 22)
+
+    def test_stringify_dates_converts_dates_to_strings(self) -> None:
+        """Test stringify_dates=True converts datetime.date to ISO strings."""
+        content = """---
+date: 2025-01-22
+created: 2024-12-01
+---
+
+Body."""
+
+        fm = parse_frontmatter(content, stringify_dates=True)
+        assert fm["date"] == "2025-01-22"
+        assert fm["created"] == "2024-12-01"
+        assert isinstance(fm["date"], str)
+        assert isinstance(fm["created"], str)
+
+    def test_stringify_dates_preserves_non_date_values(self) -> None:
+        """Test stringify_dates=True doesn't affect other value types."""
+        content = """---
+title: Test
+date: 2025-01-22
+count: 42
+tags:
+  - ai
+---
+
+Body."""
+
+        fm = parse_frontmatter(content, stringify_dates=True)
+        assert fm["title"] == "Test"
+        assert fm["date"] == "2025-01-22"
+        assert fm["count"] == 42
+        assert fm["tags"] == ["ai"]
+
+    def test_parses_datetime_as_datetime_by_default(self) -> None:
+        """Test that datetime strings are parsed as datetime objects."""
+        content = """---
+timestamp: 2025-01-22T14:30:00
+---
+
+Body."""
+
+        fm = parse_frontmatter(content)
+        assert isinstance(fm["timestamp"], datetime.datetime)
+
+    def test_stringify_dates_converts_datetime_to_string(self) -> None:
+        """Test stringify_dates=True converts datetime objects to ISO strings."""
+        content = """---
+timestamp: 2025-01-22T14:30:00
+---
+
+Body."""
+
+        fm = parse_frontmatter(content, stringify_dates=True)
+        assert fm["timestamp"] == "2025-01-22T14:30:00"
+        assert isinstance(fm["timestamp"], str)
 
 
 class TestGetFrontmatterField:

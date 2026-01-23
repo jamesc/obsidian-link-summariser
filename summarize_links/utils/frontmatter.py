@@ -43,15 +43,23 @@ def extract_frontmatter_block(content: str) -> str | None:
     return match.group(1) if match else None
 
 
-def parse_frontmatter(content: str) -> dict[str, Any]:
+def parse_frontmatter(content: str, *, stringify_dates: bool = False) -> dict[str, Any]:
     """
     Parse complete frontmatter as a dictionary.
 
     Handles various YAML value types including strings, lists, dicts, etc.
     Returns empty dict if no frontmatter or parsing fails.
 
+    Note:
+        PyYAML's safe_load() automatically converts ISO date strings
+        (e.g., '2025-01-22') to datetime.date objects. Use stringify_dates=True
+        if you need all values as their string representations.
+
     Args:
         content: Markdown content that may contain frontmatter.
+        stringify_dates: If True, convert datetime.date objects back to
+            ISO format strings (YYYY-MM-DD). Default False preserves
+            YAML's native date parsing.
 
     Returns:
         Dictionary of frontmatter fields, or empty dict if none found.
@@ -63,7 +71,17 @@ def parse_frontmatter(content: str) -> dict[str, Any]:
         'Test'
         >>> fm['tags']
         ['ai']
+
+        >>> content = "---\\ndate: 2025-01-22\\n---\\nBody"
+        >>> fm = parse_frontmatter(content)
+        >>> type(fm['date'])
+        <class 'datetime.date'>
+        >>> fm = parse_frontmatter(content, stringify_dates=True)
+        >>> fm['date']
+        '2025-01-22'
     """
+    import datetime
+
     block = extract_frontmatter_block(content)
     if not block:
         return {}
@@ -71,7 +89,15 @@ def parse_frontmatter(content: str) -> dict[str, Any]:
     try:
         parsed = yaml.safe_load(block)
         # yaml.safe_load can return None for empty documents
-        return parsed if isinstance(parsed, dict) else {}
+        if not isinstance(parsed, dict):
+            return {}
+
+        if stringify_dates:
+            for key, value in parsed.items():
+                if isinstance(value, (datetime.date, datetime.datetime)):
+                    parsed[key] = value.isoformat()
+
+        return parsed
     except yaml.YAMLError as e:
         logger.warning("Failed to parse YAML frontmatter: %s", e)
         return {}
