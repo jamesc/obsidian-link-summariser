@@ -23,6 +23,7 @@ from summarize_links.llm.base import (
     MAX_RETRIES,
     MAX_RETRY_DELAY,
     BaseLLMClient,
+    LazyClientMixin,
 )
 from summarize_links.llm.parsing import parse_llm_json_response
 from summarize_links.models import SummaryResult
@@ -38,7 +39,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-class GeminiClient(BaseLLMClient):
+class GeminiClient(BaseLLMClient, LazyClientMixin[Any]):
     """
     Client for the Google Gemini API.
 
@@ -105,15 +106,15 @@ class GeminiClient(BaseLLMClient):
 
     def _get_client(self) -> Any:
         """
-        Get or create the client instance.
+        Get or create the Gemini client instance.
 
         Returns:
-            Configured Client instance.
+            Configured genai.Client instance.
         """
-        if self._client is None:
-            self._client = genai.Client(api_key=self._api_key)
-            logger.debug("Created Client instance")
-        return self._client
+        return self._get_or_create_client(
+            lambda: genai.Client(api_key=self._api_key),
+            "Gemini"
+        )
 
     def summarize(self, content: str, url: str, title: str | None = None) -> str:
         """

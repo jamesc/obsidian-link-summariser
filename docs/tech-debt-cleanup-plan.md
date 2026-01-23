@@ -46,11 +46,11 @@ Create a base mixin class with generic lazy initialization:
 # summarize_links/llm/base.py or new utils/client_mixin.py
 class LazyClientMixin(Generic[T]):
     """Mixin for lazy client initialization."""
-    
+
     _client: T | None = None
-    
+
     def _get_or_create_client(
-        self, 
+        self,
         factory: Callable[[], T],
         name: str | None = None
     ) -> T:
@@ -95,7 +95,7 @@ import yaml
 from typing import Any
 
 FRONTMATTER_PATTERN = re.compile(
-    r'^---\s*\n(.*?)\n---\s*$', 
+    r'^---\s*\n(.*?)\n---\s*$',
     re.MULTILINE | re.DOTALL
 )
 
@@ -118,7 +118,7 @@ def get_frontmatter_field(content: str, field: str) -> str | None:
     """Extract single field value from frontmatter."""
     data = parse_frontmatter(content)
     value = data.get(field)
-    
+
     # Handle various YAML value types
     if value is None:
         return None
@@ -226,7 +226,7 @@ def handle_errors(
     reraise: bool = True
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator for consistent error handling."""
-    
+
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @functools.wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -405,11 +405,11 @@ class SummarizationResult:
 
 class SummarizationService:
     """Service for URL summarization operations."""
-    
+
     def __init__(self, config: Config, client: SummarizerProtocol):
         self.config = config
         self.client = client
-    
+
     def summarize_url(self, request: SummarizationRequest) -> SummarizationResult:
         """Summarize a URL and create/update summary note."""
         # Unified implementation used by both processor and chat tool
@@ -465,10 +465,10 @@ Mock mode is useful for:
 ```python
 class MockGeminiClient:
     """Minimal mock for testing without API calls."""
-    
+
     def summarize(self, content: str, url: str, title: str | None = None) -> str:
         return f"# Mock Summary\n\nContent from {url}"
-    
+
     def summarize_with_metadata(
         self, content: str, url: str, title: str | None = None
     ) -> SummaryResult:
@@ -534,7 +534,7 @@ async def test_slash_command_save(mock_engine):
         await pilot.press("s", "a", "v", "e")
         await pilot.press("enter")
         # Assert save was called
-        
+
 async def test_streaming_message_display(mock_engine):
     """Test streaming message rendering."""
     # Mock streaming response
@@ -610,7 +610,7 @@ def test_authentication_error_401(mock_openai_client):
     mock_client.chat.completions.create.side_effect = APIError(
         "Unauthorized", response=Mock(status_code=401)
     )
-    
+
     client = AzureClient(...)
     with pytest.raises(AzureAuthenticationError, match="Authentication failed"):
         client.summarize("content", "url")
@@ -673,7 +673,7 @@ def test_retry_with_exponential_backoff(mock_requests):
         requests.Timeout(),
         Mock(status_code=200, text="content")
     ]
-    
+
     result = fetch_html("https://example.com")
     assert mock_requests.get.call_count == 3
 ```
@@ -825,7 +825,7 @@ Audit and standardize:
 ### High-Risk Changes
 1. **Summarization Service Refactoring** (Phase 2.2)
    - **Risk:** Breaking core functionality
-   - **Mitigation:** 
+   - **Mitigation:**
      - Create service alongside existing code
      - Migrate one caller at a time
      - Keep old code until fully tested

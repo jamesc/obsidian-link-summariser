@@ -32,6 +32,7 @@ from summarize_links.chat.prompts import build_system_prompt
 from summarize_links.chat.tools.base import ToolRegistry, ToolResult, get_default_registry
 from summarize_links.config import Config
 from summarize_links.langfuse_tracer import get_tracer
+from summarize_links.llm.base import LazyClientMixin
 
 __all__ = [
     "ChatEngine",
@@ -47,7 +48,7 @@ ToolConfirmCallback = Callable[[str, dict[str, Any]], bool]
 ProgressCallback = Callable[[str, str], None]
 
 
-class ChatEngine:
+class ChatEngine(LazyClientMixin[AzureChatClient]):
     """
     Orchestrates chat interactions with tool calling support.
 
@@ -131,14 +132,15 @@ class ChatEngine:
 
     def _get_client(self) -> AzureChatClient:
         """Get or create the Azure chat client."""
-        if self._client is None:
-            self._client = AzureChatClient(
+        return self._get_or_create_client(
+            lambda: AzureChatClient(
                 api_key=self.config.chat_azure_api_key,
                 endpoint=self.config.chat_azure_endpoint,
                 model=self.config.chat_model,
                 deployment_name=self.config.chat_azure_deployment,
-            )
-        return self._client
+            ),
+            "AzureChatClient"
+        )
 
     def _report_progress(self, stage: str, detail: str) -> None:
         """
