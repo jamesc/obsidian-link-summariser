@@ -75,12 +75,12 @@ class LazyClientMixin(Generic[T]):
 **Solution Implemented:**
 Created `summarize_links/utils/frontmatter.py` with unified utilities:
 - `extract_frontmatter_block()` - Extract raw YAML block
-- `parse_frontmatter()` - Full YAML parsing with proper type handling  
+- `parse_frontmatter()` - Full YAML parsing with proper type handling
 - `get_frontmatter_field()` - Single field extraction
 
 **Affected Files Refactored:**
 - `summarize_links/notes/scanning.py` - Removed `_extract_frontmatter_field()` (33 lines)
-- `summarize_links/chat/tools/summarize.py` - Removed `_extract_frontmatter_field()` (13 lines) 
+- `summarize_links/chat/tools/summarize.py` - Removed `_extract_frontmatter_field()` (13 lines)
 - `summarize_links/chat/tools/vault.py` - Removed `_extract_frontmatter()` (59 lines)
 
 **Results:**
@@ -388,50 +388,52 @@ class SummarizationService:
 
 ---
 
-### 2.3 Obsolete Mock Implementation Code
+### 2.3 Remove Mock Mode Implementation
 
-**Problem:** Mock mode has limited utility and adds complexity.
+**Problem:** Mock mode adds unnecessary complexity with minimal benefit.
 
 **Evidence:**
-- `summarize_links/llm/gemini.py::MockGeminiClient` - 130 lines
-- Only used in testing and `--mock` CLI flag
-- Users rarely need mock mode (Ollama provides local alternative)
+- `summarize_links/llm/gemini.py::MockGeminiClient` - 150 lines of code
+- `--mock` CLI flag used in only a few tests
+- `config.mock_mode` field used throughout codebase
+- Mock mode bypasses API validation and rate limiting
+- **Ollama provides superior local alternative** with real LLM behavior
 
 **Current Usage:**
-- Testing: Can use pytest fixtures instead
-- Development: Ollama is better alternative
+- Testing: Can use pytest fixtures with better control
+- Development: Ollama is locally hosted, free, and unlimited
+- CI/CD: Can use Ollama in containers
 
-**Recommendation:** **Keep but Simplify**
+**Decision:** **Remove Completely**
 
-Mock mode is useful for:
-- CI/CD without API keys
-- Quick integration testing
-- Documentation examples
+Mock mode is obsolete because:
+- ✅ Ollama provides real local LLM (better quality than mocks)
+- ✅ Ollama is free and unlimited (no API costs)
+- ✅ Tests should use proper mocking/fixtures, not production mock mode
+- ✅ Reduces complexity in config validation and client factory
 
-**Action:** Simplify implementation:
-1. Remove custom response logic
-2. Return minimal fixed response
-3. Reduce from 130 to ~40 lines
+**Files to Modify:**
+1. `summarize_links/llm/gemini.py` - Remove `MockGeminiClient` class (~150 lines)
+2. `summarize_links/llm/factory.py` - Remove mock_mode parameter
+3. `summarize_links/config.py` - Remove mock_mode field and validation logic
+4. `summarize_links/cli.py` - Remove `--mock` argument
+5. `summarize_links/processor.py` - Remove mock_mode checks
+6. Tests - Update to use pytest fixtures or Ollama for integration tests
 
-```python
-class MockGeminiClient:
-    """Minimal mock for testing without API calls."""
+**Migration Path:**
+- Development: Use `MODEL_PROVIDER=ollama` with local Ollama
+- Testing: Use pytest-mock fixtures for unit tests
+- CI/CD: Run Ollama in Docker container for integration tests
+- Documentation: Update README to recommend Ollama for development
 
-    def summarize(self, content: str, url: str, title: str | None = None) -> str:
-        return f"# Mock Summary\n\nContent from {url}"
+**Benefits:**
+- Remove ~200 lines of code (class + usage)
+- Simplify configuration and validation
+- Encourage better testing practices (proper fixtures)
+- Reduce maintenance burden
 
-    def summarize_with_metadata(
-        self, content: str, url: str, title: str | None = None
-    ) -> SummaryResult:
-        return SummaryResult(
-            content=f"# Mock Summary\n\nContent from {url}",
-            suggested_tags=["mock"],
-            content_type="article",
-        )
-```
-
-**Estimated Effort:** 3 hours
-**Risk:** Low
+**Estimated Effort:** 6 hours
+**Risk:** Low (clear migration path, tests ensure correctness)
 
 ---
 
