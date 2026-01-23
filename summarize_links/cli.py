@@ -185,7 +185,7 @@ Examples:
     subparsers.add_parser(
         "summaries",
         help="Report on summary status",
-        description="Scan all summaries and report on their status (success, mocked, errors).",
+        description="Scan all summaries and report on their status (success, errors).",
     )
 
     # resummarize command

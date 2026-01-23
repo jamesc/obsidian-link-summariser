@@ -158,7 +158,7 @@ def summary_exists(
     Check if a successful summary note already exists for a URL.
 
     Returns False for error/stub notes (summary_status: *_error or summary_status: error)
-    and mocked summaries so they can be retried.
+    so they can be retried.
 
     Args:
         vault_path: Path to the Obsidian vault root.
@@ -174,10 +174,10 @@ def summary_exists(
     if not filepath.exists():
         return False
 
-    # Check if it's an error stub or mocked summary that should be retried
+    # Check if it's an error stub that should be retried
     try:
         content = filepath.read_text(encoding="utf-8")
-        # Check for error/mocked status in frontmatter
+        # Check for error status in frontmatter
         if content.startswith("---"):
             # Find end of frontmatter
             end_idx = content.find("---", 3)
@@ -188,19 +188,14 @@ def summary_exists(
                     for line in frontmatter.split("\n"):
                         if line.strip().startswith("summary_status:"):
                             status_value = line.split(":", 1)[1].strip()
-                            if "error" in status_value or status_value == "mocked":
+                            if "error" in status_value:
                                 logger.debug(
                                     f"Found {status_value} status, will retry: {filepath.name}"
                                 )
                                 return False
-                # Check for legacy format: status: error / status: mocked
+                # Check for legacy format: status: error
                 elif "status: error" in frontmatter:
                     logger.debug(f"Found error stub (legacy format), will retry: {filepath.name}")
-                    return False
-                elif "status: mocked" in frontmatter:
-                    logger.debug(
-                        f"Found mocked summary (legacy format), will retry: {filepath.name}"
-                    )
                     return False
     except OSError:
         pass  # If we can't read it, assume it exists
@@ -540,7 +535,7 @@ def write_summary_note_with_metadata(
         overwrite: If True, overwrite existing file.
         default_tags: Tags to always include.
         max_tags: Maximum number of tags.
-        summary_status: Status to write in frontmatter ('success', 'mocked', 'error').
+        summary_status: Status to write in frontmatter ('success', 'error').
         summary_model: Model used to generate the summary.
         summary_provider: Provider used for summarization (google, ollama, azure).
         summary_date: Date when the summary was generated (defaults to now).

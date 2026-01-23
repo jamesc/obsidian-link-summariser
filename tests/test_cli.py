@@ -1220,7 +1220,7 @@ class TestUrlLineDeletion:
     @patch("summarize_links.commands.from_note.extract_urls_with_context")
     @patch("summarize_links.commands.from_note.read_daily_note")
     @patch("summarize_links.cli.load_config")
-    def test_reprocessing_mocked_summary_overwrites(
+    def test_reprocessing_error_summary_overwrites(
         self,
         mock_load_config: MagicMock,
         mock_read: MagicMock,
@@ -1233,10 +1233,10 @@ class TestUrlLineDeletion:
         mock_remove_url: MagicMock,
         mock_vault: Path,
     ) -> None:
-        """Reprocessing a mocked summary should overwrite it (not skip it)."""
-        # summary_exists returns False for mocked summaries
+        """Reprocessing an error summary should overwrite it (not skip it)."""
+        # summary_exists returns False for error summaries
 
-        # Setup mocks - summary_exists returns False for mocked summaries
+        # Setup mocks - summary_exists returns False for error summaries
         mock_config = Config(
             vault_path=mock_vault,
             gemini_api_key="test-key",
@@ -1247,7 +1247,7 @@ class TestUrlLineDeletion:
         mock_load_config.return_value = mock_config
         mock_read.return_value = "Note with URLs"
         mock_extract.return_value = [UrlWithContext(url="https://example.com")]
-        mock_exists.return_value = False  # Mocked summary returns False!
+        mock_exists.return_value = False  # Error summary returns False!
         mock_fetch.return_value = PageMetadata(
             title="Article Title",
             domain="example.com",
@@ -1267,7 +1267,7 @@ class TestUrlLineDeletion:
         # because summary_exists returned False (meaning it needs reprocessing)
         mock_write.assert_called_once()
         call_kwargs = mock_write.call_args[1]
-        assert call_kwargs["overwrite"] is True, "Should overwrite mocked summary"
+        assert call_kwargs["overwrite"] is True, "Should overwrite error summary"
         # URL should be deleted since we're in real mode
         mock_remove_url.assert_called_once()
 

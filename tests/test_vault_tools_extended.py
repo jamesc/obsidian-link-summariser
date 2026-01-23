@@ -151,15 +151,15 @@ Content.
         assert result.success is True
         assert result.data["total"] == 1
 
-    def test_filter_mocked_status(self, tool: ListSummariesTool, tmp_path: Path) -> None:
-        """Test filtering by mocked status."""
+    def test_filter_error_status(self, tool: ListSummariesTool, tmp_path: Path) -> None:
+        """Test filtering by error status."""
         summaries_dir = tmp_path / "Summaries"
         summaries_dir.mkdir()
 
-        (summaries_dir / "mocked.md").write_text(
+        (summaries_dir / "error.md").write_text(
             """---
-title: Mocked Summary
-summary_status: mocked
+title: Error Summary
+summary_status: error
 ---
 
 Content.
@@ -179,11 +179,11 @@ Content.
         )
 
         config = Config(vault_path=tmp_path, out_folder="Summaries")
-        result = tool.execute(config, limit=10, status="mocked")
+        result = tool.execute(config, limit=10, status="error")
 
         assert result.success is True
         assert result.data["total"] == 1
-        assert result.data["summaries"][0]["status"] == "mocked"
+        assert result.data["summaries"][0]["status"] == "error"
 
     def test_to_schema(self, tool: ListSummariesTool) -> None:
         """Test tool schema generation."""

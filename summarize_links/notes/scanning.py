@@ -30,13 +30,11 @@ class SummaryStats(TypedDict):
 
     total: int
     success: int
-    mocked: int
     error: int
     unknown: int
     oldest_date: str | None
     newest_date: str | None
     error_summaries: list[tuple[str, str]]
-    mocked_summaries: list[tuple[str, str]]
     unknown_summaries: list[tuple[str, str | None, str | None]]  # (filename, status, source)
 
 
@@ -59,13 +57,11 @@ def scan_summaries(
         Dictionary containing:
         - total: Total number of summaries
         - success: Number of successful summaries
-        - mocked: Number of mocked summaries (need real summarization)
         - error: Number of error/stub summaries (failed processing)
         - unknown: Number without clear status
         - oldest_date: Oldest summary date (YYYY-MM-DD)
         - newest_date: Newest summary date (YYYY-MM-DD)
         - error_summaries: List of (filename, reason) for error summaries
-        - mocked_summaries: List of (filename, date) for mocked summaries
     """
     summaries_path = vault_path / out_folder
 
@@ -74,23 +70,19 @@ def scan_summaries(
         return {
             "total": 0,
             "success": 0,
-            "mocked": 0,
             "error": 0,
             "unknown": 0,
             "oldest_date": None,
             "newest_date": None,
             "error_summaries": [],
-            "mocked_summaries": [],
             "unknown_summaries": [],
         }
 
     total = 0
     success_count = 0
-    mocked_count = 0
     error_count = 0
     unknown_count = 0
     error_summaries: list[tuple[str, str]] = []
-    mocked_summaries: list[tuple[str, str]] = []
     unknown_summaries: list[tuple[str, str | None, str | None]] = []  # (filename, status, source)
     dates: list[str] = []
 
@@ -111,9 +103,6 @@ def scan_summaries(
             # Categorize by status
             if status == "success":
                 success_count += 1
-            elif status == "mocked":
-                mocked_count += 1
-                mocked_summaries.append((filepath.name, date or "unknown"))
             elif status == "error":
                 error_count += 1
                 # Extract error reason if available
@@ -136,20 +125,17 @@ def scan_summaries(
 
     logger.info(
         f"Scanned {total} summaries: "
-        f"{success_count} success, {mocked_count} mocked, "
-        f"{error_count} error, {unknown_count} unknown"
+        f"{success_count} success, {error_count} error, {unknown_count} unknown"
     )
 
     return {
         "total": total,
         "success": success_count,
-        "mocked": mocked_count,
         "error": error_count,
         "unknown": unknown_count,
         "oldest_date": oldest_date,
         "newest_date": newest_date,
         "error_summaries": error_summaries,
-        "mocked_summaries": mocked_summaries,
         "unknown_summaries": unknown_summaries,
     }
 
@@ -161,7 +147,7 @@ def scan_summaries_for_resummarize(
     """
     Scan all summary notes and return those suitable for resummarization.
 
-    Returns summaries that exist (not errors or mocked stubs) and extracts
+    Returns summaries that exist (not error stubs) and extracts
     their source URL, original date, summary date, and source note for reprocessing.
 
     Args:
@@ -198,8 +184,8 @@ def scan_summaries_for_resummarize(
                 logger.debug(f"Skipping {filepath.name}: missing source or date")
                 continue
 
-            # Skip error/mocked summaries (they should be handled by from-note --force)
-            if status and ("error" in status or status == "mocked"):
+            # Skip error summaries (they should be handled by from-note --force)
+            if status and "error" in status:
                 logger.debug(f"Skipping {filepath.name}: status={status}")
                 continue
 

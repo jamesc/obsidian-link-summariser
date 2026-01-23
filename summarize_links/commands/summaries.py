@@ -25,7 +25,7 @@ def cmd_summaries(config: Config) -> int:
     Report on summary status.
 
     Scans all summaries and displays statistics including
-    successful, mocked, and error summaries.
+    successful and error summaries.
 
     Args:
         config: Application configuration.
@@ -67,11 +67,6 @@ def cmd_summaries(config: Config) -> int:
         "✓ Successful",
         str(stats["success"]),
         f"{stats['success'] * 100 // total}%" if total > 0 else "0%",
-    )
-    summary_table.add_row(
-        "⚠ Mocked (needs real API)",
-        str(stats["mocked"]),
-        f"{stats['mocked'] * 100 // total}%" if total > 0 else "0%",
     )
     summary_table.add_row(
         "✗ Errors (failed)",
@@ -132,16 +127,10 @@ def cmd_summaries(config: Config) -> int:
         print_message()
 
     # Helpful tips
-    if stats["mocked"] > 0 or stats["error"] > 0:
+    if stats["error"] > 0:
         print_message("[bold]Tips:[/]")
-        if stats["mocked"] > 0:
-            print_message(
-                "  • Run [cyan]summarize-links from-note --all --force[/] "
-                "to regenerate mocked summaries"
-            )
-        if stats["error"] > 0:
-            print_message(
-                "  • Run [cyan]summarize-links from-note --all --force[/] to retry failed summaries"
-            )
+        print_message(
+            "  • Run [cyan]summarize-links from-note --all --force[/] to retry failed summaries"
+        )
 
     return EXIT_SUCCESS

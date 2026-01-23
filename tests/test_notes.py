@@ -311,17 +311,6 @@ class TestSummaryExists:
         result = summary_exists(tmp_path, "Summaries", "https://example.com/error", date)
         assert result is False
 
-    def test_mocked_summary_can_be_retried(self, tmp_path: Path) -> None:
-        """Should return False for mocked summaries to allow regeneration."""
-        summaries = tmp_path / "Summaries"
-        summaries.mkdir()
-        date = datetime(2025, 12, 16)
-        filepath = get_summary_filepath(tmp_path, "Summaries", "https://example.com/mock", date)
-        filepath.write_text("---\nstatus: mocked\n---\nMock summary")
-
-        result = summary_exists(tmp_path, "Summaries", "https://example.com/mock", date)
-        assert result is False
-
     def test_success_summary_not_retried(self, tmp_path: Path) -> None:
         """Should return True for successful summaries."""
         summaries = tmp_path / "Summaries"
@@ -873,17 +862,6 @@ class TestBuildFrontmatter:
 
         assert "summary_status: error" in result
 
-    def test_summary_status_mocked(self) -> None:
-        """Should include summary_status: mocked when specified."""
-        date = datetime(2025, 12, 16)
-        result = build_frontmatter(
-            url="https://example.com",
-            date=date,
-            summary_status="mocked",
-        )
-
-        assert "summary_status: mocked" in result
-
     def test_summary_model_included(self) -> None:
         """Should include summary_model when provided."""
         date = datetime(2025, 12, 16)
@@ -1324,23 +1302,6 @@ class TestWriteSummaryNoteWithMetadata:
 
         content = filepath.read_text()
         assert "summary_status: error" in content
-
-    def test_includes_summary_status_mocked(self, tmp_path: Path) -> None:
-        """Should include summary_status: mocked when specified."""
-        date = datetime(2025, 12, 16)
-        summary = SummaryResult(content="Mocked summary")
-
-        filepath = write_summary_note_with_metadata(
-            vault_path=tmp_path,
-            out_folder="Summaries",
-            url="https://example.com",
-            summary_result=summary,
-            date=date,
-            summary_status="mocked",
-        )
-
-        content = filepath.read_text()
-        assert "summary_status: mocked" in content
 
     def test_includes_summary_model_when_provided(self, tmp_path: Path) -> None:
         """Should include summary_model field when provided."""

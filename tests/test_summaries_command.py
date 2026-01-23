@@ -19,13 +19,11 @@ def test_scan_summaries_empty_folder(tmp_path: Path) -> None:
 
     assert stats["total"] == 0
     assert stats["success"] == 0
-    assert stats["mocked"] == 0
     assert stats["error"] == 0
     assert stats["unknown"] == 0
     assert stats["oldest_date"] is None
     assert stats["newest_date"] is None
     assert stats["error_summaries"] == []
-    assert stats["mocked_summaries"] == []
     assert stats["unknown_summaries"] == []
 
 
@@ -53,28 +51,27 @@ Summary content here.
 
     assert stats["total"] == 1
     assert stats["success"] == 1
-    assert stats["mocked"] == 0
     assert stats["error"] == 0
     assert stats["oldest_date"] == "2024-01-01"
     assert stats["newest_date"] == "2024-01-01"
 
 
-def test_scan_summaries_with_mocked(tmp_path: Path) -> None:
-    """Test scanning with mocked summaries."""
+def test_scan_summaries_with_unknown_status(tmp_path: Path) -> None:
+    """Test scanning with unknown status summaries."""
     vault = tmp_path / "vault"
     summaries = vault / "Summaries"
     summaries.mkdir(parents=True)
 
-    # Create a mocked summary
-    summary1 = summaries / "2024-01-01-mocked.md"
+    # Create a summary with unknown status
+    summary1 = summaries / "2024-01-01-unknown.md"
     summary1.write_text(
         """---
 source: https://example.com
 date: 2024-01-01
-summary_status: mocked
+summary_status: pending
 ---
 
-This is a mocked summary.
+This has an unknown status.
 """,
         encoding="utf-8",
     )
@@ -83,10 +80,10 @@ This is a mocked summary.
 
     assert stats["total"] == 1
     assert stats["success"] == 0
-    assert stats["mocked"] == 1
     assert stats["error"] == 0
-    assert len(stats["mocked_summaries"]) == 1
-    assert stats["mocked_summaries"][0] == ("2024-01-01-mocked.md", "2024-01-01")
+    assert stats["unknown"] == 1
+    assert len(stats["unknown_summaries"]) == 1
+    assert stats["unknown_summaries"][0][0] == "2024-01-01-unknown.md"
 
 
 def test_scan_summaries_with_errors(tmp_path: Path) -> None:
@@ -117,7 +114,6 @@ Failed to fetch: Connection timeout
 
     assert stats["total"] == 1
     assert stats["success"] == 0
-    assert stats["mocked"] == 0
     assert stats["error"] == 1
     assert len(stats["error_summaries"]) == 1
     assert stats["error_summaries"][0][0] == "2024-01-01-error.md"
@@ -142,14 +138,14 @@ Summary.
         encoding="utf-8",
     )
 
-    # Create mocked summary
-    (summaries / "2024-01-02-mocked.md").write_text(
+    # Create another success summary
+    (summaries / "2024-01-02-success2.md").write_text(
         """---
 source: https://example2.com
 date: 2024-01-02
-summary_status: mocked
+summary_status: success
 ---
-Mocked.
+Another.
 """,
         encoding="utf-8",
     )
@@ -169,8 +165,7 @@ Error.
     stats = scan_summaries(vault, "Summaries")
 
     assert stats["total"] == 3
-    assert stats["success"] == 1
-    assert stats["mocked"] == 1
+    assert stats["success"] == 2
     assert stats["error"] == 1
     assert stats["oldest_date"] == "2024-01-01"
     assert stats["newest_date"] == "2024-01-03"
@@ -245,8 +240,8 @@ summary_status: success
     assert stats["total"] == 1  # Only counts .md file
 
 
-def test_scan_summaries_with_unknown_status(tmp_path: Path) -> None:
-    """Test scanning with summaries that have unknown/missing status."""
+def test_scan_summaries_with_unknown_status_details(tmp_path: Path) -> None:
+    """Test scanning with summaries that have unknown/missing status includes details."""
     vault = tmp_path / "vault"
     summaries = vault / "Summaries"
     summaries.mkdir(parents=True)
@@ -280,7 +275,6 @@ Summary with unrecognized status.
 
     assert stats["total"] == 2
     assert stats["success"] == 0
-    assert stats["mocked"] == 0
     assert stats["error"] == 0
     assert stats["unknown"] == 2
     assert len(stats["unknown_summaries"]) == 2
@@ -361,47 +355,6 @@ summary_status: error
 ## Summary Unavailable
 
 Failed to fetch: Connection timeout
-""",
-        encoding="utf-8",
-    )
-
-    # Create a success summary
-    success_summary = summaries / "2024-01-02-success.md"
-    success_summary.write_text(
-        """---
-source: https://example.com/success
-date: 2024-01-02
-summary_status: success
----
-
-Summary content.
-""",
-        encoding="utf-8",
-    )
-
-    results = scan_summaries_for_resummarize(vault, "Summaries")
-
-    # Only the success summary should be included
-    assert len(results) == 1
-    assert results[0][0] == "https://example.com/success"
-
-
-def test_scan_summaries_for_resummarize_filters_mocked_summaries(tmp_path: Path) -> None:
-    """Test proper filtering of mocked summaries."""
-    vault = tmp_path / "vault"
-    summaries = vault / "Summaries"
-    summaries.mkdir(parents=True)
-
-    # Create a mocked summary
-    mocked_summary = summaries / "2024-01-01-mocked.md"
-    mocked_summary.write_text(
-        """---
-source: https://example.com/mocked
-date: 2024-01-01
-summary_status: mocked
----
-
-This is a mocked summary.
 """,
         encoding="utf-8",
     )

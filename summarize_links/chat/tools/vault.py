@@ -76,7 +76,7 @@ class ListSummariesTool(Tool):
                 },
                 "status": {
                     "type": "string",
-                    "enum": ["all", "success", "error", "mocked"],
+                    "enum": ["all", "success", "error"],
                     "description": "Filter by summary status (default: all)",
                     "default": "all",
                 },
@@ -98,7 +98,7 @@ class ListSummariesTool(Tool):
             progress_callback: Optional callback for reporting progress.
             **kwargs: Tool parameters including:
                 - limit: Maximum summaries to return (default 10).
-                - status: Filter by status (all, success, error, mocked).
+                - status: Filter by status (all, success, error).
 
         Returns:
             ToolResult with list of summaries.

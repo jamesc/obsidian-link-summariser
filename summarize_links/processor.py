@@ -133,7 +133,7 @@ def process_url_with_metadata(
         summary_date = datetime.now()
 
     # Check if summary already exists (skip check if force is enabled)
-    # summary_exists returns False for mocked/error stubs, so they get reprocessed
+    # summary_exists returns False for error stubs, so they get reprocessed
     existing_summary_complete = summary_exists(
         config.vault_path, config.out_folder, url, summary_date
     )
@@ -357,7 +357,7 @@ def process_url_with_metadata(
                 )
 
                 # Write the summary note with rich frontmatter
-                # Use needs_overwrite to ensure mocked/error stubs get replaced
+                # Use needs_overwrite to ensure error stubs get replaced
                 # Use summary_date to preserve original date when re-summarizing
                 with tracer.trace_span(
                     name="write",

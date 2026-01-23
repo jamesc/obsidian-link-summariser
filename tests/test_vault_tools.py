@@ -144,11 +144,11 @@ Summary content here.
             """---
 title: Another Post
 date: 2025-01-21
-summary_status: mocked
+summary_status: success
 source: https://example.com/post
 ---
 
-Mocked summary.
+Another summary.
 """,
             encoding="utf-8",
         )
@@ -218,8 +218,7 @@ Failed to fetch.
         result = tool.execute(config, limit=10, status="success")
 
         assert result.success is True
-        assert result.data["total"] == 1
-        assert result.data["summaries"][0]["title"] == "Test Article"
+        assert result.data["total"] == 2
 
     def test_filter_by_error_status(
         self, tool: ListSummariesTool, vault_with_summaries: Path

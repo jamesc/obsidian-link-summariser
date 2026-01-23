@@ -197,7 +197,6 @@ class GetVaultStatusTool(Tool):
 
         lines.append(f"**Total summaries**: {stats['total']}")
         lines.append(f"  - ✓ Success: {stats['success']}")
-        lines.append(f"  - ○ Mocked: {stats['mocked']}")
         lines.append(f"  - ⚠ Error: {stats['error']}")
         if stats["unknown"] > 0:
             lines.append(f"  - ? Unknown: {stats['unknown']}")
@@ -212,14 +211,6 @@ class GetVaultStatusTool(Tool):
                 lines.append(f"  - {filename}: {reason}")
             if len(stats["error_summaries"]) > 5:
                 lines.append(f"  - ... and {len(stats['error_summaries']) - 5} more")
-
-        if stats["mocked_summaries"]:
-            mocked_count = len(stats["mocked_summaries"])
-            lines.append(f"\n**Mocked summaries** ({mocked_count} need real summarization):")
-            for filename, date in stats["mocked_summaries"][:5]:
-                lines.append(f"  - {filename} ({date})")
-            if len(stats["mocked_summaries"]) > 5:
-                lines.append(f"  - ... and {len(stats['mocked_summaries']) - 5} more")
 
         # Current configuration
         lines.append("\n**Current configuration**:")
