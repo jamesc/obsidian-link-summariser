@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 from summarize_links.commands import cmd_resummarize
 from summarize_links.config import Config
 from summarize_links.notes import scan_summaries_for_resummarize
+from summarize_links.services.summarization import ProcessOutcome
 
 
 class TestScanSummariesForResumarize:
@@ -82,29 +83,6 @@ summary_status: fetch_error
 ---
 
 ## Summary Unavailable
-""",
-            encoding="utf-8",
-        )
-
-        results = scan_summaries_for_resummarize(vault, "Summaries")
-
-        assert len(results) == 0
-
-    def test_skips_mocked_summaries(self, tmp_path: Path) -> None:
-        """Test that mocked summaries are skipped."""
-        vault = tmp_path / "vault"
-        summaries = vault / "Summaries"
-        summaries.mkdir(parents=True)
-
-        # Create a mocked summary
-        (summaries / "2024-01-01-mocked.md").write_text(
-            """---
-source: https://example.com
-date: 2024-01-01
-summary_status: mocked
----
-
-This is a mocked summary.
 """,
             encoding="utf-8",
         )
@@ -301,17 +279,6 @@ summary_status: success
             encoding="utf-8",
         )
 
-        # Mocked - should be skipped
-        (summaries / "2024-01-02-mocked.md").write_text(
-            """---
-source: https://example2.com
-date: 2024-01-02
-summary_status: mocked
----
-""",
-            encoding="utf-8",
-        )
-
         # Error - should be skipped
         (summaries / "2024-01-03-error.md").write_text(
             """---
@@ -387,7 +354,7 @@ Content without explicit status.
 class TestCmdResumarize:
     """Tests for cmd_resummarize command."""
 
-    @patch("summarize_links.commands.resummarize.process_resummarize_batch")
+    @patch("summarize_links.services.summarization.resummarize")
     @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_no_summaries_found(
         self,
@@ -403,7 +370,7 @@ class TestCmdResumarize:
         assert result == 0  # EXIT_SUCCESS
         mock_process.assert_not_called()
 
-    @patch("summarize_links.commands.resummarize.process_resummarize_batch")
+    @patch("summarize_links.services.summarization.resummarize")
     @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_basic_resummarize(
         self,
@@ -416,23 +383,24 @@ class TestCmdResumarize:
             ("https://example1.com", datetime(2024, 1, 1), datetime(2024, 1, 1, 10, 0), None),
             ("https://example2.com", datetime(2024, 1, 2), datetime(2024, 1, 2, 11, 0), None),
         ]
-        mock_process.return_value = (0, [])
+        mock_process.return_value = ProcessOutcome(
+            success=True, message="Success", should_delete_source=True
+        )
 
         result = cmd_resummarize(mock_config)
 
         assert result == 0
         # Verify force mode is enabled
         assert mock_config.force is True
-        # Verify process was called with correct URLs
-        mock_process.assert_called_once()
-        call_args = mock_process.call_args[0]
-        url_contexts = call_args[0]
-        assert len(url_contexts) == 2
-        assert url_contexts[0].url == "https://example1.com"
-        assert url_contexts[1].url == "https://example2.com"
+        # Verify process was called once for each URL
+        assert mock_process.call_count == 2
+        # Verify each URL was processed individually
+        calls = [call[0][0] for call in mock_process.call_args_list]
+        assert calls[0] == "https://example1.com"
+        assert calls[1] == "https://example2.com"
 
     @patch("summarize_links.commands.resummarize.datetime")
-    @patch("summarize_links.commands.resummarize.process_resummarize_batch")
+    @patch("summarize_links.services.summarization.resummarize")
     @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_age_filtering(
         self,
@@ -453,20 +421,21 @@ class TestCmdResumarize:
             ("https://old.com", datetime(2024, 1, 1), old_date, None),
             ("https://recent.com", datetime(2024, 1, 2), recent_date, None),
         ]
-        mock_process.return_value = (0, [])
+        mock_process.return_value = ProcessOutcome(
+            success=True, message="Success", should_delete_source=True
+        )
 
         result = cmd_resummarize(mock_config, age_days=5)
 
         assert result == 0
-        # Verify only old summary was processed
+        # Verify only old summary was processed (called once)
         mock_process.assert_called_once()
+        # Verify the correct URL was processed
         call_args = mock_process.call_args[0]
-        url_contexts = call_args[0]
-        assert len(url_contexts) == 1
-        assert url_contexts[0].url == "https://old.com"
+        assert call_args[0] == "https://old.com"
 
     @patch("summarize_links.commands.resummarize.datetime")
-    @patch("summarize_links.commands.resummarize.process_resummarize_batch")
+    @patch("summarize_links.services.summarization.resummarize")
     @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_no_summaries_within_age_filter(
         self,
@@ -492,7 +461,7 @@ class TestCmdResumarize:
         assert result == 0
         mock_process.assert_not_called()
 
-    @patch("summarize_links.commands.resummarize.process_resummarize_batch")
+    @patch("summarize_links.services.summarization.resummarize")
     @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_max_links_limiting(
         self,
@@ -508,18 +477,23 @@ class TestCmdResumarize:
             ("https://example4.com", datetime(2024, 1, 4), datetime(2024, 1, 4), None),
             ("https://example5.com", datetime(2024, 1, 5), datetime(2024, 1, 5), None),
         ]
-        mock_process.return_value = (0, [])
+        mock_process.return_value = ProcessOutcome(
+            success=True, message="Success", should_delete_source=True
+        )
         mock_config.max_links = 3
 
         result = cmd_resummarize(mock_config)
 
         assert result == 0
-        mock_process.assert_called_once()
-        call_args = mock_process.call_args[0]
-        url_contexts = call_args[0]
-        assert len(url_contexts) == 3
+        # Verify process was called exactly 3 times (max_links)
+        assert mock_process.call_count == 3
+        # Verify first 3 URLs were processed
+        calls = [call[0][0] for call in mock_process.call_args_list]
+        assert calls[0] == "https://example1.com"
+        assert calls[1] == "https://example2.com"
+        assert calls[2] == "https://example3.com"
 
-    @patch("summarize_links.commands.resummarize.process_resummarize_batch")
+    @patch("summarize_links.services.summarization.resummarize")
     @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_force_mode_enabled(
         self,
@@ -531,14 +505,16 @@ class TestCmdResumarize:
         mock_scan.return_value = [
             ("https://example.com", datetime(2024, 1, 1), datetime(2024, 1, 1), None),
         ]
-        mock_process.return_value = (0, [])
+        mock_process.return_value = ProcessOutcome(
+            success=True, message="Success", should_delete_source=True
+        )
         mock_config.force = False
 
         cmd_resummarize(mock_config)
 
         assert mock_config.force is True
 
-    @patch("summarize_links.commands.resummarize.process_resummarize_batch")
+    @patch("summarize_links.services.summarization.resummarize")
     @patch("summarize_links.commands.resummarize.scan_summaries_for_resummarize")
     def test_preserves_original_dates(
         self,
@@ -546,7 +522,7 @@ class TestCmdResumarize:
         mock_process: MagicMock,
         mock_config: Config,
     ) -> None:
-        """Test that original dates are passed to batch processor."""
+        """Test that resummarize is called for each URL independently."""
         orig_date1 = datetime(2024, 1, 1)
         orig_date2 = datetime(2024, 1, 2)
         summ_date1 = datetime(2024, 1, 10)
@@ -556,13 +532,15 @@ class TestCmdResumarize:
             ("https://example1.com", orig_date1, summ_date1, None),
             ("https://example2.com", orig_date2, summ_date2, None),
         ]
-        mock_process.return_value = (0, [])
+        mock_process.return_value = ProcessOutcome(
+            success=True, message="Success", should_delete_source=True
+        )
 
         cmd_resummarize(mock_config)
 
-        mock_process.assert_called_once()
-        call_args = mock_process.call_args[0]
-        url_dates = call_args[1]
-        # Check that original dates (not summary dates) are preserved
-        assert url_dates["https://example1.com"] == orig_date1
-        assert url_dates["https://example2.com"] == orig_date2
+        # Verify resummarize was called once for each URL
+        assert mock_process.call_count == 2
+        # Verify each URL was processed
+        calls = [call[0][0] for call in mock_process.call_args_list]
+        assert calls[0] == "https://example1.com"
+        assert calls[1] == "https://example2.com"

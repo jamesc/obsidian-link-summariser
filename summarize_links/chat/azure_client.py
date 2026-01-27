@@ -18,6 +18,7 @@ from openai import APIConnectionError, APIError, OpenAI
 from openai import RateLimitError as OpenAIRateLimitError
 
 from summarize_links.exceptions import AzureAPIError
+from summarize_links.llm.base import LazyClientMixin
 
 __all__ = [
     "AzureChatClient",
@@ -357,7 +358,7 @@ class StreamingChatResponse:
         )
 
 
-class AzureChatClient:
+class AzureChatClient(LazyClientMixin[OpenAI]):
     """
     Client for chat interactions using Azure OpenAI Responses API.
 
@@ -392,22 +393,20 @@ class AzureChatClient:
         self._deployment_name = deployment_name or model
         self._client: OpenAI | None = None
 
-        logger.debug(
-            "Initialized AzureChatClient with Responses API (model=%s, deployment=%s)",
-            model,
-            self._deployment_name,
-        )
+        # Avoid logging model/deployment names to prevent security scanning alerts
+        logger.debug("Initialized AzureChatClient with Responses API")
 
     def _get_client(self) -> OpenAI:
         """Get or create the OpenAI client configured for Azure Responses API."""
-        if self._client is None:
-            # Azure Responses API uses /openai/v1/ base URL
-            base_url = f"{self._endpoint}/openai/v1/"
-            self._client = OpenAI(
+        # Azure Responses API uses /openai/v1/ base URL
+        base_url = f"{self._endpoint}/openai/v1/"
+        return self._get_or_create_client(
+            lambda: OpenAI(
                 api_key=self._api_key,
                 base_url=base_url,
-            )
-        return self._client
+            ),
+            "AzureResponses",
+        )
 
     def _convert_tools_for_responses_api(self, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
@@ -495,16 +494,16 @@ class AzureChatClient:
             return ChatResponse.from_api_response(response)
 
         except OpenAIRateLimitError as e:
-            logger.error("Rate limited by Azure API: %s", e)
-            raise AzureAPIError(f"Rate limited: {e}") from e
+            logger.error("Rate limited by Azure API: %s", type(e).__name__)
+            raise AzureAPIError(f"Rate limited: {type(e).__name__}") from e
 
         except APIConnectionError as e:
-            logger.error("Connection error to Azure API: %s", e)
-            raise AzureAPIError(f"Connection error: {e}") from e
+            logger.error("Connection error to Azure API: %s", type(e).__name__)
+            raise AzureAPIError(f"Connection error: {type(e).__name__}") from e
 
         except APIError as e:
-            logger.error("Azure API error: %s", e)
-            raise AzureAPIError(f"API error: {e}") from e
+            logger.error("Azure API error: %s", type(e).__name__)
+            raise AzureAPIError(f"API error: {type(e).__name__}") from e
 
     def chat_stream(
         self,
@@ -553,16 +552,16 @@ class AzureChatClient:
             return StreamingChatResponse(stream)
 
         except OpenAIRateLimitError as e:
-            logger.error("Rate limited by Azure API: %s", e)
-            raise AzureAPIError(f"Rate limited: {e}") from e
+            logger.error("Rate limited by Azure API: %s", type(e).__name__)
+            raise AzureAPIError(f"Rate limited: {type(e).__name__}") from e
 
         except APIConnectionError as e:
-            logger.error("Connection error to Azure API: %s", e)
-            raise AzureAPIError(f"Connection error: {e}") from e
+            logger.error("Connection error to Azure API: %s", type(e).__name__)
+            raise AzureAPIError(f"Connection error: {type(e).__name__}") from e
 
         except APIError as e:
-            logger.error("Azure API error: %s", e)
-            raise AzureAPIError(f"API error: {e}") from e
+            logger.error("Azure API error: %s", type(e).__name__)
+            raise AzureAPIError(f"API error: {type(e).__name__}") from e
 
     def submit_function_outputs(
         self,
@@ -608,16 +607,16 @@ class AzureChatClient:
             return ChatResponse.from_api_response(response)
 
         except OpenAIRateLimitError as e:
-            logger.error("Rate limited by Azure API: %s", e)
-            raise AzureAPIError(f"Rate limited: {e}") from e
+            logger.error("Rate limited by Azure API: %s", type(e).__name__)
+            raise AzureAPIError(f"Rate limited: {type(e).__name__}") from e
 
         except APIConnectionError as e:
-            logger.error("Connection error to Azure API: %s", e)
-            raise AzureAPIError(f"Connection error: {e}") from e
+            logger.error("Connection error to Azure API: %s", type(e).__name__)
+            raise AzureAPIError(f"Connection error: {type(e).__name__}") from e
 
         except APIError as e:
-            logger.error("Azure API error: %s", e)
-            raise AzureAPIError(f"API error: {e}") from e
+            logger.error("Azure API error: %s", type(e).__name__)
+            raise AzureAPIError(f"API error: {type(e).__name__}") from e
 
     @property
     def model(self) -> str:

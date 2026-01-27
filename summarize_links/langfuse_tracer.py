@@ -66,7 +66,7 @@ logger = logging.getLogger(__name__)
 
 
 class MockLangfuseTracer:
-    """No-op tracer for mock mode."""
+    """No-op tracer for testing and when Langfuse is unavailable."""
 
     @contextmanager
     def trace_url_processing(
@@ -475,7 +475,7 @@ def get_tracer() -> LangfuseTracer | MockLangfuseTracer:
         Global tracer (real or mock).
     """
     if _global_tracer is None:
-        # Return a mock tracer as fallback (for tests or mock mode)
+        # Return a mock tracer as fallback (for tests)
         return MockLangfuseTracer()
 
     return _global_tracer

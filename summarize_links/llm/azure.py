@@ -31,6 +31,7 @@ from summarize_links.llm.base import (
     MAX_RETRIES,
     MAX_RETRY_DELAY,
     BaseLLMClient,
+    LazyClientMixin,
 )
 from summarize_links.llm.parsing import parse_llm_json_response
 from summarize_links.models import SummaryResult
@@ -44,7 +45,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-class AzureClient(BaseLLMClient):
+class AzureClient(BaseLLMClient, LazyClientMixin[AzureOpenAI]):
     """
     Client for Azure OpenAI / Microsoft Foundry.
 
@@ -142,14 +143,14 @@ class AzureClient(BaseLLMClient):
         Returns:
             Configured AzureOpenAI client instance.
         """
-        if self._client is None:
-            self._client = AzureOpenAI(
+        return self._get_or_create_client(
+            lambda: AzureOpenAI(
                 api_key=self._api_key,
                 api_version=self._api_version,
                 azure_endpoint=self._endpoint,
-            )
-            logger.debug("Created AzureOpenAI client instance")
-        return self._client
+            ),
+            "AzureOpenAI",
+        )
 
     def summarize(self, content: str, url: str, title: str | None = None) -> str:
         """

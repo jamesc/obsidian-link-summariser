@@ -69,9 +69,11 @@ class GetRateLimitStatusTool(Tool):
         """
         try:
             # Get the rate limiter (if initialized)
+            # Pass yaml_model_limits so it can auto-detect correct limits for the model
             limiter = get_rate_limiter(
                 model=config.model,
                 state_path=config.vault_path,
+                yaml_model_limits=config.model_limits,
             )
             status = limiter.get_status()
 
@@ -197,7 +199,6 @@ class GetVaultStatusTool(Tool):
 
         lines.append(f"**Total summaries**: {stats['total']}")
         lines.append(f"  - ✓ Success: {stats['success']}")
-        lines.append(f"  - ○ Mocked: {stats['mocked']}")
         lines.append(f"  - ⚠ Error: {stats['error']}")
         if stats["unknown"] > 0:
             lines.append(f"  - ? Unknown: {stats['unknown']}")
@@ -213,19 +214,10 @@ class GetVaultStatusTool(Tool):
             if len(stats["error_summaries"]) > 5:
                 lines.append(f"  - ... and {len(stats['error_summaries']) - 5} more")
 
-        if stats["mocked_summaries"]:
-            mocked_count = len(stats["mocked_summaries"])
-            lines.append(f"\n**Mocked summaries** ({mocked_count} need real summarization):")
-            for filename, date in stats["mocked_summaries"][:5]:
-                lines.append(f"  - {filename} ({date})")
-            if len(stats["mocked_summaries"]) > 5:
-                lines.append(f"  - ... and {len(stats['mocked_summaries']) - 5} more")
-
         # Current configuration
         lines.append("\n**Current configuration**:")
         lines.append(f"  - Model: {config.model}")
         lines.append(f"  - Provider: {config.model_provider}")
-        lines.append(f"  - Mock mode: {'Yes' if config.mock_mode else 'No'}")
 
         return ToolResult(
             success=True,

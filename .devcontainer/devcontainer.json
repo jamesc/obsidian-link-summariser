@@ -1,9 +1,9 @@
 {
   "name": "Obsidian Link Summariser",
   "image": "mcr.microsoft.com/devcontainers/python:3.11",
-  
+
   "features": {
-    "ghcr.io/devcontainers-contrib/features/uv:1": {
+    "ghcr.io/devcontainers-extra/features/uv:1": {
       "version": "latest"
     }
   },
@@ -64,9 +64,9 @@
     "UV_PROJECT_ENVIRONMENT": "${containerWorkspaceFolder}/.venv"
   },
 
-  "mounts": [
-    "source=${localWorkspaceFolder}/.env,target=${containerWorkspaceFolder}/.env,type=bind,consistency=cached,readonly"
-  ],
+  // Mount .env file if it exists (required for API keys)
+  // Create .env from .env.example before starting container
+  "mounts": [],
 
   "forwardPorts": [],
 

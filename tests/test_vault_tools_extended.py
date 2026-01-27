@@ -12,14 +12,14 @@ from summarize_links.chat.tools.vault import (
     ListSummariesTool,
     ReadSummaryTool,
     SearchVaultTool,
-    _extract_frontmatter,
     _get_body_content,
 )
 from summarize_links.config import Config
+from summarize_links.utils.frontmatter import parse_frontmatter
 
 
 class TestExtractFrontmatterEdgeCases:
-    """Additional tests for _extract_frontmatter helper."""
+    """Additional tests for parse_frontmatter utility."""
 
     def test_extract_tags_inline_format(self) -> None:
         """Test tags in inline format are not extracted as list."""
@@ -30,7 +30,7 @@ tags: python, testing
 
 Body.
 """
-        result = _extract_frontmatter(content)
+        result = parse_frontmatter(content)
         # Inline tags are extracted as single string
         assert "tags" in result
         assert result["tags"] == "python, testing"
@@ -45,11 +45,11 @@ filled: value
 
 Body.
 """
-        result = _extract_frontmatter(content)
+        result = parse_frontmatter(content)
         assert result["title"] == "Test"
         assert result["filled"] == "value"
-        # Empty values should not be added
-        assert "empty" not in result
+        # YAML parsing treats "empty:" with no value as None
+        assert result.get("empty") is None
 
     def test_extract_single_quoted_value(self) -> None:
         """Test single-quoted values."""
@@ -59,7 +59,7 @@ title: 'Single quoted'
 
 Body.
 """
-        result = _extract_frontmatter(content)
+        result = parse_frontmatter(content)
         assert result["title"] == "Single quoted"
 
     def test_frontmatter_with_colons_in_value(self) -> None:
@@ -71,7 +71,7 @@ time: "10:30:00"
 
 Body.
 """
-        result = _extract_frontmatter(content)
+        result = parse_frontmatter(content)
         assert result["url"] == "https://example.com"
         assert result["time"] == "10:30:00"
 
@@ -86,7 +86,7 @@ other: value
 
 Body.
 """
-        result = _extract_frontmatter(content)
+        result = parse_frontmatter(content)
         assert result["tags"] == ["tag1", "tag2"]
         assert result["other"] == "value"
 
@@ -151,15 +151,15 @@ Content.
         assert result.success is True
         assert result.data["total"] == 1
 
-    def test_filter_mocked_status(self, tool: ListSummariesTool, tmp_path: Path) -> None:
-        """Test filtering by mocked status."""
+    def test_filter_error_status(self, tool: ListSummariesTool, tmp_path: Path) -> None:
+        """Test filtering by error status."""
         summaries_dir = tmp_path / "Summaries"
         summaries_dir.mkdir()
 
-        (summaries_dir / "mocked.md").write_text(
+        (summaries_dir / "error.md").write_text(
             """---
-title: Mocked Summary
-summary_status: mocked
+title: Error Summary
+summary_status: error
 ---
 
 Content.
@@ -179,11 +179,11 @@ Content.
         )
 
         config = Config(vault_path=tmp_path, out_folder="Summaries")
-        result = tool.execute(config, limit=10, status="mocked")
+        result = tool.execute(config, limit=10, status="error")
 
         assert result.success is True
         assert result.data["total"] == 1
-        assert result.data["summaries"][0]["status"] == "mocked"
+        assert result.data["summaries"][0]["status"] == "error"
 
     def test_to_schema(self, tool: ListSummariesTool) -> None:
         """Test tool schema generation."""
@@ -385,7 +385,10 @@ Content here.
 
         assert result.success is True
         assert result.data["title"] == "Full Metadata"
-        assert result.data["date"] == "2025-01-22"
+        # YAML parsing converts ISO date strings to datetime.date objects
+        from datetime import date
+
+        assert result.data["date"] == date(2025, 1, 22)
         assert result.data["source"] == "https://example.com"
         assert result.data["tags"] == ["test", "metadata"]
         assert "Content here" in result.data["content"]

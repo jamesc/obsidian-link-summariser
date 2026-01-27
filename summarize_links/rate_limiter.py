@@ -531,6 +531,7 @@ def get_rate_limiter(
     rpm_limit: int | None = None,
     tpm_limit: int | None = None,
     daily_limit: int | None = None,
+    yaml_model_limits: dict[str, dict[str, int]] | None = None,
 ) -> RateLimiter:
     """
     Get the global rate limiter instance.
@@ -540,28 +541,56 @@ def get_rate_limiter(
         limits: ModelRateLimits for the model. If provided, overrides individual limits.
         state_path: Optional path for persisting daily state.
                    Only used on first call to initialize the limiter.
-        rpm_limit: Requests per minute limit (uses default if None).
-        tpm_limit: Tokens per minute limit (uses default if None).
-        daily_limit: Requests per day limit (uses default if None).
+        rpm_limit: Requests per minute limit (auto-detected from model if None).
+        tpm_limit: Tokens per minute limit (auto-detected from model if None).
+        daily_limit: Requests per day limit (auto-detected from model if None).
+        yaml_model_limits: Optional YAML config model limits for lookup.
 
     Returns:
         Configured RateLimiter instance.
     """
     global _rate_limiter
 
-    # Default limits if not provided
-    default_rpm = 5
-    default_tpm = 250000
-    default_daily = 20
-
     if _rate_limiter is None:
         # Build ModelRateLimits from individual parameters if not provided
         if limits is None:
-            limits = ModelRateLimits(
-                rpm_limit=rpm_limit if rpm_limit is not None else default_rpm,
-                tpm_limit=tpm_limit if tpm_limit is not None else default_tpm,
-                daily_limit=daily_limit if daily_limit is not None else default_daily,
-            )
+            # If individual limits are provided, use them
+            if rpm_limit is not None or tpm_limit is not None or daily_limit is not None:
+                # Import here to avoid circular import
+                from summarize_links.config import FALLBACK_MODEL_LIMITS
+
+                limits = ModelRateLimits(
+                    rpm_limit=rpm_limit
+                    if rpm_limit is not None
+                    else FALLBACK_MODEL_LIMITS["rpm_limit"],
+                    tpm_limit=tpm_limit
+                    if tpm_limit is not None
+                    else FALLBACK_MODEL_LIMITS["tpm_limit"],
+                    daily_limit=daily_limit
+                    if daily_limit is not None
+                    else FALLBACK_MODEL_LIMITS["daily_limit"],
+                )
+            elif model:
+                # Auto-detect limits based on model name
+                from summarize_links.config import get_model_rate_limits
+
+                limits = get_model_rate_limits(model, yaml_model_limits=yaml_model_limits)
+                logger.debug(
+                    "Auto-detected rate limits for model '%s': RPM=%d, TPM=%d, Daily=%d",
+                    model,
+                    limits.rpm_limit,
+                    limits.tpm_limit,
+                    limits.daily_limit,
+                )
+            else:
+                # No model specified, use conservative defaults
+                from summarize_links.config import FALLBACK_MODEL_LIMITS
+
+                limits = ModelRateLimits(
+                    rpm_limit=FALLBACK_MODEL_LIMITS["rpm_limit"],
+                    tpm_limit=FALLBACK_MODEL_LIMITS["tpm_limit"],
+                    daily_limit=FALLBACK_MODEL_LIMITS["daily_limit"],
+                )
 
         _rate_limiter = RateLimiter(
             model=model,

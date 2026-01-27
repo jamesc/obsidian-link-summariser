@@ -12,6 +12,14 @@ import logging
 import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
+from summarize_links.constants import (
+    BARE_URL_PATTERN,
+    HASHTAG_PATTERN,
+    MARKDOWN_LINK_PATTERN,
+    MEANINGFUL_PARAMS,
+    NOISE_FRAGMENTS,
+    TRACKING_PARAMS,
+)
 from summarize_links.exceptions import URLExtractionError
 from summarize_links.models import UrlWithContext
 
@@ -25,64 +33,8 @@ __all__ = [
 # Configure module logger
 logger = logging.getLogger(__name__)
 
-# ----- URL Extraction Patterns -----
-# Pattern to match Markdown links: [text](url)
-MARKDOWN_LINK_PATTERN = r"\[([^\]]+)\]\((https?://[^)]+)\)"
-
-# Pattern to match bare URLs (not inside Markdown link syntax)
-# Matches http:// or https:// followed by non-whitespace, non-bracket characters
-BARE_URL_PATTERN = r"(?<!\()(https?://[^\s\[\]()]+)(?!\))"
-
-# Combined pattern for extraction
+# Combined pattern for URL extraction (compiled once)
 URL_PATTERN = re.compile(rf"{MARKDOWN_LINK_PATTERN}|{BARE_URL_PATTERN}", re.IGNORECASE)
-
-# Pattern to match hashtags (Obsidian-style tags)
-# Matches #tag but not ## headers or # in URLs
-HASHTAG_PATTERN = re.compile(r"(?<!\S)#([a-zA-Z][a-zA-Z0-9_-]*)", re.UNICODE)
-
-# ----- URL Cleaning -----
-# Query parameters to strip (tracking, analytics, etc.)
-TRACKING_PARAMS = {
-    # UTM tracking (Google Analytics)
-    "utm_source",
-    "utm_medium",
-    "utm_campaign",
-    "utm_content",
-    "utm_term",
-    # Social/referrer tracking
-    "ref",
-    "ref_src",
-    "ref_url",
-    "source",
-    "fbclid",  # Facebook
-    "gclid",  # Google Ads
-    "msclkid",  # Microsoft Ads
-    "twclid",  # Twitter
-    "igshid",  # Instagram
-    # Mobile/app tracking
-    "m",  # Blogspot mobile
-    # Session/paywall tokens
-    "st",
-    "token",
-    # Misc
-    "share",
-    "s",  # Some sharing params
-}
-
-# Fragments to strip (RSS noise, etc.)
-NOISE_FRAGMENTS = {
-    "atom-everything",
-    "rss",
-}
-
-# Domains where certain params are meaningful and should be kept
-MEANINGFUL_PARAMS = {
-    "youtube.com": {"v", "t", "list", "index"},
-    "youtu.be": {"t"},
-    "github.com": {"tab", "q"},
-    "twitter.com": {"s"},  # Tweet ID context
-    "x.com": {"s"},
-}
 
 
 def clean_url(url: str) -> str:

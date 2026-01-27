@@ -87,7 +87,7 @@ Each summary note has YAML frontmatter with metadata:
 - **type**: Content type (article, tutorial, documentation, news, video, tool, reference, blog, research, other)
 - **date**: Date the URL was first added/discovered (stays constant when re-summarizing)
 - **summary_date**: When the AI summary was generated (updates on re-summarization)
-- **summary_status**: "success", "fetch_error", "extraction_error", or "mocked"
+- **summary_status**: "success", "fetch_error", or "extraction_error"
 - **summary_model**: AI model used for summarization
 - **summary_provider**: Provider (google, azure, ollama)
 - **from**: Backlink to source daily note where URL was found
