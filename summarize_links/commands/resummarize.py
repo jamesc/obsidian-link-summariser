@@ -7,10 +7,10 @@ Re-summarizes existing summaries from the Summaries folder.
 import logging
 from datetime import datetime, timedelta
 
+from summarize_links.commands.shared import outcomes_to_results, progress_callback
 from summarize_links.config import Config
-from summarize_links.models import UrlWithContext
 from summarize_links.notes import scan_summaries_for_resummarize
-from summarize_links.processor import process_resummarize_batch
+from summarize_links.services import summarization
 from summarize_links.ui import print_error, print_message, print_results
 
 # Module logger
@@ -90,19 +90,17 @@ def cmd_resummarize(config: Config, age_days: int | None = None) -> int:
     else:
         print_message(f"[green]Found {len(summaries)} summaries to re-summarize[/]")
 
-    # Convert to UrlWithContext (no user tags for resummarize)
-    url_contexts = [UrlWithContext(url=url) for url, _, _, _ in summaries]
+    outcomes: list[summarization.ProcessOutcome] = []
+    for url, _, _, _ in summaries:
+        outcome = summarization.resummarize(url, config, progress_cb=progress_callback)
+        outcomes.append(outcome)
 
-    # Extract original dates and source notes for each URL
-    url_dates = {url: orig_date for url, orig_date, _, _ in summaries}
-    url_source_notes = {url: source_note for url, _, _, source_note in summaries}
+    if not outcomes:
+        return EXIT_ERROR
 
-    # Process URLs with the preserved dates and source notes
-    exit_code, results = process_resummarize_batch(
-        url_contexts, url_dates, url_source_notes, config
-    )
+    exit_code = EXIT_ERROR if all(not o.success for o in outcomes) else EXIT_SUCCESS
 
-    # Print results
+    results = outcomes_to_results(outcomes)
     if results:
         print_results(results)
 

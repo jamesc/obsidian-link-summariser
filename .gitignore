@@ -25,6 +25,8 @@ eggs/
 # Testing
 .pytest_cache/
 .coverage
+coverage.xml
+coverage.json
 htmlcov/
 .mypy_cache/
 .ruff_cache/

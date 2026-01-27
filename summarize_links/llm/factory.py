@@ -68,7 +68,6 @@ def create_llm_client(
     azure_endpoint: str | None = None,
     azure_deployment_name: str | None = None,
     azure_api_version: str | None = None,
-    mock_mode: bool = False,
     state_path: Path | None = None,
     **kwargs: Any,
 ) -> SummarizerProtocol:
@@ -87,7 +86,6 @@ def create_llm_client(
         azure_endpoint: Azure endpoint URL.
         azure_deployment_name: Azure deployment name (defaults to model).
         azure_api_version: Azure API version.
-        mock_mode: Use mock client for testing.
         state_path: Path for rate limiter state.
         **kwargs: Additional provider-specific arguments.
 
@@ -98,13 +96,9 @@ def create_llm_client(
         ConfigError: If required configuration is missing.
     """
     from summarize_links.exceptions import ConfigError
-    from summarize_links.llm.gemini import GeminiClient, MockGeminiClient
+    from summarize_links.llm.gemini import GeminiClient
 
-    if mock_mode:
-        logger.info("Creating MockGeminiClient (mock mode enabled)")
-        return MockGeminiClient(model=model)
-
-    # Provider is required when not in mock mode
+    # Provider is required
     if not provider:
         raise ConfigError(
             "MODEL_PROVIDER is required. "

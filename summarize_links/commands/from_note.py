@@ -15,7 +15,7 @@ from summarize_links.notes import (
     find_daily_notes_with_urls,
     read_daily_note,
 )
-from summarize_links.processor import process_urls_batch
+from summarize_links.services.summarization import ProcessOutcome, process_urls
 from summarize_links.ui import print_error, print_message, print_results
 
 # Module logger
@@ -24,6 +24,14 @@ logger = logging.getLogger(__name__)
 # Exit codes
 EXIT_SUCCESS = 0
 EXIT_ERROR = 1
+
+
+def _progress_cb(stage: str, detail: str) -> None:
+    print_message(f"[dim]{stage}: {detail}[/]")
+
+
+def _to_results(outcomes: list[ProcessOutcome]) -> list[tuple[bool, str]]:
+    return [(o.success, o.message) for o in outcomes]
 
 
 def cmd_from_note(config: Config, date_str: str | None = None) -> int:
@@ -82,11 +90,15 @@ def cmd_from_note(config: Config, date_str: str | None = None) -> int:
     # Process URLs with rich metadata pipeline
     # Convert date to datetime for the processing functions
     source_datetime = datetime.combine(date, datetime.min.time())
-    exit_code, results = process_urls_batch(
-        url_contexts, config, daily_note_filename=note_filename, source_date=source_datetime
+    exit_code, outcomes = process_urls(
+        url_contexts,
+        config,
+        source_note=note_filename,
+        source_date=source_datetime,
+        progress_cb=_progress_cb,
     )
 
-    # Print results
+    results = _to_results(outcomes)
     if results:
         print_results(results)
 
@@ -175,10 +187,14 @@ def cmd_from_note_all(config: Config) -> int:
     else:
         print_message(f"[green]Found {len(all_url_contexts)} URLs to process[/]")
 
-    # Process all URLs in one batch (signal handling is in process_urls_batch)
-    exit_code, results = process_urls_batch(all_url_contexts, config)
+    # Process all URLs in one batch (signal handling is in services.process_urls)
+    exit_code, outcomes = process_urls(
+        all_url_contexts,
+        config,
+        progress_cb=_progress_cb,
+    )
 
-    # Print results
+    results = _to_results(outcomes)
     if results:
         print_results(results)
 

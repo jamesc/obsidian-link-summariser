@@ -54,6 +54,8 @@ __all__ = [
     "GEMINI_TPM_LIMIT",
     "GEMINI_DAILY_LIMIT",
     "DEFAULT_MODEL_LIMITS",
+    "FALLBACK_MODEL_LIMITS",
+    "FALLBACK_AZURE_MODEL_LIMITS",
     # Constants - Ollama
     "DEFAULT_OLLAMA_ENDPOINT",
     "OLLAMA_TIMEOUT",
@@ -104,7 +106,10 @@ OLLAMA_TIMEOUT = 120  # Seconds (local models can be slower)
 DEFAULT_AZURE_API_VERSION = "2024-02-15-preview"
 AZURE_RPM_LIMIT = 100  # Requests per minute (varies by tier)
 AZURE_TPM_LIMIT = 90000  # Tokens per minute (varies by tier)
-AZURE_DAILY_LIMIT = 5000  # Requests per day (varies by tier)
+# Note: Azure OpenAI has NO daily request limits - only RPM/TPM limits.
+# The daily_limit values below are set high (1M) to effectively disable
+# daily limiting for Azure models while preserving RPM/TPM enforcement.
+AZURE_DAILY_LIMIT = 1_000_000  # Effectively unlimited (Azure has no daily limits)
 
 # Default rate limits per model (actual API limits before safety margin)
 # These are the raw API limits - the rate limiter applies a 10% safety margin
@@ -130,50 +135,93 @@ DEFAULT_MODEL_LIMITS: dict[str, dict[str, int]] = {
         "daily_limit": 20,
     },
     # Azure / OpenAI models (standard tier limits)
+    # Note: Azure has NO daily limits - only RPM/TPM. daily_limit=1M effectively disables it.
+    # RPM/TPM values are for Default tier. Enterprise tiers have much higher limits.
+    # See: https://learn.microsoft.com/en-us/azure/ai-services/openai/quotas-limits
     "gpt-4": {
         "rpm_limit": 100,
         "tpm_limit": 90000,
-        "daily_limit": 5000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
     },
     "gpt-4-turbo": {
         "rpm_limit": 60,
         "tpm_limit": 80000,
-        "daily_limit": 3000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
     },
     "gpt-4o": {
-        "rpm_limit": 100,
-        "tpm_limit": 90000,
-        "daily_limit": 5000,
+        "rpm_limit": 2700,  # Default tier: 450K TPM / 6 RPM per 1K TPM
+        "tpm_limit": 450000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
+    },
+    "gpt-4o-mini": {
+        "rpm_limit": 12000,  # Default tier: 2M TPM
+        "tpm_limit": 2_000_000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
     },
     "gpt-35-turbo": {
         "rpm_limit": 350,
         "tpm_limit": 90000,
-        "daily_limit": 10000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
     },
-    # GPT-4.1 mini (Azure deployment - various naming conventions)
+    # GPT-4.1 series (Azure deployment - various naming conventions)
+    # Default tier: 5M TPM, 5K RPM for gpt-4.1-mini Global Standard
+    "gpt-4.1": {
+        "rpm_limit": 1000,  # Default tier
+        "tpm_limit": 1_000_000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
+    },
     "gpt-4.1-mini": {
-        "rpm_limit": 100,
-        "tpm_limit": 100000,
-        "daily_limit": 1000000,  # Effectively unlimited
+        "rpm_limit": 5000,  # Default tier: 5M TPM, 5K RPM
+        "tpm_limit": 5_000_000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
     },
     "gpt-41-mini": {
-        "rpm_limit": 100,
-        "tpm_limit": 100000,
-        "daily_limit": 1000000,
+        "rpm_limit": 5000,
+        "tpm_limit": 5_000_000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
     },
     "gpt4.1-mini": {
-        "rpm_limit": 100,
-        "tpm_limit": 100000,
-        "daily_limit": 1000000,
+        "rpm_limit": 5000,
+        "tpm_limit": 5_000_000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
+    },
+    "gpt-4.1-nano": {
+        "rpm_limit": 5000,  # Default tier: 5M TPM, 5K RPM
+        "tpm_limit": 5_000_000,
+        "daily_limit": 1_000_000,  # Azure has no daily limit
     },
 }
 
 # Fallback limits for unknown models (conservative)
+# Note: Used for Gemini/other models. For Azure/OpenAI models, see _is_azure_model().
 FALLBACK_MODEL_LIMITS: dict[str, int] = {
     "rpm_limit": 2,
     "tpm_limit": 32000,
     "daily_limit": 20,
 }
+
+# Fallback limits for unknown Azure/OpenAI models
+# Azure has no daily limits, so we set a high value to effectively disable it.
+FALLBACK_AZURE_MODEL_LIMITS: dict[str, int] = {
+    "rpm_limit": 100,
+    "tpm_limit": 100000,
+    "daily_limit": 1_000_000,  # Azure has no daily limit
+}
+
+
+def _is_azure_model(model: str) -> bool:
+    """
+    Check if a model name appears to be an Azure/OpenAI model.
+
+    Args:
+        model: Model name to check.
+
+    Returns:
+        True if the model name suggests it's an Azure/OpenAI model.
+    """
+    model_lower = model.lower()
+    azure_prefixes = ("gpt-", "gpt4", "o1", "o3", "o4", "text-embedding", "dall-e")
+    return any(model_lower.startswith(prefix) for prefix in azure_prefixes)
 
 
 def get_model_rate_limits(
@@ -186,7 +234,8 @@ def get_model_rate_limits(
     Looks up limits in this order:
     1. YAML config model_limits (if provided)
     2. DEFAULT_MODEL_LIMITS
-    3. FALLBACK_MODEL_LIMITS (for unknown models)
+    3. Azure-specific fallback (for gpt-* and o-series models)
+    4. FALLBACK_MODEL_LIMITS (for other unknown models)
 
     Args:
         model: Model name (e.g., "gemini-2.5-flash").
@@ -218,7 +267,23 @@ def get_model_rate_limits(
             daily_limit=limits_dict["daily_limit"],
         )
 
-    # Fallback for unknown models
+    # For Azure/OpenAI models not in defaults, use Azure-specific fallback
+    # (Azure has no daily limits, so we use a high value)
+    if _is_azure_model(model):
+        logger.info(
+            "Unknown Azure/OpenAI model '%s', using Azure fallback limits: "
+            "RPM=%d, TPM=%d, Daily=unlimited",
+            model,
+            FALLBACK_AZURE_MODEL_LIMITS["rpm_limit"],
+            FALLBACK_AZURE_MODEL_LIMITS["tpm_limit"],
+        )
+        return ModelRateLimits(
+            rpm_limit=FALLBACK_AZURE_MODEL_LIMITS["rpm_limit"],
+            tpm_limit=FALLBACK_AZURE_MODEL_LIMITS["tpm_limit"],
+            daily_limit=FALLBACK_AZURE_MODEL_LIMITS["daily_limit"],
+        )
+
+    # Fallback for other unknown models (e.g., Gemini variants)
     logger.warning(
         "Unknown model '%s', using conservative fallback limits: RPM=%d, TPM=%d, Daily=%d",
         model,
@@ -249,7 +314,6 @@ class Config:
         out_folder: Folder name for summary notes (relative to vault)
         max_links: Maximum number of URLs to process in one run
         daily_notes_folder: Folder containing daily notes (relative to vault)
-        mock_mode: If True, use mock summarizer instead of real API
         dry_run: If True, show what would happen without making changes
         verbose: If True, enable debug logging
         force: If True, overwrite existing summaries
@@ -279,7 +343,6 @@ class Config:
     out_folder: str = DEFAULT_OUT_FOLDER
     max_links: int = DEFAULT_MAX_LINKS
     daily_notes_folder: str = DEFAULT_DAILY_NOTES_FOLDER
-    mock_mode: bool = False
     dry_run: bool = False
     verbose: bool = False
     force: bool = False
@@ -302,6 +365,19 @@ class Config:
     playwright_enabled: bool = True
     playwright_timeout: int = 30
     playwright_browser: str = "chromium"
+    # Chat mode configuration (uses Azure OpenAI Responses API exclusively)
+    # Note: Responses API uses /openai/v1/ endpoint without api-version parameter
+    chat_model: str = "gpt-4.1-mini"
+    chat_azure_endpoint: str = ""
+    chat_azure_api_key: str = ""
+    chat_azure_deployment: str = ""
+    # Chat session configuration
+    chat_max_history_messages: int = 50
+    chat_max_context_tokens: int = 100000  # Leave room for response
+    chat_auto_save: bool = False
+    chat_save_path: str = ".chat-history.json"
+    chat_streaming: bool = True
+    chat_confirm_tools: bool = False
 
     def validate(self) -> None:
         """
@@ -322,19 +398,18 @@ class Config:
                 f"Valid options: {', '.join(sorted(VALID_PROVIDERS))}"
             )
 
-        # Provider-specific validation (unless in mock mode)
-        if not self.mock_mode:
-            if self.model_provider == PROVIDER_GOOGLE and not self.gemini_api_key:
-                raise ConfigError(
-                    "GEMINI_API_KEY is required when MODEL_PROVIDER=google. "
-                    "Get one at https://aistudio.google.com/apikey"
-                )
+        # Provider-specific validation
+        if self.model_provider == PROVIDER_GOOGLE and not self.gemini_api_key:
+            raise ConfigError(
+                "GEMINI_API_KEY is required when MODEL_PROVIDER=google. "
+                "Get one at https://aistudio.google.com/apikey"
+            )
 
-            if self.model_provider == PROVIDER_AZURE:
-                if not self.azure_api_key:
-                    raise ConfigError("AZURE_API_KEY is required when MODEL_PROVIDER=azure.")
-                if not self.azure_endpoint:
-                    raise ConfigError("AZURE_ENDPOINT is required when MODEL_PROVIDER=azure.")
+        if self.model_provider == PROVIDER_AZURE:
+            if not self.azure_api_key:
+                raise ConfigError("AZURE_API_KEY is required when MODEL_PROVIDER=azure.")
+            if not self.azure_endpoint:
+                raise ConfigError("AZURE_ENDPOINT is required when MODEL_PROVIDER=azure.")
 
         # Vault path must be set and exist
         if self.vault_path is None:
@@ -350,8 +425,8 @@ class Config:
         if self.max_links < 1:
             raise ConfigError(f"max_links must be at least 1, got {self.max_links}")
 
-        # Langfuse credentials are required (not in mock mode)
-        if not self.mock_mode and (not self.langfuse_public_key or not self.langfuse_secret_key):
+        # Langfuse credentials are required
+        if not self.langfuse_public_key or not self.langfuse_secret_key:
             raise ConfigError(
                 "Langfuse credentials are required. Set LANGFUSE_PUBLIC_KEY and "
                 "LANGFUSE_SECRET_KEY environment variables or configure in YAML."
@@ -400,7 +475,6 @@ def load_config(
     provider: str | None = None,
     out_folder: str | None = None,
     max_links: int | None = None,
-    mock_mode: bool = False,
     dry_run: bool = False,
     verbose: bool = False,
     force: bool = False,
@@ -420,7 +494,6 @@ def load_config(
         provider: LLM provider (CLI override): google, ollama, azure.
         out_folder: Output folder name (CLI override).
         max_links: Maximum links to process (CLI override).
-        mock_mode: Use mock summarizer.
         dry_run: Show what would happen without changes.
         verbose: Enable debug logging.
         force: Overwrite existing summaries.
@@ -436,7 +509,6 @@ def load_config(
 
     # Start with defaults
     config = Config(
-        mock_mode=mock_mode,
         dry_run=dry_run,
         verbose=verbose,
         force=force,
@@ -584,6 +656,74 @@ def load_config(
         config.playwright_browser = os.getenv("PLAYWRIGHT_BROWSER", "chromium")
     elif "playwright_browser" in yaml_config:
         config.playwright_browser = yaml_config["playwright_browser"]
+
+    # Chat mode configuration (env vars > YAML > defaults)
+    # Chat uses Azure OpenAI exclusively with a separate model/deployment
+    if os.getenv("CHAT_MODEL"):
+        config.chat_model = os.getenv("CHAT_MODEL", "gpt-4.1-mini")
+    elif yaml_config.get("chat", {}).get("model"):
+        config.chat_model = yaml_config["chat"]["model"]
+
+    if os.getenv("CHAT_AZURE_ENDPOINT"):
+        config.chat_azure_endpoint = os.getenv("CHAT_AZURE_ENDPOINT", "")
+    elif yaml_config.get("chat", {}).get("azure_endpoint"):
+        config.chat_azure_endpoint = yaml_config["chat"]["azure_endpoint"]
+    # Fall back to main Azure endpoint if chat-specific not set
+    if not config.chat_azure_endpoint:
+        config.chat_azure_endpoint = config.azure_endpoint
+
+    if os.getenv("CHAT_AZURE_API_KEY"):
+        config.chat_azure_api_key = os.getenv("CHAT_AZURE_API_KEY", "")
+    elif yaml_config.get("chat", {}).get("azure_api_key"):
+        config.chat_azure_api_key = yaml_config["chat"]["azure_api_key"]
+    # Fall back to main Azure API key if chat-specific not set
+    if not config.chat_azure_api_key:
+        config.chat_azure_api_key = config.azure_api_key
+
+    if os.getenv("CHAT_AZURE_DEPLOYMENT"):
+        config.chat_azure_deployment = os.getenv("CHAT_AZURE_DEPLOYMENT", "")
+    elif yaml_config.get("chat", {}).get("azure_deployment"):
+        config.chat_azure_deployment = yaml_config["chat"]["azure_deployment"]
+    # Fall back to chat_model if deployment not set
+    if not config.chat_azure_deployment:
+        config.chat_azure_deployment = config.chat_model
+
+    # Chat session configuration (env vars > YAML > defaults)
+    chat_yaml = yaml_config.get("chat", {})
+
+    if os.getenv("CHAT_MAX_HISTORY_MESSAGES"):
+        config.chat_max_history_messages = int(os.getenv("CHAT_MAX_HISTORY_MESSAGES", "50"))
+    elif "max_history_messages" in chat_yaml:
+        config.chat_max_history_messages = int(chat_yaml["max_history_messages"])
+
+    if os.getenv("CHAT_MAX_CONTEXT_TOKENS"):
+        config.chat_max_context_tokens = int(os.getenv("CHAT_MAX_CONTEXT_TOKENS", "100000"))
+    elif "max_context_tokens" in chat_yaml:
+        config.chat_max_context_tokens = int(chat_yaml["max_context_tokens"])
+
+    if os.getenv("CHAT_AUTO_SAVE"):
+        config.chat_auto_save = os.getenv("CHAT_AUTO_SAVE", "").lower() in ("true", "1", "yes")
+    elif "auto_save" in chat_yaml:
+        config.chat_auto_save = bool(chat_yaml["auto_save"])
+
+    if os.getenv("CHAT_SAVE_PATH"):
+        config.chat_save_path = os.getenv("CHAT_SAVE_PATH", ".chat-history.json")
+    elif "save_path" in chat_yaml:
+        config.chat_save_path = chat_yaml["save_path"]
+
+    if os.getenv("CHAT_STREAMING"):
+        config.chat_streaming = os.getenv("CHAT_STREAMING", "").lower() in ("true", "1", "yes")
+    elif "streaming" in chat_yaml:
+        config.chat_streaming = bool(chat_yaml["streaming"])
+
+    if os.getenv("CHAT_CONFIRM_TOOLS"):
+        config.chat_confirm_tools = os.getenv("CHAT_CONFIRM_TOOLS", "").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+    elif "confirm_tools" in chat_yaml:
+        config.chat_confirm_tools = bool(chat_yaml["confirm_tools"])
 
     logger.debug(
         "Loaded config: provider=%s, model=%s, out_folder=%s",

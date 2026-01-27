@@ -1,6 +1,6 @@
 """Tests for Langfuse prompt management integration."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 import pytest
 
@@ -140,8 +140,12 @@ class TestGeminiLangfusePrompts:
 
         assert "Compiled prompt" in result
         # Title is formatted as " titled 'X'" to match main branch behavior
+        # current_date is dynamically set to today's date
         mock_prompt.compile.assert_called_once_with(
-            title=" titled 'Test'", url="https://example.com", content="content here"
+            title=" titled 'Test'",
+            url="https://example.com",
+            content="content here",
+            current_date=ANY,
         )
 
     @patch("langfuse.Langfuse")
@@ -185,8 +189,12 @@ class TestGeminiLangfusePrompts:
         result = client._compile_user_prompt(template, "test content", "https://example.com", None)
 
         # Should pass empty string for title, not 'Unknown'
+        # current_date is dynamically set to today's date
         mock_prompt.compile.assert_called_once_with(
-            title="", url="https://example.com", content="test content"
+            title="",
+            url="https://example.com",
+            content="test content",
+            current_date=ANY,
         )
         assert "Summarize the web page" in result
 
@@ -339,8 +347,12 @@ class TestOllamaLangfusePrompts:
 
         assert "titled 'My Title'" in result
         # Title is formatted as " titled 'X'" to match main branch behavior
+        # current_date is dynamically set to today's date
         mock_prompt.compile.assert_called_once_with(
-            title=" titled 'My Title'", url="https://test.com", content="content here"
+            title=" titled 'My Title'",
+            url="https://test.com",
+            content="content here",
+            current_date=ANY,
         )
 
 

@@ -9,10 +9,11 @@ This module handles:
 """
 
 import logging
-import re
 from datetime import datetime
 from pathlib import Path
 from typing import TypedDict
+
+from summarize_links.utils.frontmatter import get_frontmatter_field
 
 __all__ = [
     "SummaryStats",
@@ -29,13 +30,12 @@ class SummaryStats(TypedDict):
 
     total: int
     success: int
-    mocked: int
     error: int
     unknown: int
     oldest_date: str | None
     newest_date: str | None
     error_summaries: list[tuple[str, str]]
-    mocked_summaries: list[tuple[str, str]]
+    unknown_summaries: list[tuple[str, str | None, str | None]]  # (filename, status, source)
 
 
 def scan_summaries(
@@ -57,13 +57,11 @@ def scan_summaries(
         Dictionary containing:
         - total: Total number of summaries
         - success: Number of successful summaries
-        - mocked: Number of mocked summaries (need real summarization)
         - error: Number of error/stub summaries (failed processing)
         - unknown: Number without clear status
         - oldest_date: Oldest summary date (YYYY-MM-DD)
         - newest_date: Newest summary date (YYYY-MM-DD)
         - error_summaries: List of (filename, reason) for error summaries
-        - mocked_summaries: List of (filename, date) for mocked summaries
     """
     summaries_path = vault_path / out_folder
 
@@ -72,22 +70,20 @@ def scan_summaries(
         return {
             "total": 0,
             "success": 0,
-            "mocked": 0,
             "error": 0,
             "unknown": 0,
             "oldest_date": None,
             "newest_date": None,
             "error_summaries": [],
-            "mocked_summaries": [],
+            "unknown_summaries": [],
         }
 
     total = 0
     success_count = 0
-    mocked_count = 0
     error_count = 0
     unknown_count = 0
     error_summaries: list[tuple[str, str]] = []
-    mocked_summaries: list[tuple[str, str]] = []
+    unknown_summaries: list[tuple[str, str | None, str | None]] = []  # (filename, status, source)
     dates: list[str] = []
 
     # Scan all markdown files
@@ -97,9 +93,9 @@ def scan_summaries(
         try:
             content = filepath.read_text(encoding="utf-8")
 
-            # Extract status from frontmatter
-            status = _extract_frontmatter_field(content, "summary_status")
-            date = _extract_frontmatter_field(content, "date")
+            # Extract status from frontmatter using utility function
+            status = get_frontmatter_field(content, "summary_status")
+            date = get_frontmatter_field(content, "date")
 
             if date:
                 dates.append(date)
@@ -107,9 +103,6 @@ def scan_summaries(
             # Categorize by status
             if status == "success":
                 success_count += 1
-            elif status == "mocked":
-                mocked_count += 1
-                mocked_summaries.append((filepath.name, date or "unknown"))
             elif status == "error":
                 error_count += 1
                 # Extract error reason if available
@@ -117,11 +110,14 @@ def scan_summaries(
                 error_summaries.append((filepath.name, reason))
             else:
                 unknown_count += 1
+                source = get_frontmatter_field(content, "source")
+                unknown_summaries.append((filepath.name, status, source))
                 logger.debug(f"Unknown status for {filepath.name}: {status}")
 
         except OSError as e:
             logger.warning(f"Failed to read summary {filepath}: {e}")
             unknown_count += 1
+            unknown_summaries.append((filepath.name, None, None))
 
     # Determine date range
     oldest_date = min(dates) if dates else None
@@ -129,20 +125,18 @@ def scan_summaries(
 
     logger.info(
         f"Scanned {total} summaries: "
-        f"{success_count} success, {mocked_count} mocked, "
-        f"{error_count} error, {unknown_count} unknown"
+        f"{success_count} success, {error_count} error, {unknown_count} unknown"
     )
 
     return {
         "total": total,
         "success": success_count,
-        "mocked": mocked_count,
         "error": error_count,
         "unknown": unknown_count,
         "oldest_date": oldest_date,
         "newest_date": newest_date,
         "error_summaries": error_summaries,
-        "mocked_summaries": mocked_summaries,
+        "unknown_summaries": unknown_summaries,
     }
 
 
@@ -153,7 +147,7 @@ def scan_summaries_for_resummarize(
     """
     Scan all summary notes and return those suitable for resummarization.
 
-    Returns summaries that exist (not errors or mocked stubs) and extracts
+    Returns summaries that exist (not error stubs) and extracts
     their source URL, original date, summary date, and source note for reprocessing.
 
     Args:
@@ -179,19 +173,19 @@ def scan_summaries_for_resummarize(
         try:
             content = filepath.read_text(encoding="utf-8")
 
-            # Extract source URL, dates, and source note from frontmatter
-            source_url = _extract_frontmatter_field(content, "source")
-            date_str = _extract_frontmatter_field(content, "date")
-            summary_date_str = _extract_frontmatter_field(content, "summary_date")
-            status = _extract_frontmatter_field(content, "summary_status")
-            from_field = _extract_frontmatter_field(content, "from")
+            # Extract source URL, dates, and source note from frontmatter using utilities
+            source_url = get_frontmatter_field(content, "source")
+            date_str = get_frontmatter_field(content, "date")
+            summary_date_str = get_frontmatter_field(content, "summary_date")
+            status = get_frontmatter_field(content, "summary_status")
+            from_field = get_frontmatter_field(content, "from")
 
             if not source_url or not date_str:
                 logger.debug(f"Skipping {filepath.name}: missing source or date")
                 continue
 
-            # Skip error/mocked summaries (they should be handled by from-note --force)
-            if status and ("error" in status or status == "mocked"):
+            # Skip error summaries (they should be handled by from-note --force)
+            if status and "error" in status:
                 logger.debug(f"Skipping {filepath.name}: status={status}")
                 continue
 
@@ -245,41 +239,6 @@ def scan_summaries_for_resummarize(
 
     logger.info(f"Found {len(results)} summaries for resummarization")
     return results
-
-
-def _extract_frontmatter_field(content: str, field: str) -> str | None:
-    """
-    Extract a field value from YAML frontmatter.
-
-    Args:
-        content: Note content with frontmatter.
-        field: Field name to extract.
-
-    Returns:
-        Field value as string, or None if not found.
-    """
-    if not content.startswith("---"):
-        return None
-
-    # Find end of frontmatter
-    end_idx = content.find("---", 3)
-    if end_idx == -1:
-        return None
-
-    frontmatter = content[3:end_idx]
-
-    # Simple field extraction (works for single-line values)
-    # Format: "field: value" or "field: 'value'" or 'field: "value"'
-    pattern = rf"^{re.escape(field)}:\s*(.+)$"
-    match = re.search(pattern, frontmatter, re.MULTILINE)
-
-    if match:
-        value = match.group(1).strip()
-        # Remove quotes if present
-        value = value.strip('"').strip("'")
-        return value
-
-    return None
 
 
 def _extract_error_reason(content: str) -> str:

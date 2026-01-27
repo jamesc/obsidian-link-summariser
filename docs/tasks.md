@@ -4,6 +4,417 @@ This document tracks completed development tasks for the Obsidian Link Summarize
 
 ---
 
+## 2026-01-23: Add ReadNoteTool to Chat Agent
+
+**Goal:** Add a tool to read any note in the vault by path or name search.
+
+**Status:** ✅ Completed
+
+### Modified Files
+
+1. **`summarize_links/chat/tools/filesystem.py`** (~980 lines)
+   - Added `ReadNoteTool` - Read any note from the vault by path or name
+   - Path lookup: direct relative path from vault root
+   - Name search: searches entire vault for matching filename
+   - Handles multiple matches with clear error messages
+   - Truncates large files (>20KB) with warning
+
+2. **`summarize_links/chat/tools/__init__.py`**
+   - Added `ReadNoteTool` export
+
+3. **`summarize_links/chat/tools/base.py`**
+   - Updated `get_default_registry()` to register `ReadNoteTool`
+   - Registry now contains 12 tools total
+
+4. **`tests/test_filesystem_tools.py`** (~688 lines)
+   - Added 13 tests for `ReadNoteTool` (47 total tests in file)
+   - Tests path lookup, name search, multiple matches, truncation
+
+### Tool Details
+
+| Tool | Function | Parameters |
+|------|----------|------------|
+| `read_note` | Read any note from the vault | `path`, `name` (one required) |
+
+**ReadNoteTool Features:**
+- Read by path: `path="Projects/myproject.md"` (relative to vault root)
+- Read by name: `name="myproject"` (searches entire vault)
+- Auto-adds `.md` extension if not provided
+- Detects and reports multiple matches
+- Truncates large notes (>20KB) with byte count info
+- Path traversal protection (no `..` allowed)
+
+---
+
+## 2026-01-23: Add File System Tools to Chat Agent
+
+**Goal:** Add tools to the chat agent for file system operations on daily notes: cleaning whitespace, removing URLs/lines, and adding content.
+
+**Status:** ✅ Completed
+
+### New Files Created
+
+1. **`summarize_links/chat/tools/filesystem.py`** (~550 lines)
+   - `CleanWhitespaceTool` - Clean up whitespace in daily notes (single note or all)
+   - `RemoveUrlFromNoteTool` - Remove a URL line from a daily note
+   - `RemoveLineFromNoteTool` - Remove lines by text match (contains or exact)
+   - `AddTextToNoteTool` - Add content to a daily note (append or under section)
+
+2. **`tests/test_filesystem_tools.py`** (~420 lines)
+   - 34 tests covering all four tools
+   - Tests for parameter validation, success cases, edge cases, and errors
+
+### Modified Files
+
+3. **`summarize_links/chat/tools/__init__.py`**
+   - Added imports and exports for new filesystem tools
+   - Updated `__all__` list with 4 new tool classes
+
+4. **`summarize_links/chat/tools/base.py`**
+   - Updated `get_default_registry()` to register all 4 new tools
+   - Registry now contains 11 tools total
+
+### Tools Implemented
+
+| Tool | Function | Parameters |
+|------|----------|------------|
+| `clean_whitespace` | Clean up whitespace in daily notes | `date`, `all_notes` |
+| `remove_url_from_note` | Remove a URL's line from a note | `url` (required), `date` |
+| `remove_line_from_note` | Remove lines matching text | `text` (required), `date`, `exact_match` |
+| `add_to_note` | Add content to a daily note | `content` (required), `date`, `section`, `as_bullet`, `create_if_missing` |
+
+### Features
+
+**CleanWhitespaceTool:**
+- Reuses `clean_whitespace()` from `commands/clean.py`
+- Can clean a single note by date or all daily notes
+- Reports changed/skipped/error counts
+
+**RemoveUrlFromNoteTool:**
+- Uses existing `remove_url_line_from_note()` from notes module
+- Reports whether URL was found and removed
+
+**RemoveLineFromNoteTool:**
+- Flexible text matching (contains or exact)
+- Removes all matching lines
+- Cleans up consecutive blank lines after removal
+
+**AddTextToNoteTool:**
+- Append to end of note or under specific section
+- Create section if it doesn't exist
+- Format content as bullet point
+- Create note if missing (optional)
+
+### Validation
+
+**Static Analysis:** All checks pass ✓
+- `uv run ruff check .` - No issues
+- `uv run ruff format .` - All files formatted
+- `uv run mypy .` - Type checking passes
+
+**Tests:** 997 tests passing (34 new tests)
+
+### Use Cases
+
+These tools enable the chat agent to:
+- Clean up whitespace across daily notes via conversation
+- Remove bad/broken links from notes
+- Delete duplicate or unwanted entries
+- Add new URLs for later summarization
+- Create task lists or sections in daily notes
+- Save notes and URLs during chat conversations
+
+---
+
+## 2026-01-23: Chat CLI Phase 2 - Advanced Features Implementation
+
+**Goal:** Complete remaining Phase 2 features: token-based context management, streaming responses, session persistence, and tool confirmation.
+
+**Status:** ✅ Completed
+
+### New Files Created
+
+1. **`summarize_links/chat/tokens.py`**
+   - Token counting utilities using tiktoken
+   - Functions: `count_tokens()`, `count_message_tokens()`, `count_messages_tokens()`, `estimate_tool_tokens()`
+   - Model-specific encoding support (cl100k_base for GPT-4, o200k_base for GPT-4o)
+
+### Modified Files
+
+2. **`pyproject.toml`**
+   - Added `tiktoken>=0.5.0` dependency for accurate token counting
+
+3. **`summarize_links/config.py`**
+   - Added new chat session configuration fields:
+     - `chat_max_history_messages: int = 50`
+     - `chat_max_context_tokens: int = 100000`
+     - `chat_auto_save: bool = False`
+     - `chat_save_path: str = ".chat-history.json"`
+     - `chat_streaming: bool = True`
+     - `chat_confirm_tools: bool = False`
+   - Updated `load_config()` to load these from environment/YAML
+
+4. **`summarize_links/chat/conversation.py`**
+   - Refactored for token-based context management
+   - New `max_context_tokens` and `model` fields
+   - Token caching for performance
+   - `get_total_tokens()` method for monitoring
+   - Smart `_trim_history()` that preserves system messages and uses token limits
+
+5. **`summarize_links/chat/azure_client.py`**
+   - Added `StreamingChatResponse` class with iterator protocol
+   - New `chat_stream()` method for streaming responses
+   - Yields content chunks, tool calls, and final message
+
+6. **`summarize_links/chat/engine.py`**
+   - Added `ToolConfirmCallback` type for tool confirmation
+   - New `process_message_streaming()` method with async generator
+   - Tool confirmation in `_handle_tool_calls()` - returns early if user declines
+   - `save_session()` and `load_session()` for persistence
+   - Auto-save on successful processing
+
+7. **`summarize_links/chat/tui.py`**
+   - New slash commands: `/save [path]`, `/load <path>`, `/config`
+   - Streaming message display with `_streaming_message` attribute
+   - Methods: `_start_streaming_message()`, `_update_streaming_message()`, `_finalize_streaming_message()`
+   - Ctrl+S keybinding for quick save
+   - `_send_message_streaming()` for streaming mode
+
+8. **`tests/test_chat_engine.py`**
+   - Updated `mock_config` fixture with new chat config fields
+
+### Features Implemented
+
+- **Token-based context management**: Conversation automatically trims history based on token count, not just message count
+- **Streaming responses**: Word-by-word output in TUI with proper handling
+- **Session persistence**: Save/load conversation history to JSON files
+- **Tool confirmation**: Optional prompts before executing tools (via `chat_confirm_tools` config)
+- **Auto-save**: Automatically save session after each successful interaction
+
+### Tests
+
+All 803 tests pass after implementation.
+
+---
+
+## 2026-01-22: Chat CLI Phase 2 - Core Tools Implementation
+
+**Goal:** Implement all remaining core tools for the chat CLI as defined in Phase 2 of the chat-cli-plan.
+
+**Status:** ✅ Completed
+
+**Implementation Plan:** See [chat-cli-plan.md](chat-cli-plan.md) - Phase 2
+
+**Tools Implemented:**
+
+### Vault Tools (`summarize_links/chat/tools/vault.py`)
+
+1. **`ListSummariesTool`** (`list_summaries`)
+   - Lists summaries in the vault with optional filtering by status
+   - Parameters: `status` (all/success/error/mocked), `limit` (default 10)
+   - Returns formatted list with title, date, status, and tags
+   - Uses frontmatter parsing to extract metadata
+
+2. **`SearchVaultTool`** (`search_summaries`)
+   - Searches summaries by keyword or tag
+   - Parameters: `query` (required), `limit` (default 10)
+   - Searches in title, tags, and body content
+   - Returns relevance-scored results
+
+3. **`ReadSummaryTool`** (`read_summary`)
+   - Reads full content of a specific summary
+   - Parameters: `title` (filename or title text, required)
+   - Returns frontmatter metadata and body content
+   - Supports partial title matching
+
+### Notes Tools (`summarize_links/chat/tools/notes.py`)
+
+4. **`FindUrlsInNotesTool`** (`find_urls_in_notes`)
+   - Finds URLs in daily notes that need summarization
+   - Parameters: `date`, `all_dates`, `include_summarized`
+   - Shows URL status (summarized/not), tags from context
+   - Fixed date-aware summary existence checking
+
+### System Tools (`summarize_links/chat/tools/system.py`)
+
+5. **`GetRateLimitStatusTool`** (`get_rate_limit_status`)
+   - Shows current API rate limit usage
+   - Displays RPM, TPM, and daily limits with remaining quota
+   - No parameters required
+
+6. **`GetVaultStatusTool`** (`get_vault_status`)
+   - Shows overall vault statistics
+   - Counts success/error/mocked summaries
+   - Shows date range of summaries
+   - Lists problematic summaries that need attention
+
+### Helper Functions Added
+
+- `_extract_frontmatter()` - Parse YAML frontmatter from markdown
+- `_get_body_content()` - Extract body content after frontmatter
+
+### Changes to Existing Code
+
+**`summarize_links/chat/tools/__init__.py`:**
+- Exports all 7 tools (including existing `SummarizeUrlTool`)
+
+**`summarize_links/chat/tools/base.py`:**
+- Updated `get_default_registry()` to register all tools
+
+**`summarize_links/chat/tools/notes.py`:**
+- Fixed `summary_exists` call to pass date parameter for accurate detection
+
+### Tests Added
+
+**`tests/test_vault_tools.py`** (26 tests):
+- `TestExtractFrontmatter` - 5 tests for frontmatter parsing
+- `TestGetBodyContent` - 2 tests for body extraction
+- `TestListSummariesTool` - 9 tests for listing with filters
+- `TestSearchVaultTool` - 5 tests for search functionality
+- `TestReadSummaryTool` - 5 tests for reading summaries
+
+**`tests/test_notes_tools.py`** (11 tests):
+- Parameter schema validation
+- URL finding by specific date
+- All dates scanning
+- Tag extraction from context
+- Summarization status messages
+
+**`tests/test_system_tools.py`** (10 tests):
+- Rate limit status retrieval
+- Vault statistics calculation
+- Date range detection
+- Configuration info display
+
+### Bug Fixes
+
+1. **Date-aware summary checking**: `FindUrlsInNotesTool` now passes the note date to `summary_exists()` instead of defaulting to today's date. This ensures URLs are correctly identified as summarized when the summary file uses the same date as the daily note.
+
+### Validation
+
+**Testing:**
+```bash
+uv run ruff check .    # All checks passed
+uv run ruff format .   # All files formatted
+uv run mypy .          # Success: no issues in 80 files
+uv run pytest          # 784 tests passed
+```
+
+### Documentation Updated
+
+- Updated `docs/chat-cli-plan.md`:
+  - Marked Phase 2 tool expansion as complete
+  - Updated milestones to show core tools done
+  - Added `get_vault_status` to tool list
+
+---
+
+## 2026-01-22: Chat Session-Level Langfuse Tracing
+
+**Goal:** Implement Langfuse session-level tracing for the chat CLI to group all interactions within a conversation under a single session.
+
+**Status:** ✅ Completed
+
+**Implementation Plan:** See [chat-session-tracing-plan.md](chat-session-tracing-plan.md)
+
+**Problem:**
+Previously, each `process_message()` call in `ChatEngine` created independent, disconnected Langfuse traces. This made it impossible to view conversations holistically in Langfuse UI.
+
+**Solution:**
+Implemented Langfuse Sessions following their [best practices](https://langfuse.com/docs/observability/features/sessions):
+
+- **Sessions** (`session_id`) group multiple traces across a conversation
+- **Traces** represent individual request/response turns (each message)
+- **Generations/Spans** are nested within traces for LLM calls and tools
+
+### Trace Structure
+
+```
+Session (conversation - shared session_id)
+├── Trace (message_1)
+│   ├── Generation (chat_generate)
+│   └── Span (tool_execution)
+├── Trace (message_2)
+│   └── Generation (chat_generate)
+└── Trace (message_3)
+    ├── Generation (chat_generate)
+    ├── Span (tool_summarize)
+    └── Generation (chat_generate_followup)
+```
+
+### Changes
+
+**`summarize_links/langfuse_tracer.py`:**
+- Added module docstring section explaining session-level tracing
+- Added `trace_message()` context manager:
+  - Creates a span for each conversation turn
+  - Uses `propagate_attributes(session_id=...)` to link traces
+  - All nested `trace_generation`/`trace_span` calls become children
+  - Flushes on completion to ensure traces are sent
+- Updated `MockLangfuseTracer` with no-op `trace_message()` method
+
+**`summarize_links/chat/engine.py`:**
+- Added `session_id` attribute (UUID generated on init)
+- Added `_message_count` attribute for message sequencing
+- Updated `process_message()`:
+  - Increments message count
+  - Wraps processing in `tracer.trace_message()` context
+  - Passes session_id and message_number to tracer
+- Updated `_process_with_azure()` docstring for clarity
+- Updated `_handle_tool_calls()` docstring about nesting
+- Updated `clear_history()`:
+  - Added `reset_message_count` parameter (default False)
+  - Note: Does NOT start new session (need new engine for that)
+- Updated `get_status()`:
+  - Returns `session_id` and `message_count`
+
+**`summarize_links/commands/chat.py`:**
+- Updated status display to show session info:
+  - `Session: {id[:8]}...` (truncated for readability)
+  - `Messages: {count}` (number of processed messages)
+  - Renamed `Messages` to `History` (conversation history length)
+
+### Documentation
+
+Created `docs/chat-session-tracing-plan.md` with:
+- Detailed implementation plan
+- Langfuse best practices explanation
+- Data flow diagrams
+- Rollback plan
+
+### Tests Added
+
+**`tests/test_langfuse_tracer.py`:**
+- `test_mock_tracer_trace_message` - Mock implementation works
+- `test_trace_message_with_session` - Session propagation verified
+
+**`tests/test_chat_engine.py`:**
+- `test_session_id_generated_on_init` - Unique session IDs
+- `test_message_count_increments` - Counter increments
+- `test_clear_history_with_reset_count` - Reset counter option
+- `test_clear_history_keeps_count_by_default` - Default behavior
+- Updated `test_process_message_no_tool_calls` - Verifies trace_message called
+- Added `test_process_message_increments_count` - Verifies message counting
+
+### Benefits
+
+- **Session Replay**: View full conversation flow in Langfuse UI
+- **Aggregated Metrics**: Per-conversation cost, latency, tokens
+- **Shareable Sessions**: Public links for sharing
+- **Session Scoring**: Evaluate conversations as a whole
+
+### Validation
+
+**Testing:**
+```bash
+uv run ruff check .    # All checks passed
+uv run ruff format .   # 74 files unchanged
+uv run mypy .          # Success: no issues in 74 files
+uv run pytest          # 736 tests passed
+```
+
+---
+
 ## 2026-01-20: Playwright Fallback - Simplified Always-On Integration
 
 **Goal:** Remove the phase system complexity and make Playwright fallback always-on for common bot detection patterns (HTTP 401/403/429, JavaScript requirements, extraction failures).
@@ -18,7 +429,7 @@ This document tracks completed development tasks for the Obsidian Link Summarize
 - Removed `playwright_fallback_phase` configuration field from `Config`
 - Removed `PhaseType` literal type and `VALID_PHASES` tuple
 - Changed `PLAYWRIGHT_RETRYABLE_ERRORS` from phase-based dict to simple list
-- Removed phase parameter from `should_retry_with_playwright()` 
+- Removed phase parameter from `should_retry_with_playwright()`
 - Removed phase parameter from `should_retry_with_extraction_fallback()`
 - Removed `playwright_phase` parameter from `fetch_and_extract_metadata()`
 

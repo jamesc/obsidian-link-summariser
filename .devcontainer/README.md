@@ -44,13 +44,13 @@ The following extensions are automatically installed:
    cd obsidian-link-summariser
    ```
 
-2. **Create `.env` file** (required for devcontainer)
+2. **Create `.env` file** (optional, but recommended)
    ```bash
    cp .env.example .env
-   # Edit .env with your configuration
+   # Edit .env with your API keys and configuration
    ```
-   
-   **Important**: The devcontainer mounts your `.env` file as read-only. Make sure it exists before opening the container.
+
+   **Note**: While you can start the devcontainer without a `.env` file, you'll need to create one inside the container to use API-based features. It's easier to create it before opening the devcontainer.
 
 3. **Open in VS Code**
    ```bash
@@ -111,19 +111,24 @@ uv run summarize-links --help
 ```
 
 ### Environment Variables
-The `.env` file from your local workspace is mounted as read-only into the container. This means:
-- Your API keys and secrets stay secure on your host machine
-- Changes to `.env` require container restart to take effect
-- The container cannot modify your `.env` file
+The `.env` file from your local workspace is **not** automatically mounted into the container. This means:
+- You need to create `.env` inside the container after it starts, or
+- Create `.env` before opening the container (recommended)
+- Your API keys and secrets stay on your host machine or in the container
+- Changes to `.env` are immediately available (no restart needed)
 
 ## Troubleshooting
 
 ### ".env file not found" Error
-The devcontainer configuration expects a `.env` file to exist. If you don't have one:
+The devcontainer no longer requires a `.env` file to start. You can:
+1. Create `.env` from `.env.example` before opening the container (recommended), or
+2. Create it inside the container after it starts
+
 ```bash
+# Inside the container
 cp .env.example .env
+# Edit .env with your configuration
 ```
-Then rebuild the container.
 
 ### Container Build Fails
 1. Ensure Docker Desktop is running

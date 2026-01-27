@@ -23,6 +23,7 @@ from summarize_links.commands import (
     cmd_status,
     cmd_summaries,
     cmd_urls,
+    run_chat_tui,
 )
 from summarize_links.config import load_config, setup_logging
 from summarize_links.exceptions import (
@@ -55,6 +56,9 @@ def create_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Start interactive chat mode
+  summarize-links chat
+
   # Summarize links from today's daily note
   summarize-links from-note
 
@@ -75,9 +79,6 @@ Examples:
 
   # Dry run - show what would be done
   summarize-links from-note --dry-run
-
-  # Use mock mode for testing
-  summarize-links from-note --mock
 """,
     )
 
@@ -111,11 +112,6 @@ Examples:
         help="Model name to use (overrides config)",
     )
     parser.add_argument(
-        "--mock",
-        action="store_true",
-        help="Use mock Gemini client (no API calls)",
-    )
-    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Show what would be done without making changes",
@@ -133,6 +129,13 @@ Examples:
 
     # Subcommands
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # chat command
+    subparsers.add_parser(
+        "chat",
+        help="Start interactive chat mode",
+        description="Chat with an AI assistant to summarize URLs and manage your vault.",
+    )
 
     # from-note command
     from_note = subparsers.add_parser(
@@ -182,7 +185,7 @@ Examples:
     subparsers.add_parser(
         "summaries",
         help="Report on summary status",
-        description="Scan all summaries and report on their status (success, mocked, errors).",
+        description="Scan all summaries and report on their status (success, errors).",
     )
 
     # resummarize command
@@ -246,21 +249,21 @@ def main(argv: list[str] | None = None) -> int:
             provider=getattr(args, "provider", None),
             model=args.model,
             max_links=args.max_links,
-            mock_mode=args.mock,
             dry_run=args.dry_run,
             verbose=args.verbose,
             force=args.force,
         )
         setup_logging(config.verbose)
 
-        # Initialize Langfuse tracer (skip in mock mode)
-        if not config.mock_mode:
-            from summarize_links.langfuse_tracer import initialize_tracer
+        # Initialize Langfuse tracer
+        from summarize_links.langfuse_tracer import initialize_tracer
 
-            initialize_tracer(config)
+        initialize_tracer(config)
 
         # Dispatch to command handler
-        if args.command == "from-note":
+        if args.command == "chat":
+            return run_chat_tui(config)
+        elif args.command == "from-note":
             if getattr(args, "process_all", False):
                 return cmd_from_note_all(config)
             return cmd_from_note(config, getattr(args, "date", None))

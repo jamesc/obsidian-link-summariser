@@ -5,14 +5,16 @@ This module provides shared functionality for:
 - Fetching and compiling prompts from Langfuse
 - Rate limiter initialization and management
 - Common retry logic for rate-limited API calls
+- Lazy client initialization pattern
 
 Used by GeminiClient, AzureClient, and OllamaClient.
 """
 
 import logging
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 if TYPE_CHECKING:
     from summarize_links.models import SummaryResult
@@ -20,6 +22,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "BaseLLMClient",
+    "LazyClientMixin",
     # Retry configuration constants (shared across rate-limited clients)
     "MAX_RETRIES",
     "BASE_RETRY_DELAY",
@@ -34,6 +37,55 @@ MIN_RATE_LIMIT_WAIT = 10.0  # Minimum wait when rate limited (seconds)
 MAX_RETRY_DELAY = 120.0  # Maximum delay cap (seconds)
 
 logger = logging.getLogger(__name__)
+
+# Generic type for client instances
+T = TypeVar("T")
+
+
+class LazyClientMixin(Generic[T]):
+    """
+    Mixin for lazy client initialization pattern.
+
+    Provides a consistent pattern for deferring client creation until first use,
+    reducing startup time and avoiding unnecessary initialization.
+
+    Type Parameters:
+        T: The type of client being lazily initialized.
+
+    Usage:
+        class MyClient(LazyClientMixin[SomeClient]):
+            def __init__(self, api_key: str):
+                self._api_key = api_key
+                self._client: SomeClient | None = None
+
+            def _get_client(self) -> SomeClient:
+                return self._get_or_create_client(
+                    lambda: SomeClient(api_key=self._api_key),
+                    "SomeClient"
+                )
+    """
+
+    _client: T | None
+
+    def _get_or_create_client(
+        self,
+        factory: Callable[[], T],
+        name: str | None = None,
+    ) -> T:
+        """
+        Get existing client or create new one using factory.
+
+        Args:
+            factory: Callable that creates and returns a new client instance.
+            name: Optional name for logging (e.g., "AzureOpenAI").
+
+        Returns:
+            The client instance (created on first call, cached thereafter).
+        """
+        if self._client is None:
+            self._client = factory()
+            logger.debug("Created %s client", name or "API")
+        return self._client
 
 
 class BaseLLMClient:
@@ -271,6 +323,11 @@ class BaseLLMClient:
         # Format title as " titled 'X'" or empty string (matches main branch behavior)
         title_text = f" titled '{title}'" if title else ""
 
+        # Format current date for temporal context (prevents LLM date hallucination)
+        from datetime import date
+
+        current_date = date.today().strftime("%B %d, %Y")  # e.g., "January 22, 2026"
+
         # Compile using Langfuse chat prompt object
         # compile() returns a list of messages with variables substituted
         prompt_obj = self._prompt_cache["prompt"]
@@ -278,6 +335,7 @@ class BaseLLMClient:
             title=title_text,
             url=url,
             content=content,
+            current_date=current_date,
         )
 
         # Extract the user message content from compiled messages

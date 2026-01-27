@@ -151,7 +151,7 @@ class TestPreserveExistingDate:
             summary_result=summary_result,
             page_metadata=page_metadata,
             date=original_date,
-            summary_status="mocked",  # Simulate a mocked summary that needs re-summarizing
+            summary_status="error",  # Simulate an error summary that needs re-summarizing
         )
 
         assert original_path.exists()

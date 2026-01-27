@@ -119,6 +119,28 @@ class TestMockLangfuseTracer:
             comment="Test comment",
         )
 
+    def test_mock_tracer_trace_message(self) -> None:
+        """Test that mock tracer provides no-op trace_message."""
+        tracer = MockLangfuseTracer()
+
+        with tracer.trace_message(
+            session_id="test-session-123",
+            message_number=1,
+            user_input="Hello, world!",
+            metadata={"key": "value"},
+        ) as trace:
+            assert trace is None
+
+    def test_mock_tracer_update_trace_output(self) -> None:
+        """Test that mock tracer provides no-op update_trace_output."""
+        tracer = MockLangfuseTracer()
+
+        # Should not raise
+        tracer.update_trace_output(
+            output={"assistant_response": "Hello!"},
+            metadata={"response_length": 6},
+        )
+
 
 class TestGlobalTracer:
     """Tests for global tracer functions."""
@@ -291,6 +313,87 @@ class TestTracerContextManagers:
         )
 
         # Should not raise
+
+    @patch("summarize_links.langfuse_tracer.Langfuse")
+    def test_trace_message_with_session(self, mock_langfuse_class: Mock) -> None:
+        """Test trace_message creates session-linked trace."""
+        mock_client = Mock()
+        mock_client.auth_check.return_value = True
+        mock_trace = Mock()
+        mock_client.start_as_current_observation.return_value.__enter__ = Mock(
+            return_value=mock_trace
+        )
+        mock_client.start_as_current_observation.return_value.__exit__ = Mock(return_value=False)
+        mock_langfuse_class.return_value = mock_client
+
+        tracer = LangfuseTracer(
+            public_key="pk-test",
+            secret_key="sk-test",
+        )
+
+        with tracer.trace_message(
+            session_id="session-abc-123",
+            message_number=1,
+            user_input="Hello, how are you?",
+            metadata={"model": "gpt-4"},
+        ) as trace:
+            assert trace is not None
+
+        # Verify update_current_trace was called with session_id, name, and input
+        mock_client.update_current_trace.assert_called_once()
+        call_kwargs = mock_client.update_current_trace.call_args[1]
+        assert call_kwargs.get("session_id") == "session-abc-123"
+        assert call_kwargs.get("name") == "chat-session-#1"
+        assert call_kwargs.get("input") == {"user_message": "Hello, how are you?"}
+
+        # Verify observation was created with correct name and input
+        # Name format: "chat-{session_prefix}#{msg_num}" for visual linking
+        mock_client.start_as_current_observation.assert_called()
+        call_kwargs = mock_client.start_as_current_observation.call_args[1]
+        assert call_kwargs.get("name") == "chat-session-#1"
+        assert call_kwargs.get("input") == {"user_message": "Hello, how are you?"}
+
+    @patch("summarize_links.langfuse_tracer.Langfuse")
+    def test_update_trace_output(self, mock_langfuse_class: Mock) -> None:
+        """Test update_trace_output updates the current trace."""
+        mock_client = Mock()
+        mock_client.auth_check.return_value = True
+        mock_langfuse_class.return_value = mock_client
+
+        tracer = LangfuseTracer(
+            public_key="pk-test",
+            secret_key="sk-test",
+        )
+
+        tracer.update_trace_output(
+            output={"assistant_response": "Hello!"},
+            metadata={"response_length": 6},
+        )
+
+        # Verify update_current_trace was called with output and metadata
+        mock_client.update_current_trace.assert_called_once_with(
+            output={"assistant_response": "Hello!"},
+            metadata={"response_length": 6},
+        )
+
+    @patch("summarize_links.langfuse_tracer.Langfuse")
+    def test_update_trace_output_without_metadata(self, mock_langfuse_class: Mock) -> None:
+        """Test update_trace_output works without metadata."""
+        mock_client = Mock()
+        mock_client.auth_check.return_value = True
+        mock_langfuse_class.return_value = mock_client
+
+        tracer = LangfuseTracer(
+            public_key="pk-test",
+            secret_key="sk-test",
+        )
+
+        tracer.update_trace_output(output={"result": "done"})
+
+        # Verify update_current_trace was called with only output
+        mock_client.update_current_trace.assert_called_once_with(
+            output={"result": "done"},
+        )
 
 
 class TestExceptionHandling:
